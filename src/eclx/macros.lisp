@@ -17,7 +17,7 @@
 ;;;
 #+cmu
 (ext:file-comment
-  "$Header: /project/ecl/cvsroot/ecl/src/eclx/Attic/macros.lisp,v 1.1 2004/03/25 09:02:29 jjgarcia Exp $")
+  "$Header: /project/ecl/cvsroot/ecl/src/eclx/Attic/macros.lisp,v 1.2 2004/03/29 11:13:20 jjgarcia Exp $")
 
 ;;; CLX basicly implements a very low overhead remote procedure call
 ;;; to the server.  This file contains macros which generate the code

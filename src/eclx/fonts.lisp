@@ -17,7 +17,7 @@
 ;;;
 #+cmu
 (ext:file-comment
-  "$Header: /project/ecl/cvsroot/ecl/src/eclx/Attic/fonts.lisp,v 1.1 2004/03/25 09:02:29 jjgarcia Exp $")
+  "$Header: /project/ecl/cvsroot/ecl/src/eclx/Attic/fonts.lisp,v 1.2 2004/03/29 11:13:20 jjgarcia Exp $")
 
 (in-package :xlib)
 
