@@ -1,4 +1,4 @@
-;;; This is asdf: Another System Definition Facility.  $Revision: 1.1 $
+;;; This is asdf: Another System Definition Facility.  $Revision: 1.2 $
 ;;;
 ;;; Feedback, bug reports, and patches are all welcome: please mail to
 ;;; <cclan-list@lists.sf.net>.  But note first that the canonical
@@ -108,7 +108,7 @@
 
 (in-package #:asdf)
 
-(defvar *asdf-revision* (let* ((v "$Revision: 1.1 $")
+(defvar *asdf-revision* (let* ((v "$Revision: 1.2 $")
 			       (colon (or (position #\: v) -1))
 			       (dot (position #\. v)))
 			  (and v colon dot 
@@ -1098,5 +1098,17 @@ output to *verbose-out*.  Returns the shell's exit code."
    *central-registry*)
   
   (pushnew 'module-provide-asdf sb-ext:*module-provider-functions*))
+
+;; Hook into ECL's require/provide
+#+ecl
+(progn
+  (defun module-provide-asdf (name)
+    (handler-bind ((style-warning #'muffle-warning))
+      (let* ((*verbose-out* (make-broadcast-stream))
+	     (system (asdf:find-system name nil)))
+	(when system
+	  (asdf:operate 'asdf:load-op name)
+	  t))))
+  (pushnew 'module-provide-asdf ext:*module-provider-functions*))
 
 (provide 'asdf)
