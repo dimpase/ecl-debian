@@ -3,7 +3,7 @@
 ;;;     Title: The X Render Extension
 ;;;   Created: 2002-08-03
 ;;;    Author: Gilbert Baumann <unk6@rz.uni-karlsruhe.de>
-;;;       $Id: xrender.lisp,v 1.8 2005/01/14 12:25:04 jjgarcia Exp $
+;;;       $Id: xrender.lisp,v 1.9 2005/01/31 18:00:14 jjgarcia Exp $
 ;;; ---------------------------------------------------------------------------
 ;;;
 ;;; (c) copyright 2002, 2003 by Gilbert Baumann
@@ -869,8 +869,8 @@ by every function, which attempts to generate RENDER requests."
 
 
 ;; $Log: xrender.lisp,v $
-;; Revision 1.8  2005/01/14 12:25:04  jjgarcia
-;; Some files were not comitted in the last revision
+;; Revision 1.9  2005/01/31 18:00:14  jjgarcia
+;; Thread support for Mingw32
 ;;
 ;; Revision 1.1  2004/06/10 07:59:31  jlr
 ;; Portable CLX library imported
