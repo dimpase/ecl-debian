@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/stak.cl,v 1.1 2001/06/26 17:15:53 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/stak.cl,v 1.2 2001/07/27 17:01:29 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; STAK -- The TAKeuchi function with special variables instead of
@@ -7,7 +7,7 @@
 (defvar stak-x)
 (defvar stak-y)
 (defvar stak-z)
-(proclaim '(fixnum stak-x stak-y stak-z))
+(declaim (fixnum stak-x stak-y stak-z))
 
 (defun stak (stak-x stak-y stak-z)
   (stak-aux))

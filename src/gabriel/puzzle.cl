@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/puzzle.cl,v 1.1 2001/06/26 17:15:53 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/puzzle.cl,v 1.2 2001/07/27 17:01:29 jjgarcia Exp $
 ;; $Locker:  $
 
 (eval-when (compile load eval)
@@ -9,19 +9,17 @@
 (defvar **iii** 0)
 (defvar **kount** 0)
 (defvar puzzle-d 8.)
-(proclaim '(type fixnum **iii** **kount** puzzle-d))
-
 (defvar piececount (make-array (1+ puzzle-classmax) :initial-element 0))
 (defvar puzzle-class (make-array (1+ puzzle-typemax) :initial-element 0))
 (defvar piecemax (make-array (1+ puzzle-typemax) :initial-element 0))
 (defvar puzzle (make-array (1+ puzzle-size)))
 (defvar puzzle-p (make-array (list (1+ puzzle-typemax) (1+ puzzle-size))))
 
-(proclaim '(type simple-vector 
-		 piececount puzzle-class piecemax puzzle))
-
-(proclaim '(type (simple-array t (#.(1+ puzzle-typemax) #.(1+ puzzle-size)))
-		 puzzle-p))
+(eval-when (eval compile)
+  (proclaim '(type fixnum **iii** **kount** puzzle-d))
+  (proclaim '(type simple-vector  piececount puzzle-class piecemax puzzle))
+  (proclaim '(type (simple-array t (#.(1+ puzzle-typemax) #.(1+ puzzle-size)))
+	       puzzle-p)))
 		 
 (defun fit (i j)
   (declare (type fixnum i j))

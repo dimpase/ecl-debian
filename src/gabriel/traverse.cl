@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/traverse.cl,v 1.1 2001/06/26 17:15:54 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/traverse.cl,v 1.2 2001/07/27 17:01:29 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; TRAVERSE --  Benchmark which creates and traverses a tree structure.
@@ -20,7 +20,7 @@
 (defvar traverse-sn 0)
 (defvar traverse-rand 21.)
 (defvar traverse-count 0)
-(proclaim `(type fixnum traverse-sn traverse-rand traverse-count))
+(declaim (type fixnum traverse-sn traverse-rand traverse-count))
 (defvar traverse-marker nil)
 (defvar traverse-root)
 
