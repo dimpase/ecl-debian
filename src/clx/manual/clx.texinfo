@@ -1,14 +1,14 @@
 \input texinfo   @c -*-texinfo-*-
-@c $Id: clx.texinfo,v 1.1 2004/06/11 11:34:30 jjgarcia Exp $
+@c $Id: clx.texinfo,v 1.2 2004/06/13 09:21:23 jjgarcia Exp $
 @c %**start of header
 @setfilename clx.info
 @settitle Common LISP X Interface
 @setchapternewpage odd
 @c %**end of header
 
-@dircategory lisp
+@dircategory Lisp Programming
 @direntry
-* CLX:       Common LISP X Interface
+* CLX: (clx).		Common LISP X Interface
 @end direntry
 
 @copying
