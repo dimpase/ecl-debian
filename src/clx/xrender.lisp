@@ -3,7 +3,7 @@
 ;;;     Title: The X Render Extension
 ;;;   Created: 2002-08-03
 ;;;    Author: Gilbert Baumann <unk6@rz.uni-karlsruhe.de>
-;;;       $Id: xrender.lisp,v 1.2 2004/06/11 12:01:58 jjgarcia Exp $
+;;;       $Id: xrender.lisp,v 1.3 2004/06/18 07:51:18 jjgarcia Exp $
 ;;; ---------------------------------------------------------------------------
 ;;;
 ;;; (c) copyright 2002, 2003 by Gilbert Baumann
@@ -869,8 +869,8 @@ by every function, which attempts to generate RENDER requests."
 
 
 ;; $Log: xrender.lisp,v $
-;; Revision 1.2  2004/06/11 12:01:58  jjgarcia
-;; The docs for CLX can now be processed ansd installed
+;; Revision 1.3  2004/06/18 07:51:18  jjgarcia
+;; Support for DLL in Windows
 ;;
 ;; Revision 1.1  2004/06/10 07:59:31  jlr
 ;; Portable CLX library imported
