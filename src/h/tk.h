@@ -24,7 +24,7 @@
  * ON AN "AS IS" BASIS, AND THE UNIVERSITY OF CALIFORNIA HAS NO OBLIGATION TO
  * PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
  *
- * $Header: /project/ecl/cvsroot/ecl/src/h/Attic/tk.h,v 1.1 2001/06/26 17:17:36 jjgarcia Exp $ SPRITE (Berkeley)
+ * $Header: /project/ecl/cvsroot/ecl/src/h/Attic/tk.h,v 1.2 2001/08/01 16:47:20 jjgarcia Exp $ SPRITE (Berkeley)
  */
 
 #ifndef _TK
