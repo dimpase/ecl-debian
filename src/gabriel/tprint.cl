@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/tprint.cl,v 1.2 2001/08/18 10:55:10 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/tprint.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; TPRINT -- Benchmark to print and read to the terminal.

@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/browse.cl,v 1.2 2001/08/18 10:55:10 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/browse.cl,v 1.3 2001/11/17 11:02:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; BROWSE -- Benchmark to create and browse through an AI-like data base
