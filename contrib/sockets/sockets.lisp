@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.5 2005/02/17 12:41:17 jjgarcia Exp $
+;; $Id: sockets.lisp,v 1.6 2005/02/17 13:40:35 jjgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -293,8 +293,7 @@ directly instantiated."))
 			    proto-num))))
     (if (= fd -1) (socket-error "socket"))
     (setf (slot-value socket 'file-descriptor) fd
-	  (slot-value socket 'protocol) proto-num
-	  (slot-value socket 'type) type)
+	  (slot-value socket 'protocol) proto-num)
     #+ ignore
     (sb-ext:finalize socket (lambda () (sockint::close fd)))))
 
