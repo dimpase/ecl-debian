@@ -3,7 +3,7 @@
 ;;;     Title: The X Render Extension
 ;;;   Created: 2002-08-03
 ;;;    Author: Gilbert Baumann <unk6@rz.uni-karlsruhe.de>
-;;;       $Id: xrender.lisp,v 1.6 2004/10/29 13:50:27 jjgarcia Exp $
+;;;       $Id: xrender.lisp,v 1.7 2005/01/07 13:48:00 jjgarcia Exp $
 ;;; ---------------------------------------------------------------------------
 ;;;
 ;;; (c) copyright 2002, 2003 by Gilbert Baumann
@@ -869,8 +869,8 @@ by every function, which attempts to generate RENDER requests."
 
 
 ;; $Log: xrender.lisp,v $
-;; Revision 1.6  2004/10/29 13:50:27  jjgarcia
-;; Make the MSVC++ port relocatable, i.e. the installation path is not hardcoded in ECL. Also, suport for NSI under MSVC++.
+;; Revision 1.7  2005/01/07 13:48:00  jjgarcia
+;; Separate C prefixes for the compiler and the CLX library. Updates for the MSVC port (M. Goffioul)
 ;;
 ;; Revision 1.1  2004/06/10 07:59:31  jlr
 ;; Portable CLX library imported
