@@ -1,4 +1,4 @@
-%define _specver        $Id: ecl.spec,v 1.1 2003/10/27 10:51:40 jjgarcia Exp $
+%define _specver        $Id: ecl.spec,v 1.2 2003/11/06 13:49:13 jjgarcia Exp $
 %define _name           ecl
 %define _pkg            %{_name}
 %define _ver            ECL_VERSION
@@ -37,7 +37,7 @@ BuildRoot:      %{_buildtmp}/%{_nv}-buildroot
 
 ECL stands for Embeddable Common-Lisp.
 
-The ECL project is an effort to modernize Giusseppe Attardi's ECL
+The ECL project is an effort to modernize Giuseppe Attardi's ECL
 environment to produce an implementation of the Common-Lisp language
 which complies to the ANSI X3J13 definition of the language.
 
