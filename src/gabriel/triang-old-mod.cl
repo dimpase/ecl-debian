@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/triang-old-mod.cl,v 1.1 2001/06/26 17:15:54 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/triang-old-mod.cl,v 1.2 2001/08/18 10:55:10 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; TRIANG -- Board game benchmark.

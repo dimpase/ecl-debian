@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/div2.cl,v 1.1 2001/06/26 17:15:53 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/div2.cl,v 1.2 2001/08/18 10:55:10 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; DIV2 -- Benchmark which divides by 2 using lists of n ()'s.

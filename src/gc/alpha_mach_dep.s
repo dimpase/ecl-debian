@@ -1,4 +1,4 @@
- # $Id: alpha_mach_dep.s,v 1.1 2001/06/26 17:15:59 jjgarcia Exp $
+ # $Id: alpha_mach_dep.s,v 1.2 2001/08/18 10:55:10 jjgarcia Exp $
 
 # This is BROKEN on a 21264 running gcc, and probably in other cases.
 # The compiler may spill pointers to fp registers, and this code doesn't

@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/frpoly-mod.cl,v 1.1 2001/06/26 17:15:52 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/frpoly-mod.cl,v 1.2 2001/08/18 10:55:10 jjgarcia Exp $
 ;; $Locker:  $
 
 ;; FRPOLY -- Benchmark from Berkeley based on polynomial arithmetic.

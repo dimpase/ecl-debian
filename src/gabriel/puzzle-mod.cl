@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/puzzle-mod.cl,v 1.2 2001/07/27 17:01:29 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/puzzle-mod.cl,v 1.3 2001/08/18 10:55:10 jjgarcia Exp $
 ;; $Locker:  $
 
 (eval-when (compile load eval)
