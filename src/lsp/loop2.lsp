@@ -49,7 +49,7 @@
 
 #+cmu
 (ext:file-comment
- "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.6 2003/03/17 10:39:59 jjgarcia Exp $")
+ "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.7 2003/03/21 14:19:14 jjgarcia Exp $")
 
 ;;;; LOOP Iteration Macro
 
@@ -934,7 +934,7 @@ a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.
 	     (macrolet ((f (overhead &optional (args nil args-p))
 			  `(the fixnum (+ (the fixnum ,overhead)
 					  (the fixnum (list-size ,(if args-p args '(cdr x))))))))
-	       (cond ((setq tem (get fn 'estimate-code-size))
+	       (cond ((setq tem (get-sysprop fn 'estimate-code-size))
 		      (typecase tem
 			(fixnum (f tem))
 			(t (funcall tem x env))))
