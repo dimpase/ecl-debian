@@ -49,7 +49,7 @@
 
 #+cmu
 (ext:file-comment
- "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.8 2003/04/10 18:42:17 jjgarcia Exp $")
+ "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.9 2003/04/10 19:21:54 jjgarcia Exp $")
 
 ;;;; LOOP Iteration Macro
 
@@ -1657,7 +1657,6 @@ collected result will be returned as the value of the LOOP."
     (apply (car tem) var first-arg data-type (cdr tem))))
 
 (defun loop-do-repeat ()
-  (declare (si::c-local))
   (loop-disallow-conditional :repeat)
   (let ((form (loop-get-form))
 	(type 'real))
