@@ -49,7 +49,7 @@
 
 #+cmu
 (ext:file-comment
- "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.4 2002/11/04 14:08:39 jjgarcia Exp $")
+ "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.5 2003/03/10 09:10:51 jjgarcia Exp $")
 
 ;;;; LOOP Iteration Macro
 
@@ -2184,7 +2184,7 @@ collected result will be returned as the value of the LOOP."
     (add-loop-path '(present-symbol present-symbols) 'loop-package-symbols-iteration-path w
 		   :preposition-groups '((:of :in))
 		   :inclusive-permitted nil
-		   :user-data '(:symbol-types (:internal)))
+		   :user-data '(:symbol-types (:internal :external)))
     w))
 
 
