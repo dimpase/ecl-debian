@@ -1,8 +1,10 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/div2.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/div2.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; DIV2 -- Benchmark which divides by 2 using lists of n ()'s.
 ;;; This file contains a recursive as well as an iterative test.
+
+(in-package "TESTING")
 
 (defun create-n (n)
   (declare (type fixnum n))

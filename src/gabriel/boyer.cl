@@ -1,8 +1,10 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/boyer.cl,v 1.3 2001/11/17 11:02:13 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/boyer.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; BOYER -- Logic programming benchmark, originally written by Bob Boyer.
 ;;; Fairly CONS intensive.
+
+(in-package "TESTING")
 
 (defvar **unify-subst**)
 (defvar **temp-temp**)

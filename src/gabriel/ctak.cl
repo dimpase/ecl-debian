@@ -1,7 +1,9 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/ctak.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/ctak.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; CTAK -- A version of the TAKeuchi function that uses the CATCH/THROW facility. 
+
+(in-package "TESTING")
 
 (defun ctak (x y z)
   (catch 'ctak (ctak-aux x y z)))

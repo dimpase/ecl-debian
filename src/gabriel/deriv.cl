@@ -1,8 +1,10 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/deriv.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/deriv.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; DERIV -- Symbolic derivative benchmark written by Vaughn Pratt.  
 ;;; It uses a simple subset of Lisp and does a lot of  CONSing. 
+
+(in-package "TESTING")
 
 (defun deriv-aux (a) (list '/ (deriv a) a))
 

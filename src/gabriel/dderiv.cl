@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/dderiv.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/dderiv.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; DDERIV -- Symbolic derivative benchmark written by Vaughn Pratt.  
@@ -15,6 +15,8 @@
 ;;; code, but the name of the function with that code is stored on the
 ;;; property list of FOO under the indicator BAR, in this case. You may have
 ;;; to do something like:
+
+(in-package "TESTING")
 
 ;;; :property keyword is not Common Lisp.
 

@@ -1,8 +1,10 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/browse.cl,v 1.3 2001/11/17 11:02:13 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/browse.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; BROWSE -- Benchmark to create and browse through an AI-like data base
 ;;; of units.
+
+(in-package "TESTING")
 
 ;;; n is # of symbols
 ;;; m is maximum amount of stuff on the plist

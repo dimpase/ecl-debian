@@ -1,5 +1,7 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/tak-mod.cl,v 1.4 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/tak-mod.cl,v 1.5 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
+
+(in-package "TESTING")
 
 #+excl
 (eval-when (compile) (setq comp::register-use-threshold 6))

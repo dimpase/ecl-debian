@@ -1,9 +1,11 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/takr.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/takr.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; TAKR  -- 100 function (count `em) version of TAK that tries to defeat cache
 ;;; memory effects.  Results should be the same as for TAK on stack machines.
 ;;; Distribution of calls is not completely flat.
+
+(in-package "TESTING")
 
 (defun tak0 (x y z) 
   (declare (type fixnum x y z))

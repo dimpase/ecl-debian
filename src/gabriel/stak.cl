@@ -1,8 +1,10 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/stak.cl,v 1.4 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/stak.cl,v 1.5 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; STAK -- The TAKeuchi function with special variables instead of
 ;;; parameter passing.
+
+(in-package "TESTING")
 
 (defvar stak-x)
 (defvar stak-y)

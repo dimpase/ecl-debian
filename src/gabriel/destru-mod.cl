@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/destru-mod.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/destru-mod.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;; DESTRU -- Destructive operation benchmark
@@ -6,7 +6,8 @@
 ;;mod: add fixnum declaration for n in the following let:
 ;;    (let ((n (floor (the fixnum (length (car l1))) 2)))
 
-			
+(in-package "TESTING")
+
 (defun destructive (n m)
   (declare (type fixnum n m))
   (let ((l (do ((i 10. (the fixnum (1- i)))

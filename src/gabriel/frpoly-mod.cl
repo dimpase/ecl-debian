@@ -1,4 +1,4 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/frpoly-mod.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/frpoly-mod.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;; FRPOLY -- Benchmark from Berkeley based on polynomial arithmetic.
@@ -17,6 +17,8 @@
 ;;	   The variables *x*, u*, and v are used specially, since this is
 ;;		used to handle polynomial coefficients in a recursive
 ;;		way. Declaring them global is the wrong approach.
+
+(in-package "TESTING")
 
 (defvar ans)
 (defvar coef)

@@ -1,7 +1,9 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/takl.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/takl.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; TAKL -- The TAKeuchi function using lists as counters.
+
+(in-package "TESTING")
 
 (defun listn (n)
   (declare (type fixnum n))

@@ -1,7 +1,9 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/tprint.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/tprint.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; TPRINT -- Benchmark to print and read to the terminal.
+
+(in-package "TESTING")
 
 (defvar test-atoms '(abc1 cde2 efg3 ghi4 ijk5 klm6 mno7 opq8 qrs9
 			  stu0 uvw1 wxy2 xyz3 123a 234b 345c 456d 

@@ -1,7 +1,9 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/fprint.cl,v 1.3 2001/11/17 11:02:14 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/fprint.cl,v 1.4 2001/12/25 16:11:13 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; FPRINT -- Benchmark to print to a file.
+
+(in-package "TESTING")
 
 (defvar test-atoms '(abcdef12 cdefgh23 efghij34 ghijkl45 ijklmn56 klmnop67 
 			      mnopqr78 opqrst89 qrstuv90 stuvwx01 uvwxyz12 
