@@ -1,4 +1,4 @@
-%define _specver        $Id: ecl.spec,v 1.2 2003/11/06 13:49:13 jjgarcia Exp $
+%define _specver        $Id: ecl.spec,v 1.3 2003/12/02 10:49:34 jjgarcia Exp $
 %define _name           ecl
 %define _pkg            %{_name}
 %define _ver            ECL_VERSION
@@ -89,7 +89,6 @@ _d=$_r/%{_docdir}/%{_nv}
 for i in \
         build/doc/*.html \
         src/doc/BUGS \
-        src/doc/help.lsp \
         src/doc/todo.txt
 do
     %{__install} -m 644 $i $_d
@@ -108,15 +107,15 @@ done
 
 # BUG:  to fix problems in the installation code 
 #
-# BUG:  the cause of the first problem is in the configure.in which set the values of
-# libdir, infodir, bindir
-(
-  cd $_r/%{_prefix}
-  %{__installdir} -m 755 share
-  %{__mv} man info share
-)
-# BUG:  the cause of this problem is an 'install -m 644' that installs "cmp.so" with
-# some archive files and lisp files.
+# BUG:  the cause of the first problem is in the configure.in which set the
+# values of libdir, infodir, bindir
+#(
+#  cd $_r/%{_prefix}
+#  %{__installdir} -m 755 share
+#  %{__mv} man info share
+#)
+# BUG: the cause of this problem is an 'install -m 644' that installs "cmp.so"
+# with some archive files and lisp files.
 # find $_r -name "*.fas" | xargs chmod a+x
 
           ##################################################
