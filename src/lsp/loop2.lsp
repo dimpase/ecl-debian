@@ -49,7 +49,7 @@
 
 #+cmu
 (ext:file-comment
- "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.9 2003/04/10 19:21:54 jjgarcia Exp $")
+ "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.10 2003/05/03 17:32:34 jjgarcia Exp $")
 
 ;;;; LOOP Iteration Macro
 
@@ -979,11 +979,8 @@ a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.
 
 (defun loop-error (format-string &rest format-args)
   (declare (si::c-local))
-  #+(or Genera CLOE) (declare (dbg:error-reporter))
-  #+Genera (setq format-args (copy-list format-args))	;Don't ask.
-  (error 'simple-program-error
-	 :format-control "~?~%Current LOOP context:~{ ~S~}."
-	 :format-arguments (list format-string format-args (loop-context))))
+  (si::simple-program-error "~?~%Current LOOP context:~{ ~S~}."
+			format-string format-args (loop-context)))
 
 
 (defun loop-warn (format-string &rest format-args)
