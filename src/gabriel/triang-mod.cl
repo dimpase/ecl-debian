@@ -1,8 +1,11 @@
-;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/triang-mod.cl,v 1.3 2001/08/18 10:55:10 jjgarcia Exp $
+;; $Header: /project/ecl/cvsroot/ecl/src/gabriel/Attic/triang-mod.cl,v 1.4 2001/10/17 16:40:27 jjgarcia Exp $
 ;; $Locker:  $
 
 ;;; TRIANG -- Board game benchmark.
 
+(defvar a)
+(defvar b)
+(defvar c)
 (defvar answer)
 (defvar final)
 
@@ -91,5 +94,11 @@
     (try i 1)))
 
 (defun testtriang ()
+  (declare (notinline cos aref))
+  (print (cos 1.0))
   (triang-setup)
+  (print board)
+  (print (aref a 22))
+  (print (aref b 22))
+  (print (aref c 22))
   (gogogo 22))
