@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.3 2005/02/14 11:11:37 jjgarcia Exp $
+;; $Id: sockets.lisp,v 1.4 2005/02/14 14:46:20 jjgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -381,15 +381,12 @@ SB-SYS:MAKE-FD-STREAM."))
   ;; reassigned to some other file, and closing it would be bad
 
   (let ((fd (socket-file-descriptor socket)))
-    (cond ((eql fd -1) ; already closed
-	   nil)
-	  ((slot-boundp socket 'stream)
-	   (close (slot-value socket 'stream)) ;; closes fd
-	   (setf (slot-value socket 'file-descriptor) -1)
-	   (slot-makunbound socket 'stream))
-	  (t
-	   (if (= (socket-close-low-level socket) -1)
-		   (socket-error "close"))))))
+    (unless (eql fd -1) ; already closed
+      (when (slot-boundp socket 'stream)
+	(close (slot-value socket 'stream)) ;; closes fd
+	(slot-makunbound socket 'stream))
+      (if (= (socket-close-low-level socket) -1)
+	  (socket-error "close")))))
 
 ;; FIXME: How bad is manipulating fillp directly?
 (defmethod socket-receive ((socket socket) buffer length
