@@ -3,7 +3,7 @@
 ;;;     Title: The X Render Extension
 ;;;   Created: 2002-08-03
 ;;;    Author: Gilbert Baumann <unk6@rz.uni-karlsruhe.de>
-;;;       $Id: xrender.lisp,v 1.12 2005/03/17 16:47:57 jjgarcia Exp $
+;;;       $Id: xrender.lisp,v 1.13 2005/04/11 08:43:49 jjgarcia Exp $
 ;;; ---------------------------------------------------------------------------
 ;;;
 ;;; (c) copyright 2002, 2003 by Gilbert Baumann
@@ -869,8 +869,8 @@ by every function, which attempts to generate RENDER requests."
 
 
 ;; $Log: xrender.lisp,v $
-;; Revision 1.12  2005/03/17 16:47:57  jjgarcia
-;; Implemented our version of Gray streams.
+;; Revision 1.13  2005/04/11 08:43:49  jjgarcia
+;; DEFCBODY, DEFLA and DEFENTRY reimplemented. DEFVAR and DEFPARAMETER are no longer treated specially by the compiler. Globals declared by DEFPARAMETER toplevel forms are now recognized by the compiler.
 ;;
 ;; Revision 1.1  2004/06/10 07:59:31  jlr
 ;; Portable CLX library imported
