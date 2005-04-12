@@ -3,7 +3,7 @@
 ;;;     Title: The X Render Extension
 ;;;   Created: 2002-08-03
 ;;;    Author: Gilbert Baumann <unk6@rz.uni-karlsruhe.de>
-;;;       $Id: xrender.lisp,v 1.13 2005/04/11 08:43:49 jjgarcia Exp $
+;;;       $Id: xrender.lisp,v 1.14 2005/04/12 11:59:36 jjgarcia Exp $
 ;;; ---------------------------------------------------------------------------
 ;;;
 ;;; (c) copyright 2002, 2003 by Gilbert Baumann
@@ -869,8 +869,8 @@ by every function, which attempts to generate RENDER requests."
 
 
 ;; $Log: xrender.lisp,v $
-;; Revision 1.13  2005/04/11 08:43:49  jjgarcia
-;; DEFCBODY, DEFLA and DEFENTRY reimplemented. DEFVAR and DEFPARAMETER are no longer treated specially by the compiler. Globals declared by DEFPARAMETER toplevel forms are now recognized by the compiler.
+;; Revision 1.14  2005/04/12 11:59:36  jjgarcia
+;; The build system has been cleaned. The --with-system-* options now can automatically detect the existence of GMP and Boehm-Weiser libraries
 ;;
 ;; Revision 1.1  2004/06/10 07:59:31  jlr
 ;; Portable CLX library imported
