@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.13 2005/05/19 11:27:30 jjgarcia Exp $
+;; $Id: sockets.lisp,v 1.14 2005/05/19 11:34:15 jjgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -42,7 +42,9 @@
  "#include <netinet/in.h>"
  "#include <errno.h>"
  "#include <fcntl.h>"
- "#include <stdio.h>")
+ "#include <stdio.h>"
+ #+:cygwin
+ "#define MSG_WAITALL 0")
 #+:wsock
 (clines
  "#include <winsock2.h>"
@@ -1260,7 +1262,7 @@ GET-NAME-SERVICE-ERRNO")
 (define-sockopt socket-dont-route "SO_DONTROUTE" bool)
 (define-sockopt socket-linger "SO_LINGER" bool)
 
-#-(or :linux :wsock)
+#-(or :linux :wsock :cygwin)
 (define-sockopt sockopt-reuse-port "SO_REUSEPORT" bool)
 
 ;; Add sockopts here as you need them...
