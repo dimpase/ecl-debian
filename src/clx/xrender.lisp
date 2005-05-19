@@ -3,7 +3,7 @@
 ;;;     Title: The X Render Extension
 ;;;   Created: 2002-08-03
 ;;;    Author: Gilbert Baumann <unk6@rz.uni-karlsruhe.de>
-;;;       $Id: xrender.lisp,v 1.15 2005/05/19 11:27:30 jjgarcia Exp $
+;;;       $Id: xrender.lisp,v 1.16 2005/05/19 11:31:18 jjgarcia Exp $
 ;;; ---------------------------------------------------------------------------
 ;;;
 ;;; (c) copyright 2002, 2003 by Gilbert Baumann
@@ -869,7 +869,7 @@ by every function, which attempts to generate RENDER requests."
 
 
 ;; $Log: xrender.lisp,v $
-;; Revision 1.15  2005/05/19 11:27:30  jjgarcia
+;; Revision 1.16  2005/05/19 11:31:18  jjgarcia
 ;; NetBSD's mkdir does not like the trailing slash in a directory name
 ;;
 ;; Revision 1.1  2004/06/10 07:59:31  jlr
