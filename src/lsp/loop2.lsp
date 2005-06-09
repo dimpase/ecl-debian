@@ -49,7 +49,7 @@
 
 #+cmu
 (ext:file-comment
- "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.11 2005/01/10 09:41:22 jjgarcia Exp $")
+ "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.12 2005/06/09 18:10:09 jjgarcia Exp $")
 
 ;;;; LOOP Iteration Macro
 
@@ -1179,11 +1179,16 @@ collected result will be returned as the value of the LOOP."
 
 (defun loop-typed-init (data-type)
   (declare (si::c-local))
-  (when (and data-type (subtypep data-type 'number))
-    (if (or (subtypep data-type 'float) (subtypep data-type '(complex float)))
-	(coerce 0 data-type)
-	0)))
-
+  (cond ((null data-type)
+	 nil)
+	((subtypep data-type 'character)
+	 #\0)
+	((not (subtypep data-type 'number))
+	 nil)
+	((subtypep data-type '(or float (complex float)))
+	 (coerce 0 data-type))
+	(t
+	 0)))
 
 (defun loop-optional-type (&optional variable)
   (declare (si::c-local))
