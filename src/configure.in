@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9g],[])
-AC_REVISION([$Revision: 1.105 $])
+AC_REVISION([$Revision: 1.106 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -428,7 +428,7 @@ if test ${enable_boehm} = "included"; then
   AC_MSG_NOTICE([Configuring included Boehm GC library:])
   test -d gc && rm -rf gc
   if mkdir gc; then
-     (destdir=`${PWDCMD}`; cd gc; }
+     (destdir=`${PWDCMD}`; cd gc; \
       CC="${CC} ${PICFLAG}" CFLAGS="${CFLAGS}" LDFLAGS="${LDFLAGS}" \
         $srcdir/gc/configure --disable-shared --prefix=${destdir} \
 	--includedir=${destdir}/h --libdir=${destdir} --build=${build_alias} \
