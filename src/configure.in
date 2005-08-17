@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9g],[])
-AC_REVISION([$Revision: 1.108 $])
+AC_REVISION([$Revision: 1.109 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -406,13 +406,13 @@ if test "${with_clos_streams}" = "yes"; then
 fi
 
 if test "${with_cmp}" = "yes"; then
-  ECL_ADD_LISP_LIBRARY([cmp], [sysfun.lsp])
+  ECL_ADD_LISP_MODULE([cmp])
 fi
 
 AC_SUBST(CLX_INFO)
 if test ${with_clx} = "yes"; then
   tcp="yes"
-  ECL_ADD_LISP_LIBRARY([clx])
+  ECL_ADD_LISP_MODULE([clx])
   CLX_INFO="clx.${INFOEXT}"
 else
   CLX_INFO=""
@@ -420,7 +420,7 @@ fi
 
 if test "${with_tcp}" = "yes"; then
   EXTRA_OBJS="${EXTRA_OBJS} tcp.${OBJEXT}"
-  ECL_ADD_LISP_MODULE([sockets], [yes])
+  ECL_ADD_LISP_MODULE([sockets])
   LIBS="${LIBS} ${TCPLIBS}"
 fi
 
