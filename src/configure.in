@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9g],[])
-AC_REVISION([$Revision: 1.116 $])
+AC_REVISION([$Revision: 1.117 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -126,6 +126,12 @@ AC_ARG_WITH(cmp,
   AS_HELP_STRING( [--with-cmp],
                   [build in the compiler (default=YES)] ),
   [], [with_cmp=yes])
+
+AC_ARG_WITH(rt,
+  AS_HELP_STRING( [--with-rt],
+                  [include MIT-RT testing environment]
+                  [(default=YES)]),
+  [], [with_rt=])
 
 dnl -----------------------------------------------------------------------
 dnl Installation directories
@@ -432,6 +438,10 @@ fi
 
 if test "${with_asdf}" = "yes"; then
   ECL_ADD_LISP_MODULE([asdf])
+fi
+
+if test "" = "yes"; then
+  ECL_ADD_LISP_MODULE([rt])
 fi
 
 dnl ----------------------------------------------------------------------
