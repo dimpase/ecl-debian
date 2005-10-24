@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.15 2005/10/06 08:06:08 goffioul Exp $
+;; $Id: sockets.lisp,v 1.16 2005/10/24 10:14:15 jjgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -47,7 +47,7 @@
  "#define MSG_WAITALL 0")
 #+:wsock
 (clines
- #+(and :msvc (not :threads))
+ #+(and (or :msvc :mingw32) (not :threads))
  "#include <winsock2.h>"
  "typedef unsigned int uint32_t;"
  #-:mingw32
