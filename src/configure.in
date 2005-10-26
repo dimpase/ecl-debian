@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9g],[])
-AC_REVISION([$Revision: 1.120 $])
+AC_REVISION([$Revision: 1.121 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -338,6 +338,7 @@ ECL_LINEFEED_MODE
 ECL_FIND_SETJMP
 ECL_FILE_STRUCTURE
 ECL_FFI
+ECL_FPE_MODEL
 
 dnl -----------------------------------------------------------------------
 dnl Study the call conventions
