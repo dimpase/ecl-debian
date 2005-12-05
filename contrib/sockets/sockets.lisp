@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.16 2005/10/24 10:14:15 jjgarcia Exp $
+;; $Id: sockets.lisp,v 1.17 2005/12/05 09:21:30 goffioul Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -1017,7 +1017,7 @@ on SOCKET (which must be connected).  ARGS are ignored."))
 	cl_object in_strm, out_strm;
 	in_strm = ecl_make_stream_from_fd(make_simple_string(\"FD-STREAM\"), #0, smm_input);
 	out_strm = ecl_make_stream_from_fd(make_simple_string(\"FD-STREAM\"), #0, smm_output);
-	@(return) = make_two_way_stream(in_strm, out_strm);
+	@(return) = cl_make_two_way_stream(in_strm, out_strm);
 }"
                                :one-liner nil)))
       (setf (slot-value socket 'stream) stream)
