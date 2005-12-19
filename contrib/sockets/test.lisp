@@ -1,3 +1,15 @@
+;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
+;; $Id: test.lisp,v 1.2 2005/12/19 14:32:27 jjgarcia Exp $
+
+;; This file is based on SBCL's SB-BSD-SOCKET module and has been
+;; heavily modified to work with ECL by Julian Stecklina.
+;; Port to Windows Sockets contributed by M. Goffioul.
+
+;; You may do whatever you want with this file. (PUBLIC DOMAIN)
+
+;; Trivial stuff is copied from SBCL's SB-BSD-SOCKETS, which is also
+;; in the public domain.
+
 (in-package :cl-user)
 
 (load "sys:sockets")
