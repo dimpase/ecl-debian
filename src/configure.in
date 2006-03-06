@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9h],[])
-AC_REVISION([$Revision: 1.126 $])
+AC_REVISION([$Revision: 1.127 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -507,7 +507,7 @@ fi
 
 AC_CONFIG_FILES([
   bare.lsp lsp/load.lsp clos/load.lsp cmp/load.lsp
-  ../Makefile Makefile c/Makefile doc/Makefile doc/ecl.man
+  ../Makefile Makefile c/Makefile doc/Makefile doc/ecl.man doc/ecl-config.man
   ecl/configpre.h:h/config.h.in bin/ecl-config.pre:util/ecl-config
   lsp/config.pre:lsp/config.lsp.in compile.pre:compile.lsp.in
   cmp/cmpdefs.pre:cmp/cmpdefs.lsp
