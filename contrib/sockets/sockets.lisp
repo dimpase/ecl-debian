@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.18 2006/04/18 19:53:50 jgarcia Exp $
+;; $Id: sockets.lisp,v 1.19 2006/04/21 14:22:51 mgoffioul Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -54,6 +54,10 @@
  "typedef int ssize_t;"
  "typedef int socklen_t;"
  "#define MSG_WAITALL 0"
+ "#define MSG_EOR 0"
+ "#define MSG_DONTWAIT 0"
+ "#define MSG_CONFIRM 0"
+ "#define MSG_NOSIGNAL 0"
  "#include <errno.h>"
  "#include <fcntl.h>"
  "#include <stdio.h>")
@@ -667,13 +671,14 @@ static void fill_inet_sockaddr(struct sockaddr_in *sockaddr, int port,
                     ( #d ? MSG_CONFIRM : 0 );
         cl_type type = type_of(#1);
         struct sockaddr_in sockaddr;
+	ssize_t len;
 
 	fill_inet_sockaddr(&sockaddr, #3, #4, #5, #6, #7);
 
-        ssize_t len = sendto(#0,( type == t_vector ? #1->vector.self.ch :
-                                ( type == t_string ? #1->string.self : NULL )),
-                             #2, flags,(struct sockaddr*)&sockaddr, 
-                             sizeof(struct sockaddr_in));
+        len = sendto(#0,( type == t_vector ? #1->vector.self.ch :
+                        ( type == t_string ? #1->string.self : NULL )),
+                       #2, flags,(struct sockaddr*)&sockaddr, 
+                       sizeof(struct sockaddr_in));
         @(return) = len;
 }
 "
