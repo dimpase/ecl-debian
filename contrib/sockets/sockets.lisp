@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.24 2006/05/29 08:51:28 jgarcia Exp $
+;; $Id: sockets.lisp,v 1.25 2006/05/29 08:51:37 jgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -469,7 +469,7 @@ safe_buffer_pointer(cl_object x, cl_index size)
                                #2, flags, NULL,NULL);
         if (len >= 0) {
                if (type == t_vector) { #1->vector.fillp = len; }
-               else if (type == t_string) { #1->base_string.fillp = len; }
+               else if (type == t_base_string) { #1->base_string.fillp = len; }
         }
         @(return) = len;
 }
