@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.25 2006/05/29 08:51:37 jgarcia Exp $
+;; $Id: sockets.lisp,v 1.26 2006/06/26 07:33:35 jgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -50,6 +50,12 @@
  "#endif"
  "#ifndef MSG_NOSIGNAL"
  "#define MSG_NOSIGNAL 0"
+ "#endif"
+ "#ifndef MSG_DONTWAIT"
+ "#define MSG_DONTWAIT 0"
+ "#endif"
+ "#ifndef MSG_EOR"
+ "#define MSG_EOR 0"
  "#endif")
 #+:wsock
 (clines
