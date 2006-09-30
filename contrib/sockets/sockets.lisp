@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.27 2006/09/26 08:12:32 jgarcia Exp $
+;; $Id: sockets.lisp,v 1.28 2006/09/30 16:48:48 jgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -1104,7 +1104,7 @@ also known as unix-domain sockets."))
 		  buffering)
 	    (t :int :int :object)
 	    t
-	    "si_set_buffering_mode(ecl_make_stream_from_fd(#0,#1,(ecl_smmode)#2), #3)"
+	    "si_set_buffering_mode(ecl_make_stream_from_fd(#0,#1,(enum ecl_smmode)#2), #3)"
 	    :one-liner t))
 
 (defmethod socket-make-stream ((socket socket)  &rest args &key (buffering-mode NIL))
