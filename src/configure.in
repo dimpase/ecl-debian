@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9i],[])
-AC_REVISION([$Revision: 1.136 $])
+AC_REVISION([$Revision: 1.137 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -430,6 +430,9 @@ dnl !!! end autoscan
 
 AC_CHECK_FUNCS( [nanosleep alarm times isnanf select setenv putenv] \
                 [lstat mkstemp sigprocmask isatty feenableexcept tzset] )
+
+AC_CHECK_FUNCS( [expf logf sqrtf cosf sinf tanf sinhf coshf tanhf] \
+		[floorf ceilf fabsf frexpf ldexpf])
 
 dnl =====================================================================
 dnl Checks for system services
