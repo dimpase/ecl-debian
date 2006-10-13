@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9i],[])
-AC_REVISION([$Revision: 1.137 $])
+AC_REVISION([$Revision: 1.138 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -391,10 +391,10 @@ ECL_FILE_STRUCTURE
 ECL_FFI
 ECL_FPE_MODEL
 
-if test "$enable_longdouble" != "no" ; then
+if test "$longdouble" != "no" ; then
 AC_CHECK_TYPES([long double])
 fi
-if test "$enable_c99complex" != "no" ; then
+if test "$c99complex" != "no" ; then
 AC_CHECK_TYPES([double complex, float complex],[],[],[#include <complex.h>])
 fi
 
