@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9i],[])
-AC_REVISION([$Revision: 1.141 $])
+AC_REVISION([$Revision: 1.142 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -580,9 +580,9 @@ else
     if mkdir gmp; then
      ECL_GMP_HEADER='ecl/gmp.h'
      dnl Notice we need -DPIC to force the assembler to generate PIC code
-     (destdir=`${PWDCMD}`; cd gmp; CC="${CC} ${PICFLAG} -DPIC" \
+     (destdir=`${PWDCMD}`; cd gmp; CC="${CC} ${PICFLAG}" \
        $srcdir/gmp/configure --disable-shared --prefix=${destdir} \
-	--infodir=${destdir}/doc --includedir=${destdir}/ecl \
+	--infodir=${destdir}/doc --includedir=${destdir}/ecl --with-pic \
         --libdir=${destdir} --build=${gmp_build} --host=${host_alias} $with_gmp)
     fi
   fi
