@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9i],[])
-AC_REVISION([$Revision: 1.142 $])
+AC_REVISION([$Revision: 1.143 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -361,7 +361,7 @@ AC_CHECK_HEADERS( [fcntl.h inttypes.h limits.h netdb.h netinet/in.h] \
 dnl !!! end autoscan
 
 AC_CHECK_HEADERS( [sys/resource.h sys/utsname.h float.h pwd.h dlfcn.h link.h] \
-                  [mach-o/dyld.h ulimit.h dirent.h sys/ioctl.h])
+                  [mach-o/dyld.h ulimit.h dirent.h sys/ioctl.h sys/select.h])
 
 dnl =====================================================================
 dnl Checks for typedefs, structures, and compiler characteristics.
