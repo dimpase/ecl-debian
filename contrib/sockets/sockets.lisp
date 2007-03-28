@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.30 2007/03/24 11:19:41 jgarcia Exp $
+;; $Id: sockets.lisp,v 1.31 2007/03/28 07:57:52 jgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -38,7 +38,7 @@
  "#include <sys/socket.h>"
  "#include <sys/un.h>"
  "#include <netdb.h>"
- "#include <strings.h>"
+ "#include <string.h>"
  "#include <netinet/in.h>"
  "#include <errno.h>"
  "#include <fcntl.h>"
