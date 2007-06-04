@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9i],[])
-AC_REVISION([$Revision: 1.144 $])
+AC_REVISION([$Revision: 1.145 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -185,8 +185,8 @@ AC_ARG_ENABLE(hpack,
 
 dnl -----------------------------------------------------------------------
 dnl Installation directories
-libdir="${libdir}/ecl"
-includedir="${libdir}"
+ecldir="${libdir}/ecl"
+AC_SUBST([ecldir])
 test -z "${docdir}" && docdir="${datadir}/doc/ecl"
 AC_SUBST([docdir])
 
