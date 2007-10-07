@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9i],[])
-AC_REVISION([$Revision: 1.145 $])
+AC_REVISION([$Revision: 1.146 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -121,6 +121,11 @@ AC_ARG_WITH(tcp,
   AS_HELP_STRING( [--with-tcp],
                   [include socket interface (default=YES)]),
   [], [with_tcp=yes])
+
+AC_ARG_WITH(serve_event,
+  AS_HELP_STRING( [--with-serve-event],
+                  [include serve-event module (default=YES)]),
+  [], [with_serve_event=yes])
 
 AC_ARG_WITH(clx,
   AS_HELP_STRING( [--with-clx],
@@ -506,6 +511,10 @@ if test "${with_tcp}" = "yes"; then
   EXTRA_OBJS="${EXTRA_OBJS} tcp.${OBJEXT}"
   ECL_ADD_LISP_MODULE([sockets])
   LIBS="${LIBS} ${TCPLIBS}"
+fi
+
+if test "${with_serve_event}" = "yes"; then
+  ECL_ADD_LISP_MODULE([serve-event])
 fi
 
 if test "${with_asdf}" = "yes"; then
