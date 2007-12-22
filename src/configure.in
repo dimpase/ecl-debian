@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9i],[])
-AC_REVISION([$Revision: 1.147 $])
+AC_REVISION([$Revision: 1.148 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -516,7 +516,12 @@ if test "${with_tcp}" = "yes"; then
 fi
 
 if test "${with_serve_event}" = "yes"; then
-  ECL_ADD_LISP_MODULE([serve-event])
+  case "${host_os}" in
+    mingw*|cygwin*) ;;
+    *)
+      ECL_ADD_LISP_MODULE([serve-event])
+    ;;
+  esac
 fi
 
 if test "${with_asdf}" = "yes"; then
