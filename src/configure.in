@@ -9,7 +9,7 @@ dnl  Giuseppe Attardi 25.1.1994
 dnl
 
 AC_INIT([ecl],[0.9j],[])
-AC_REVISION([$Revision: 1.149 $])
+AC_REVISION([$Revision: 1.150 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -125,7 +125,7 @@ AC_ARG_WITH(tcp,
 AC_ARG_WITH(serve_event,
   AS_HELP_STRING( [--with-serve-event],
                   [include serve-event module (default=YES)]),
-  [], [with_serve_event=yes])
+  [], [with_serve_event=${enable_shared}])
 
 AC_ARG_WITH(clx,
   AS_HELP_STRING( [--with-clx],
