@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: SYSTEM -*-
+;;;;
 ;;;   -*- Mode: LISP; Syntax: Common-lisp; Base: 10; Lowercase:T -*-
 ;;;>
 ;;;> Portions of LOOP are Copyright (c) 1986 by the Massachusetts Institute of Technology.
@@ -49,7 +51,7 @@
 
 #+cmu
 (ext:file-comment
- "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.13 2005/07/04 09:20:30 jjgarcia Exp $")
+ "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.14 2008/02/02 19:14:06 jgarcia Exp $")
 
 ;;;; LOOP Iteration Macro
 
