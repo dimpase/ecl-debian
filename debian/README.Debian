@@ -1,0 +1,8 @@
+The libecl.so file is changing too quickly and
+is integrated with the ecl binary to such extend
+that, after consultation with upstream,  I will 
+not create a libecl package.
+
+If ecl will reach a stable release (1.0 or so) and
+some guarantees with respect to API stability 
+can be make I will reconsider this decision.

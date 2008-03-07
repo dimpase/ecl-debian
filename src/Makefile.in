@@ -122,7 +122,7 @@ BUILD-STAMP: config.status
 	echo "#" `uname -a` > $@
 	head -8 config.log | tail -6 >> $@
 install: install-base
-#	cd doc; $(MAKE) prefix=$(prefix) DESTDIR=$(DESTDIR) install
+	cd doc; $(MAKE) prefix=$(prefix) DESTDIR=$(DESTDIR) install
 install-base:
 	# Here we would use the option -s but the install program in sourceforge-solaris
 	# is broken.

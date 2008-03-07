@@ -1,0 +1,99 @@
+ecl (0.9i-20071219-1) UNRELEASED; urgency=low
+
+  * Use Vcs-Bzr in control file
+  * New upstream version.
+  * updated standard version no real changes
+  * added Homepage
+  * Use default gcc
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 19 Dec 2007 21:57:28 +0100
+
+ecl (0.9i-20070908-1) unstable; urgency=low
+
+  * added Svc line to control file
+  * New upstream.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 27 Sep 2007 06:08:29 +0200
+
+ecl (0.9i-20070324-2) unstable; urgency=low
+
+  * Upload to unstable. 
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Mon, 09 Apr 2007 11:51:51 +0200
+
+ecl (0.9i-20070324-1) experimental; urgency=low
+
+  * New upstream version, adds support for Hurd.
+    (Closes: #410374, #410368, #410367)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 27 Mar 2007 09:35:49 +0200
+
+ecl (0.9i-20070214-1) experimental; urgency=low
+
+  * new upstream, added GC_total_bytes fix.
+  * updated standard version, no real changes
+  * Fix for the strange FTBFS when unpacked in a path with a space 
+    (Closes: #410009)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 27 Feb 2007 11:59:49 +0100
+
+ecl (0.9i-2) unstable; urgency=low
+
+  * added GNU/kFreeBSD support (Closes: #377042)
+  * Use system boehm gc.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Mon, 24 Jul 2006 19:35:12 +0200
+
+ecl (0.9i-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Sun,  2 Jul 2006 00:20:00 +0200
+
+ecl (0.9h-20060617-1) unstable; urgency=low
+
+  * New upstream version
+  * Updated standards version without real changes. 
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 21 Jun 2006 09:21:21 +0200
+
+ecl (0.9h-20060510-1) unstable; urgency=low
+
+  * New upstream release.
+  * Did some rpath magic. Should:
+    (Closes: #367415)
+  * Updated doc-base file to include Index
+  * Added removal of ecl and .o files  on upgrade
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 17 May 2006 02:46:26 +0200
+
+ecl (0.9h-20060322-1) unstable; urgency=low
+
+  * New upstream
+  * Added build libraries and tools also for
+    main package, as it needs gcc and libraries to
+    build a new pacakge. (Closes: #360572)
+  * Build with gcc-4.1  (Closes: #362088)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 13 Apr 2006 09:16:16 +0200
+
+ecl (0.9h-20060216-2) unstable; urgency=low
+
+  [René van Bevern]
+  * debian/control:
+    + Build-Depends: add dh-lisp 0.6
+    + Depends: remove common-lisp-controller (>= 5.11), it is
+      automatically added
+    + Provides: remove ${ecl:fasl-version} as it is defined nowhere
+  
+  [Peter Van Eynde]
+  * Expanded copyright file to properly differentate files.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Sun, 26 Mar 2006 22:49:02 +0200
+
+ecl (0.9h-20060216-1) unstable; urgency=low
+
+  * Initial release. (Closes: #261350)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 11 Jan 2006 15:13:59 +0100
+
