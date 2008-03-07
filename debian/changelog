@@ -1,12 +1,14 @@
-ecl (0.9i-20071219-1) UNRELEASED; urgency=low
+ecl (0.9j-20080306-1) unstable; urgency=low
 
-  * Use Vcs-Bzr in control file
   * New upstream version.
   * updated standard version no real changes
   * added Homepage
-  * Use default gcc
+  * Use default gcc (Closes: #463291)
+  * Changed to group maintanance
+  * Corrected Vcs-Git control field
+  * swap binary-indep and binary-arch round
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 19 Dec 2007 21:57:28 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Fri, 07 Mar 2008 22:13:58 +0100
 
 ecl (0.9i-20070908-1) unstable; urgency=low
 
