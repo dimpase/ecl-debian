@@ -7,7 +7,7 @@ Build-Depends: debhelper (>> 4.0.0), autotools-dev, libgmp3-dev,  automake1.9, f
 Build-Conflicts: autoconf2.13, automake1.4
 Standards-Version: 3.7.3.0
 Homepage: http://ecls.sourceforge.net/
-Vcs-Bzr: http://cl-debian.alioth.debian.org/repository/pvaneynd/bzr-moved/ecl/
+Vcs-Git: http://git.debian.org/git/pkg-common-lisp/ecl.git
 
 Package: ecl
 Section: devel
