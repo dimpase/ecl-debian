@@ -200,6 +200,14 @@ EXPORTS
 	; interpreter.c
 
 	si_interpreter_stack
+	ecl_stack_frame_reserve
+	ecl_stack_frame_push
+	ecl_stack_frame_push_va_list
+	ecl_stack_frame_close
+	ecl_stack_frame_pop_values
+	ecl_stack_frame_elt
+	ecl_stack_frame_elt_set
+	ecl_apply_from_stack_frame
 
 	cl_stack_push
 	cl_stack_pop
@@ -371,7 +379,7 @@ EXPORTS
 	;si_set_funcallable
 	si_generic_function_p
 
-	_ecl_compute_method
+	_ecl_standard_dispatch
 
 
 	; hash.c
@@ -1350,6 +1358,24 @@ EXPORTS
 	cl_stable_sort
 	cl_merge
 	cl_constantly
+
+	; format.lsp
+
+	si_format_princ
+	si_format_prin1
+	si_format_print_named_character
+	si_format_print_integer
+	si_format_print_cardinal
+	si_format_print_ordinal
+	si_format_print_old_roman
+	si_format_print_roman
+	si_format_fixed
+	si_format_exponential
+	si_format_general
+	si_format_dollars
+	si_format_relative_tab
+	si_format_absolute_tab
+	si_format_justification
 
 	; pprint.lsp
 

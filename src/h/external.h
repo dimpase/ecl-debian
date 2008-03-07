@@ -1,3 +1,4 @@
+/* -*- mode: c; c-basic-offset: 8 -*- */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -96,6 +97,19 @@ struct cl_env_struct {
 	cl_object own_process;
 #endif
 	int interrupt_pending;
+
+	/* The following is a hash table for caching invocations of
+	   generic functions. In a multithreaded environment we must
+	   queue operations in which the hash is cleared from updated
+	   generic functions. */
+#ifdef CLOS
+#ifdef ECL_THREADS
+	cl_object method_hash_clear_list;
+#endif
+	cl_object method_hash;
+	cl_object method_spec_vector;
+	cl_fixnum method_generation;
+#endif
 
 	/* foreign function interface */
 	void *fficall;
@@ -426,6 +440,16 @@ extern cl_object si_eval_with_env _ARGS((cl_narg narg, cl_object form, ...));
 /* interpreter.c */
 
 extern cl_object si_interpreter_stack _ARGS((cl_narg narg));
+extern void ecl_stack_frame_reserve(cl_object f, cl_index size);
+extern void ecl_stack_frame_push(cl_object f, cl_object o);
+extern void ecl_stack_frame_push_values(cl_object f);
+extern void ecl_stack_frame_push_va_list(cl_object f, cl_va_list args);
+extern void ecl_stack_frame_close(cl_object f);
+extern cl_object ecl_stack_frame_pop_values(cl_object f);
+extern cl_object ecl_stack_frame_elt(cl_object f, cl_index n);
+extern void ecl_stack_frame_elt_set(cl_object f, cl_index n, cl_object o);
+extern cl_object ecl_apply_from_stack_frame(cl_object f, cl_object o);
+#define si_apply_from_stack_frame ecl_apply_from_stack_frame
 
 extern void cl_stack_push(cl_object o);
 extern cl_object cl_stack_pop(void);
@@ -440,7 +464,7 @@ extern void cl_stack_push_n(cl_index n, cl_object *args);
 extern cl_index cl_stack_push_values(void);
 extern void cl_stack_pop_values(cl_index n);
 
-extern cl_object ecl_apply_lambda(cl_narg narg, cl_object fun);
+extern cl_object ecl_apply_lambda(cl_object frame, cl_object fun);
 extern void *ecl_interpret(cl_object bytecodes, void *pc);
 
 /* disassembler.c */
@@ -473,7 +497,7 @@ extern void FEassignment_to_constant(cl_object v) /*__attribute__((noreturn))*/;
 extern void FEundefined_function(cl_object fname) /*__attribute__((noreturn))*/;
 extern void FEinvalid_function(cl_object obj) /*__attribute__((noreturn))*/;
 extern void FEinvalid_function_name(cl_object obj) /*__attribute__((noreturn))*/;
-extern cl_object CEerror(const char *err_str, int narg, ...);
+extern cl_object CEerror(cl_object c, const char *err_str, int narg, ...);
 extern void FEillegal_index(cl_object x, cl_object i);
 extern void FEtype_error_symbol(cl_object obj) /*__attribute__((noreturn))*/;
 extern void FElibc_error(const char *msg, int narg, ...) /*__attribute__((noreturn))*/;
@@ -630,10 +654,12 @@ extern void ecl_register_root(cl_object *p);
 /* gfun.c */
 
 #ifdef CLOS
+extern void _ecl_set_method_hash_size(struct cl_env_struct *env, cl_index size);
+extern cl_object si_clear_gfun_hash(cl_object what);
 extern cl_object clos_set_funcallable_instance_function(cl_object x, cl_object function_or_t);
 extern cl_object si_generic_function_p(cl_object instance);
 
-extern cl_object _ecl_compute_method(cl_narg narg, cl_object fun, cl_object *args);
+extern cl_object _ecl_standard_dispatch(cl_object frame, cl_object fun);
 #endif /* CLOS */
 
 
@@ -1423,6 +1449,7 @@ extern void ecl_release_current_thread(void);
 extern cl_object cl_sleep(cl_object z);
 extern cl_object cl_get_internal_run_time(void);
 extern cl_object cl_get_internal_real_time(void);
+extern cl_object cl_get_universal_time(void);
 
 
 /* typespec.c */
@@ -1462,7 +1489,7 @@ extern cl_object ecl_check_type_string(cl_object fun, cl_object p);
 /* unixfsys.c */
 
 extern cl_object cl_truename(cl_object file);
-extern cl_object cl_rename_file(cl_object old_obj, cl_object new_obj);
+extern cl_object cl_rename_file _ARGS((cl_narg narg, cl_object old_obj, cl_object new_obj, ...));
 extern cl_object cl_delete_file(cl_object file);
 extern cl_object cl_probe_file(cl_object file);
 extern cl_object cl_file_write_date(cl_object file);
@@ -1581,7 +1608,6 @@ extern cl_object cl_logical_pathname_translations _ARGS((cl_narg narg, cl_object
 extern cl_object cl_load_logical_pathname_translations _ARGS((cl_narg, cl_object V1, ...));
 extern cl_object cl_decode_universal_time _ARGS((cl_narg narg, cl_object V1, ...));
 extern cl_object cl_encode_universal_time _ARGS((cl_narg narg, cl_object V1, cl_object V2, cl_object V3, cl_object V4, cl_object V5, cl_object V6, ...));
-extern cl_object cl_get_universal_time _ARGS((cl_narg narg, ...));
 extern cl_object cl_get_decoded_time _ARGS((cl_narg narg, ...));
 extern cl_object cl_ensure_directories_exist _ARGS((cl_narg narg, cl_object V1, ...));
 extern cl_object si_simple_program_error _ARGS((cl_narg narg, cl_object format, ...)) /*__attribute__((noreturn))*/;

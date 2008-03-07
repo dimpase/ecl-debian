@@ -1,3 +1,4 @@
+/* -*- mode: c; c-basic-offset: 8 -*- */
 /*
     main.c --
 */
@@ -91,6 +92,13 @@ ecl_init_env(struct cl_env_struct *env)
 #ifdef ECL_DYNAMIC_FFI
 	env->fficall = cl_alloc(sizeof(struct ecl_fficall));
 	((struct ecl_fficall*)env->fficall)->registers = 0;
+#endif
+
+#ifdef CLOS
+	_ecl_set_method_hash_size(env, 4096);
+#ifdef ECL_THREADS
+	env->method_hash_clear_list = Cnil;
+#endif
 #endif
 
 	init_stacks(&i);
@@ -588,8 +596,8 @@ si_setenv(cl_object var, cl_object value)
 #endif
 	}
 	if (ret_val == -1)
-		CEerror("SI:SETENV failed: insufficient space in environment.",
-			1, "Continue anyway");
+		CEerror(Ct, "SI:SETENV failed: insufficient space in environment.",
+			1, Cnil);
 	@(return (value))
 }
 #endif

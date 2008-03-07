@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
 ;;;;
@@ -160,7 +162,8 @@
 ;;; Proclamation and declaration handling.
 
 (defun inline-possible (fname)
-  (not (or ; (compiler-push-events)
+  (not (or ; (compiler-<push-events)
+	;(>= *debug* 2) Breaks compilation of STACK-PUSH-VALUES
 	(member fname *notinline* :test #'same-fname-p)
 	(and (symbolp fname) (get-sysprop fname 'CMP-NOTINLINE)))))
 
@@ -183,7 +186,7 @@
                (not (<= 0 (second x) 3)))
            (warn "The OPTIMIZE proclamation ~s is illegal." x)
            (case (car x)
-		 (DEBUG)
+		 (DEBUG (setq *debug* (second x)))
                  (SAFETY (setq *safety* (second x)))
                  (SPACE (setq *space* (second x)))
                  (SPEED (setq *speed* (second x)))
@@ -343,6 +346,23 @@
   (values body ss ts is others doc all-declarations)
   )
 
+(defun default-optimization (optimization)
+  (ecase optimization
+    (speed *speed*)
+    (safety *safety*)
+    (space *space*)
+    (debug *debug*)))
+
+(defun search-optimization-quality (declarations what)
+  (dolist (i (reverse declarations)
+	   (default-optimization what))
+    (when (and (consp i) (eq (first i) 'optimize))
+      (dolist (j (rest i))
+	(cond ((consp j)
+	       (when (eq (first j) what) (return (second j))))
+	      ((eq j what)
+	       (return 3)))))))
+
 (defun c1add-declarations (decls &aux (dl nil))
   (dolist (decl decls dl)
     (case (car decl)
@@ -356,7 +376,7 @@
 		 (not (<= 0 (second x) 3)))
 	   (cmpwarn "The OPTIMIZE proclamation ~s is illegal." x)
 	   (case (car x)
-	     (DEBUG)
+	     (DEBUG (setq *debug* (second x)))
 	     (SAFETY (setq *safety* (second x)))
 	     (SPACE (setq *space* (second x)))
 	     ((SPEED COMPILATION-SPEED))
@@ -400,6 +420,7 @@
 	     (*safety* *safety*)
 	     (*space* *space*)
  	     (*speed* *speed*)
+	     (*debug* *debug*)
 	     (dl (c1add-declarations decls)))
 	(setq body (c1progn body))
 	(make-c1form 'DECL-BODY body dl body))))
@@ -410,6 +431,7 @@
   (let ((*safety* *safety*)
         (*space* *space*)
 	(*speed* *speed*)
+	(*debug* *debug*)
         (*notinline* *notinline*))
     (c1add-declarations decls)
     (c2expr body)))

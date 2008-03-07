@@ -1,3 +1,4 @@
+/* -*- mode: c; c-basic-offset: 8 -*- */
 /*
     compiler.c -- Bytecode compiler
 */
@@ -345,7 +346,7 @@ asm_op2c(register int code, register cl_object o) {
 static void
 c_register_block(cl_object name)
 {
-	ENV->variables = CONS(cl_list(2, @':block', name), ENV->variables);
+	ENV->variables = CONS(cl_list(3, @':block', name, Cnil), ENV->variables);
 }
 
 static void
@@ -357,7 +358,7 @@ c_register_tags(cl_object all_tags)
 static void
 c_register_function(cl_object name)
 {
-	ENV->variables = CONS(cl_list(2, @':function', name), ENV->variables);
+	ENV->variables = CONS(cl_list(3, @':function', name, Cnil), ENV->variables);
 	ENV->macros = CONS(cl_list(2, name, @'function'), ENV->macros);
 }
 
@@ -467,8 +468,11 @@ c_tag_ref(cl_object the_tag, cl_object the_type)
 			n++;
 		} else if (type == @':block' || type == @':function') {
 			/* We compare with EQUAL, because of (SETF fname) */
-			if (type == the_type && ecl_equal(name, the_tag))
+			if (type == the_type && ecl_equal(name, the_tag)) {
+				/* Mark as used */
+				CADDR(record) = Ct;
 				return MAKE_FIXNUM(n);
+			}
 			n++;
 		} else if (Null(name)) {
 			n++;
@@ -691,29 +695,42 @@ maybe_reg0(int flags) {
 */
 
 static int
-c_block(cl_object body, int flags) {
+c_block(cl_object body, int old_flags) {
+	struct cl_compiler_env old_env;
 	cl_object name = pop(&body);
-	cl_object old_env = ENV->variables;
-	cl_index labelz;
+	cl_object block_record;
+	cl_index labelz, pc;
+	int flags;
 
 	if (!SYMBOLP(name))
 		FEprogram_error("BLOCK: Not a valid block name, ~S", 1, name);
 
-	flags = maybe_values_or_reg0(flags);
+	old_env = *ENV;
+	pc = current_pc();
+
+	flags = maybe_values_or_reg0(old_flags);
 	c_register_block(name);
-	if (Null(name))
+	block_record = CAR(ENV->variables);
+	if (Null(name)) {
 		labelz = asm_jmp(OP_DO);
-	else {
+	} else {
 		asm_op(OP_BLOCK);
 		asm_c(name);
 		labelz = current_pc();
 		asm_arg(0);
 	}
 	compile_body(body, flags);
-	asm_op(OP_EXIT_FRAME);
-	asm_complete(Null(name)? OP_DO : 0, labelz);
-	ENV->variables = old_env;
-	return flags;
+	if (CADDR(block_record) == Cnil) {
+		/* Block unused. We remove the enclosing OP_BLOCK/OP_DO */
+		*ENV = old_env;
+		set_pc(pc);
+		return compile_body(body, old_flags);
+	} else {
+		asm_op(OP_EXIT_FRAME);
+		asm_complete(Null(name)? OP_DO : 0, labelz);
+		ENV->variables = old_env.variables;
+		return flags;
+	}
 }
 
 /*
@@ -1901,7 +1918,8 @@ compile_form(cl_object stmt, int flags) {
 		stmt = CAR(stmt);
 		goto QUOTED;
 	}
-	for (l = database; l->symbol != OBJNULL; l++)
+	for (l = database; l->symbol != OBJNULL; l++) {
+		/*cl_print(1, l->symbol);*/
 		if (l->symbol == function) {
 			ENV->lexical_level += l->lexical_increment;
 			if (ENV->stepping && function != @'function' &&
@@ -1913,6 +1931,7 @@ compile_form(cl_object stmt, int flags) {
 				asm_op(OP_STEPOUT);
 			goto OUTPUT;
 		}
+	}
 	/*
 	 * Next try to macroexpand
 	 */
@@ -2115,14 +2134,14 @@ si_process_lambda(cl_object lambda)
  * VALUES(5) = allow-other-keys			; flag &allow-other-keys
  * VALUES(6) = (N aux1 init1 ... )		; auxiliary variables
  *
- * 1°) The prefix "N" is an integer value denoting the number of
+ * 1Â°) The prefix "N" is an integer value denoting the number of
  * variables which are declared within this section of the lambda
  * list.
  *
- * 2°) The INIT* arguments are lisp forms which are evaluated when
+ * 2Â°) The INIT* arguments are lisp forms which are evaluated when
  * no value is provided.
  *
- * 3°) The FLAG* arguments is the name of a variable which holds a
+ * 3Â°) The FLAG* arguments is the name of a variable which holds a
  * boolean value in case an optional or keyword argument was
  * provided. If it is NIL, no such variable exists.
  */
@@ -2372,7 +2391,13 @@ ecl_make_lambda(cl_object name, cl_object lambda) {
 	if (Null(si_valid_function_name_p(name)))
 		FEprogram_error("LAMBDA: Not a valid function name ~S",1,name);
 
-	ENV->constants = reqs;			/* Special arguments */
+	/* We register as special variable a symbol which is not
+	 * to be used. We use this to mark the boundary of a function
+	 * environment and when code-walking */
+	c_register_var(cl_make_symbol(make_constant_base_string("FUNCTION")),
+		       TRUE, TRUE);
+
+	ENV->constants = reqs;			/* Required arguments */
 	reqs = CDR(reqs);
 	while (!ecl_endp(reqs)) {
 		cl_object v = pop(&reqs);

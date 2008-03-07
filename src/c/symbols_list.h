@@ -1,3 +1,4 @@
+/* -*- mode: c; c-basic-offset: 8 -*- */
 #ifdef ECL_CMU_FORMAT
 # define ECL_NAME_PPRINT(x) ECL_NAME(x)
 #else
@@ -446,7 +447,7 @@ cl_symbols[] = {
 {"GET-OUTPUT-STREAM-STRING", CL_ORDINARY, cl_get_output_stream_string, 1, OBJNULL},
 {"GET-PROPERTIES", CL_ORDINARY, cl_get_properties, 2, OBJNULL},
 {"GET-SETF-EXPANSION", CL_ORDINARY, NULL, -1, OBJNULL},
-{"GET-UNIVERSAL-TIME", CL_ORDINARY, ECL_NAME(cl_get_universal_time), -1, OBJNULL},
+{"GET-UNIVERSAL-TIME", CL_ORDINARY, cl_get_universal_time, 0, OBJNULL},
 {"GETF", CL_ORDINARY, cl_getf, -1, OBJNULL},
 {"GETHASH", CL_ORDINARY, cl_gethash, -1, OBJNULL},
 {"GO", CL_FORM, NULL, -1, OBJNULL},
@@ -750,7 +751,7 @@ cl_symbols[] = {
 {"REMOVE-IF", CL_ORDINARY, ECL_NAME(cl_remove_if), -1, OBJNULL},
 {"REMOVE-IF-NOT", CL_ORDINARY, ECL_NAME(cl_remove_if_not), -1, OBJNULL},
 {"REMPROP", CL_ORDINARY, cl_remprop, 2, OBJNULL},
-{"RENAME-FILE", CL_ORDINARY, cl_rename_file, 2, OBJNULL},
+{"RENAME-FILE", CL_ORDINARY, cl_rename_file, -1, OBJNULL},
 {"RENAME-PACKAGE", CL_ORDINARY, cl_rename_package, -1, OBJNULL},
 {"REPLACE", CL_ORDINARY, ECL_NAME(cl_replace), -1, OBJNULL},
 {"REQUIRE", CL_ORDINARY, ECL_NAME(cl_require), -1, OBJNULL},
@@ -1672,6 +1673,13 @@ cl_symbols[] = {
 {SYS_ "*CURRENT-FORM*", SI_SPECIAL, NULL, -1, OBJNULL},
 
 {SYS_ "CODE-BLOCK", SI_ORDINARY, NULL, -1, OBJNULL},
+
+#ifdef CLOS
+{SYS_ "CLEAR-GFUN-HASH", SI_ORDINARY, si_clear_gfun_hash, 1, OBJNULL},
+#endif
+
+{SYS_ "FRAME", SI_ORDINARY, NULL, -1, OBJNULL},
+{SYS_ "APPLY-FROM-STACK-FRAME", SI_ORDINARY, si_apply_from_stack_frame, 2, OBJNULL},
 
 /* Tag for end of list */
 {NULL, CL_ORDINARY, NULL, -1, OBJNULL}};

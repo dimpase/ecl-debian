@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.33 2007/10/14 08:04:42 jgarcia Exp $
+;; $Id: sockets.lisp,v 1.34 2008/03/05 20:01:55 jgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -109,7 +109,7 @@
 
 (define-c-constants
   +af-inet+ "AF_INET"
-  +af-local+ "AF_LOCAL"
+  +af-local+ #-sun4sol2 "AF_LOCAL" #+sun4sol2 "AF_UNIX"
   +eagain+ "EAGAIN"
   +eintr+ "EINTR")
 
@@ -1389,7 +1389,7 @@ GET-NAME-SERVICE-ERRNO")
 (define-sockopt socket-dont-route "SO_DONTROUTE" bool)
 (define-sockopt socket-linger "SO_LINGER" bool)
 
-#-(or :linux :wsock :cygwin)
+#-(or :sun4sol2 :linux :wsock :cygwin)
 (define-sockopt sockopt-reuse-port "SO_REUSEPORT" bool)
 
 ;; Add sockopts here as you need them...

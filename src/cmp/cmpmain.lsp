@@ -1,5 +1,8 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -17,7 +20,7 @@
   `(progn ,@body))
 
 (defun safe-system (string)
-  (cmpnote "Invoking external command:~%;;; ~A~%" string)
+  (cmpnote "Invoking external command:~%;;; ~A" string)
   (let ((result (si:system string)))
     (unless (zerop result)
       (cerror "Continues anyway."
@@ -205,8 +208,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 	~A
 }")
 
-(defun init-function-name (s &key ((:prefix si::*init-function-prefix*) si::*init-function-prefix*)
-			   (kind :object))
+(defun init-function-name (s &key (kind :object))
   (flet ((translate-char (c)
 	   (cond ((and (char>= c #\a) (char<= c #\z))
 		  (char-upcase c))
@@ -234,9 +236,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
     (concatenate 'string
 		 "init_"
 		 (disambiguation kind)
-		 (if si::*init-function-prefix*
-		     (concatenate 'string si::*init-function-prefix* "_")
-		     "")
 		 (map 'string #'translate-char (string s)))))
 
 (defun guess-kind (pathname)
@@ -257,39 +256,21 @@ or a loadable module."
 		pathname)
 	  :object))))
 
-(defun guess-name-and-flags (pathname &key (prefix si::*init-function-prefix*)
-			     (kind (guess-kind pathname)))
-  "Given a file name, guess whether it is an object file or a library, and what
-is the name of the initialization function in this file."
-  (let ((filename (pathname-name pathname))
-	name flags)
-    (case kind
-      ((:object :c)
-       (setf name filename
-	     flags (si::coerce-to-filename pathname)))
-      ((:fasl :fas)
-       (setf name "CODE"
-	     flags ""))
-      ((:static-library :lib)
-       (setf name (if (zerop (search +static-library-prefix+ filename))
-		      (subseq filename (length +static-library-prefix+) nil)
-		      filename)
-	     flags (if (probe-file pathname)
-		       (si::coerce-to-filename pathname)
-		       (concatenate 'string "-l" name))))
-      ((:shared-library :dll)
-       (setf name (if (zerop (search +shared-library-prefix+ filename))
-		      (subseq filename (length +shared-library-prefix+) nil)
-		      filename)
-	     flags (if (probe-file pathname)
-		       (si::coerce-to-filename pathname)
-		       (concatenate 'string "-l" name))))
-      ((:program)
-       (setf name "ECL_PROGRAM"
-	     flags nil))
-      (otherwise
-       (error "C::BUILDER cannot accept files of kind ~s" kind)))
-    (values (init-function-name name :kind kind :prefix prefix) flags)))
+(defun guess-ld-flags (pathname &key (kind (guess-kind pathname)))
+  "Given a file name, return the compiler command line argument to link this file in."
+  (case kind
+    ((:object :c)
+     (si::coerce-to-filename pathname))
+    ((:fasl :fas)
+     nil)
+    ((:static-library :lib)
+     (si::coerce-to-filename pathname))
+    ((:shared-library :dll)
+     (si::coerce-to-filename pathname))
+    ((:program)
+     nil)
+    (otherwise
+     (error "C::BUILDER cannot accept files of kind ~s" kind))))
 
 (defun system-ld-flag (library)
   "Given a symbol, try to find a library that matches it, either by looking in the
@@ -369,14 +350,14 @@ output = cl_safe_eval(c_string_to_object(lisp_code), Cnil, OBJNULL);
 	   (unless (member kind '(:shared-library :dll :static-library :lib
 				  :object :c))
 	     (error "C::BUILDER does not accept a file ~s of kind ~s" item kind))
-	   (multiple-value-bind (init-fn flags)
-	       (guess-name-and-flags (parse-namestring item))
+	   (let* ((path (parse-namestring item))
+		  (init-fn (guess-init-name path))
+		  (flags (guess-ld-flags path)))
+	     ;; We should give a warning that we cannot link this module in
 	     (when flags (push flags ld-flags))
 	     (push init-fn submodules))))))
     (setq c-file (open c-name :direction :output))
-    (format c-file +lisp-program-header+
-            #-(or :win32 :mingw32 :darwin) (if (eq :fasl target) nil submodules)
-            #+(or :win32 :mingw32 :darwin) submodules)
+    (format c-file +lisp-program-header+ submodules)
     (cond (shared-data-file
 	   (data-init shared-data-file)
 	   (format c-file "
@@ -398,7 +379,7 @@ static cl_object VV[VM];
     (when (or (symbolp output-name) (stringp output-name))
       (setf output-name (compile-file-pathname output-name :type target)))
     (unless init-name
-      (setf init-name (guess-name-and-flags output-name :prefix nil :kind target)))
+      (setf init-name (guess-init-name output-name :kind target)))
     (ecase target
       (:program
        (format c-file +lisp-program-init+ init-name "" shared-data-file
@@ -439,11 +420,6 @@ static cl_object VV[VM];
        (apply #'shared-cc output-name o-name ld-flags))
       #+dlopen
       (:fasl
-       #-(or :win32 :mingw32 :darwin)
-       (setf submodules
-	     (mapcar #'(lambda (sm)
-			 (format nil "((ecl_init_function_t) ecl_library_symbol(Cblock, \"~A\", 0))" sm))
-		     submodules))
        (format c-file +lisp-program-init+ init-name prologue-code shared-data-file
 	       submodules epilogue-code)
        (close c-file)
@@ -575,8 +551,8 @@ Cannot compile ~a."
 
       (when (zerop *error-count*)
 	(when *compile-verbose* (format t "~&;;; End of Pass 1.  "))
-	(setf init-name (guess-name-and-flags output-file :kind
-					      (if system-p :object :fasl)))
+	(setf init-name (guess-init-name output-file :kind
+					 (if system-p :object :fasl)))
 	(compiler-pass2 c-pathname h-pathname data-pathname system-p
 			init-name
 			shared-data-file))
@@ -706,7 +682,7 @@ Cannot compile ~a."
 	(h-pathname (compile-file-pathname data-pathname :type :h))
 	(o-pathname (compile-file-pathname data-pathname :type :object))
 	(so-pathname (compile-file-pathname data-pathname))
-	(init-name (guess-name-and-flags so-pathname :kind :fasl)))
+	(init-name (guess-init-name so-pathname :kind :fasl)))
 
     (with-lock (+load-compile-lock+)
       (init-env)
@@ -812,7 +788,7 @@ Cannot compile ~a."
 	     (t1expr disassembled-form)
 	     (if (zerop *error-count*)
 		 (catch *cmperr-tag*
-		   (ctop-write (guess-name-and-flags "foo" :kind :fasl)
+		   (ctop-write (guess-init-name "foo" :kind :fasl)
 			       (if h-file h-file "")
 			       (if data-file data-file "")))
 		 (setq *error-p* t))
@@ -876,8 +852,8 @@ Cannot compile ~a."
    ))
 
 (defun print-compiler-info ()
-  (format t "~&;;; OPTIMIZE levels: Safety=~d, Space=~d, Speed=~d~%"
-	  *safety* *space* *speed*))
+  (format t "~&;;; OPTIMIZE levels: Safety=~d, Space=~d, Speed=~d, Debug=~d~%"
+	  *safety* *space* *speed* *debug*))
 
 (defmacro with-compilation-unit (options &rest body)
   `(progn ,@body))

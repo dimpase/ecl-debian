@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;;
 ;;; CMPSYSFUN   Database for system functions.
 ;;;
 ;;; Copyright (c) 2003, Juan Jose Garcia Ripoll
@@ -379,7 +381,7 @@
 ;; file unixfsys.d
 
 (proclaim-function truename (t) t)
-(proclaim-function rename-file (t t) t)
+(proclaim-function rename-file (t t *) t)
 (proclaim-function si:specialp (t) t :predicate t)
 (proclaim-function delete-file (t) t)
 (proclaim-function probe-file (t) t)
@@ -1387,7 +1389,7 @@ type_of(#0)==t_bitvector")
     nsubst-if nsubst-if-not
     ;; mislib.lsp
     logical-pathname-translations load-logical-pathname-translations decode-universal-time
-    encode-universal-time get-decoded-time get-universal-time
+    encode-universal-time get-decoded-time
     ensure-directories-exist si::simple-program-error si::signal-simple-error
     ;; module.lsp
     provide require
@@ -1437,11 +1439,18 @@ type_of(#0)==t_bitvector")
     si::pprint-logical-block-helper si::pprint-pop-helper
     si::make-seq-iterator si::seq-iterator-ref si::seq-iterator-set si::seq-iterator-next
     si::assert-slot-type si::define-structure
-    .
-    #-clos
-    nil
+    #+formatter
+    ,@'(
+    format-princ format-prin1 format-print-named-character
+    format-print-integer
+    format-print-cardinal format-print-ordinal format-print-old-roman
+    format-print-roman format-fixed format-exponential
+    format-general format-dollars
+    format-relative-tab format-absolute-tab
+    format-justification
+	)
     #+clos
-    (;; defclass.lsp
+    ,@'(;; defclass.lsp
      clos::ensure-class
      ;; boot.lsp
      clos::slot-boundp

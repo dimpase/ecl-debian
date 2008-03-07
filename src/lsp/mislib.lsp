@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: SYSTEM -*-
+;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
 ;;;;
@@ -235,15 +237,6 @@ Universal Time UT, which defaults to the current time."
 	@(return) = ltm->tm_isdst;
 }"
 		 :one-liner nil)))
-
-(defun get-universal-time ()
-  #-ecl-min
-  (ffi:c-inline () () :object "
-{
-	cl_object utc = ecl_make_integer(time(0));
-	@(return) = ecl_plus(utc, cl_core.Jan1st1970UT);
-}"
-		:one-liner nil))
 
 (defun get-decoded-time ()
   "Args: ()

@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: CLOS -*-
+;;;;
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
@@ -189,7 +191,7 @@ their lambda lists ~A and ~A are not congruent."
   (setf (generic-function-methods gf)
 	(delete method (generic-function-methods gf))
 	(method-generic-function method) nil)
-  (clrhash (generic-function-method-hash gf))
+  (si:clear-gfun-hash gf)
   gf)
 
 ;;; ----------------------------------------------------------------------

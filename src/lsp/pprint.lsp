@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: SYSTEM -*-
+;;;;
 ;;; -*- Package: PRETTY-PRINT -*-
 ;;;
 ;;; **********************************************************************
@@ -1133,6 +1135,9 @@
 	     (pprint-dispatch-table-cons-entries orig))
     new))
 
+(defun default-pprint-dispatch (stream object)
+  (write-ugly-object object stream))
+
 (defun pprint-dispatch (object &optional (table *print-pprint-dispatch*))
   (declare (type (or pprint-dispatch-table null) table))
   (let* ((table (or table *initial-pprint-dispatch*))
@@ -1149,9 +1154,7 @@
 	      (return entry)))))
     (if entry
 	(values (pprint-dispatch-entry-function entry) t)
-	(values #'(lambda (stream object)
-		    (write-ugly-object object stream))
-		nil))))
+	(values #'default-pprint-dispatch nil))))
 
 (defun set-pprint-dispatch (type function &optional
 			    (priority 0) (table *print-pprint-dispatch*))

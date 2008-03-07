@@ -1,3 +1,4 @@
+/* -*- mode: c; c-basic-offset: 8 -*- */
 /*
     hash.d  -- Hash tables.
 */
@@ -19,92 +20,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <ecl/internal.h>
-
-/********************
- * HASHING ROUTINES *
- ********************/
-
-/*
- * SBCL'S old mashing function. Leads to many collisions.
- */
-
-#if FIXNUM_BITS > 32
-
-#define mash(h,n) ((((h) << 5) | ((h) >> (FIXNUM_BITS - 5))) ^ (n))
-#define hash_word(h,x) mash(h,(cl_index)x)
-
-static cl_hashkey
-hash_string(cl_hashkey h, const unsigned char *buf, cl_index len)
-{
-	for (; len; len--) {
-		h = mash(h, (*buf++));
-	}
-	return h;
-}
-
-#else
-
-/*
- * SBCL's newest algorithm. Leads to few collisions, is fast, but
- * limited to 32 bits.
- */
-
-#define mix(a,b,c) \
-{ \
-  a -= b; a -= c; a ^= (c>>13); \
-  b -= c; b -= a; b ^= (a<<8); \
-  c -= a; c -= b; c ^= (b>>13); \
-  a -= b; a -= c; a ^= (c>>12);  \
-  b -= c; b -= a; b ^= (a<<16); \
-  c -= a; c -= b; c ^= (b>>5); \
-  a -= b; a -= c; a ^= (c>>3);  \
-  b -= c; b -= a; b ^= (a<<10); \
-  c -= a; c -= b; c ^= (b>>15); \
-}
-
-static uint32_t
-hash_string(uint32_t initval, const unsigned char *k, cl_index len)
-{
-  uint32_t a = 0, b = 0, c = initval;
-  for (; len > 12; ) {
-    a += (k[0] +((uint32_t)k[1]<<8) +((uint32_t)k[2]<<16) +((uint32_t)k[3]<<24));
-    b += (k[4] +((uint32_t)k[5]<<8) +((uint32_t)k[6]<<16) +((uint32_t)k[7]<<24));
-    c += (k[8] +((uint32_t)k[9]<<8) +((uint32_t)k[10]<<16)+((uint32_t)k[11]<<24));
-    mix(a,b,c);
-    k += 12; len -= 12;
-  }
-
-  /*------------------------------------- handle the last 11 bytes */
-  c += len;
-  switch(len) {
-    /* all the case statements fall through */
-  case 11: c+=((uint32_t)k[10]<<24);
-  case 10: c+=((uint32_t)k[9]<<16);
-  case 9 : c+=((uint32_t)k[8]<<8);
-    /* the first byte of c is reserved for the length */
-  case 8 : b+=((uint32_t)k[7]<<24);
-  case 7 : b+=((uint32_t)k[6]<<16);
-  case 6 : b+=((uint32_t)k[5]<<8);
-  case 5 : b+=k[4];
-  case 4 : a+=((uint32_t)k[3]<<24);
-  case 3 : a+=((uint32_t)k[2]<<16);
-  case 2 : a+=((uint32_t)k[1]<<8);
-  case 1 : a+=k[0];
-    /* case 0: nothing left to add */
-  }
-  mix(a,b,c);
-  /*-------------------------------------------- report the result */
-  return c;
-}
-
-static uint32_t hash_word(uint32_t c, uint32_t a)
-{
-	uint32_t b = 0;
-	mix(a, b, c);
-	return c;
-}
-
-#endif
+#include "newhash.h"
 
 static void corrupted_hash(cl_object hashtable) /*__attribute__((noreturn))*/;
 
@@ -124,7 +40,7 @@ _hash_eql(cl_hashkey h, cl_object x)
 		return hash_string(h, (unsigned char*)x->big.big_limbs,
 				   labs(x->big.big_size) * sizeof(mp_limb_t));
 #else  /* WITH_GMP */
-                return hash_word(h, (uint32_t)(x->big.big_num));
+                return hash_word(h, (cl_index)(x->big.big_num));
 #endif /* WITH_GMP */
 	case t_ratio:
 		h = _hash_eql(h, x->ratio.num);
@@ -168,22 +84,10 @@ _hash_equal(int depth, cl_hashkey h, cl_object x)
 	case t_symbol:
 		x = x->symbol.name;
 #ifdef ECL_UNICODE
-	case t_base_string: {
-		cl_index i;
-		for (i = 0; i < x->base_string.fillp; i++) {
-			uint32_t w = x->base_string.self[i];
-			h = hash_word(h, w);
-		}
-		break;
-	}
-	case t_string: {
-		cl_index i;
-		for (i = 0; i < x->string.fillp; i++) {
-			uint32_t w = CHAR_CODE(x->string.self[i]);
-			h = hash_word(h, w);
-		}
-		break;
-	}
+	case t_base_string:
+		return hash_base_string(x->base_string.self, x->base_string.fillp, h);
+	case t_string:
+		return hash_full_string(x->base_string.self, x->base_string.fillp, h);
 #else
 	case t_base_string:
 		return hash_string(h, x->base_string.self, x->base_string.fillp);
@@ -194,9 +98,7 @@ _hash_equal(int depth, cl_hashkey h, cl_object x)
 		h = _hash_equal(depth, h, x->pathname.directory);
 		h = _hash_equal(depth, h, x->pathname.name);
 		h = _hash_equal(depth, h, x->pathname.type);
-		return _hash_equal(depth, h, x->pathname.name);
-	case t_random:
-		return hash_word(h, x->random.value);
+		return _hash_equal(depth, h, x->pathname.version);
 	case t_bitvector:
 		/* Notice that we may round out some bits. We must do this
 		 * because the fill pointer may be set in the middle of a byte.
@@ -204,6 +106,8 @@ _hash_equal(int depth, cl_hashkey h, cl_object x)
 		 * because otherwise two bit arrays which are EQUAL might
 		 * have different hash keys. */
 		return hash_string(h, x->vector.self.ch, x->vector.fillp / 8);
+	case t_random:
+		return _hash_equal(depth, h, x->random.value);
 	default:
 		return _hash_eql(h, x);
 	}

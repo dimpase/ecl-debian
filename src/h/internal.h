@@ -1,3 +1,4 @@
+/* -*- mode: c; c-basic-offset: 8 -*- */
 /*
     internal.h -- Structures and functions that are not meant for the end user
 */
@@ -66,6 +67,10 @@ struct cl_compiler_env {
 
 #define cl_stack_ref(n) cl_env.stack[n]
 #define cl_stack_index() (cl_env.stack_top-cl_env.stack)
+
+#define ECL_BUILD_STACK_FRAME(name) \
+	struct ecl_stack_frame name##_aux;\
+	cl_object name=(name##_aux.t=t_frame,name##_aux.narg=name##_aux.sp=0,(cl_object)&(name##_aux));
 
 /* ffi.d */
 
@@ -165,9 +170,8 @@ extern void ecl_extend_hashtable(cl_object hashtable);
 /* gfun.d, kernel.lsp */
 
 #define GFUN_NAME(x) ((x)->instance.slots[0])
-#define GFUN_HASH(x) ((x)->instance.slots[1])
-#define GFUN_SPEC(x) ((x)->instance.slots[2])
-#define GFUN_COMB(x) ((x)->instance.slots[3])
+#define GFUN_SPEC(x) ((x)->instance.slots[1])
+#define GFUN_COMB(x) ((x)->instance.slots[2])
 
 /* package.d */
 

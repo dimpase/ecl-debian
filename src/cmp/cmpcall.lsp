@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;;
 ;;;;  CMPCALL  Function call.
 
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
@@ -19,10 +21,20 @@
   (or (cmp-env-search-macro name)
       (macro-function name)))
 
+(defun unoptimized-funcall (fun arguments)
+  (let ((l (length arguments)))
+    (if (<= l si::c-arguments-limit)
+	(make-c1form* 'FUNCALL :args (c1expr fun) (c1args* arguments))
+	(let ((frame (gensym)))
+	  (c1expr `(with-stack ,frame
+		     ,@(loop for i in arguments collect `(stack-push ,i))
+		     (si::apply-from-stack-frame ,frame ,fim)))))))
+
 (defun c1funcall (args)
   (check-args-number 'FUNCALL args 1)
   (let ((fun (first args))
-	(arguments (rest args)))
+	(arguments (rest args))
+	fd)
     (cond ;; (FUNCALL (LAMBDA ...) ...)
           ((and (consp fun)
 		(eq (first fun) 'LAMBDA))
@@ -32,15 +44,18 @@
 		(eq (first fun) 'EXT::LAMBDA-BLOCK))
 	   (setf fun (macroexpand-1 fun))
 	   (c1expr (optimize-funcall/apply-lambda (cdr fun) arguments nil)))
+	  ;; (FUNCALL atomic-expression ...)
+	  ((atom fun)
+	   (unoptimized-funcall fun arguments))
+	  ;; (FUNCALL macro-expression ...)
+	  ((let ((name (first fun)))
+	     (setq fd (and (symbolp name)
+			   (or (cmp-env-search-macro name)
+			       (macro-function name)))))
+	   (c1funcall (list* (cmp-expand-macro fd fun) arguments)))
 	  ;; (FUNCALL lisp-expression ...)
-	  ((not (and (consp fun)
-		     (eq (first fun) 'FUNCTION)))
-	   (let ((l (length args)))
-	     (if (<= l si::c-arguments-limit)
-		 (make-c1form* 'FUNCALL :args (c1expr fun) (c1args* arguments))
-		 (c1expr `(with-stack
-			   ,@(loop for i in (rest args) collect `(stack-push ,i))
-			   (apply-from-stack ,l ,(first args)))))))
+	  ((not (eq (first fun) 'FUNCTION))
+	   (unoptimized-funcall fun arguments))
 	  ;; (FUNCALL #'GENERALIZED-FUNCTION-NAME ...)
 	  ((si::valid-function-name-p (setq fun (second fun)))
 	   (or (c1call-local fun arguments)
@@ -140,7 +155,7 @@
   (cond
     ;; Check whether it is a global function that we cannot call directly.
      ((and (or (null loc) (fun-global loc)) (not (inline-possible fname)))
-      (if *compile-to-linking-call*
+      (if (and *compile-to-linking-call* (<= *debug* 1))
 	  (call-linking-loc fname narg args)
 	  (call-unknown-global-loc fname nil narg args)))
 
@@ -149,12 +164,13 @@
 	   (setq loc (inline-function fname args return-type)))
       loc)
 
-     ;; Call to a function defined in the same file.
-     ((fun-p loc)
-      (call-loc fname loc narg args))
-
-     ((and (null loc) (setf loc (find fname *global-funs* :test #'same-fname-p
-				      :key #'fun-name)))
+     ;; Call to a function defined in the same file. Direct calls are
+     ;; only emitted for low or neutral values of DEBUG is >= 2.
+     ((and (<= *debug* 1)
+	   (or (fun-p loc)
+	       (and (null loc)
+		    (setf loc (find fname *global-funs* :test #'same-fname-p
+				      :key #'fun-name)))))
       (call-loc fname loc narg args))
 
      ;; Call to a global (SETF ...) function
@@ -164,7 +180,8 @@
      ;; Call to a function whose C language function name is known,
      ;; either because it has been proclaimed so, or because it belongs
      ;; to the runtime.
-     ((and (setf fd (get-sysprop fname 'Lfun))
+     ((and (<= *debug* 1)
+	   (setf fd (get-sysprop fname 'Lfun))
 	   (multiple-value-setq (minarg maxarg) (get-proclaimed-narg fname)))
       (call-exported-function-loc fname narg args fd minarg maxarg
 				  #-ecl-min nil
@@ -174,7 +191,7 @@
       (call-exported-function-loc fname narg args fd minarg maxarg t))
 
      ;; Linking calls can only be made to symbols
-     (*compile-to-linking-call*
+     ((and *compile-to-linking-call* (<= *debug* 1))
       (call-linking-loc fname narg args))
 
      (t (call-unknown-global-loc fname loc narg args))))

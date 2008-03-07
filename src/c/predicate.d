@@ -1,3 +1,4 @@
+/* -*- mode: c; c-basic-offset: 8 -*- */
 /*
     predicate.c -- Predicates.
 */
@@ -499,6 +500,8 @@ BEGIN:
 		}
 		return TRUE;
 	}
+	case t_random:
+		return ecl_equalp(x->random.value, y->random.value);
 	default:
 		return FALSE;
 	}

@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;;
 ;;;;  CMPTOP  --  Compiler top-level.
 
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
@@ -115,8 +117,7 @@
 	 (c-output-file *compiler-output1*)
 	 (*compiler-output1* (make-string-output-stream))
 	 (*emitted-local-funs* nil)
-	 (*compiler-declared-globals* (make-hash-table))
-	 #+PDE (optimize-space (>= *space* 3)))
+	 (*compiler-declared-globals* (make-hash-table)))
     (unless shared-data
       (wt-nl1 "#include \"" (si::coerce-to-filename data-pathname) "\""))
     (wt-nl1 "#ifdef __cplusplus")
@@ -145,7 +146,11 @@
       (wt-nl "return;}")
       (wt-nl "#ifdef ECL_DYNAMIC_VV")
       (wt-nl "VV = Cblock->cblock.data;")
-      (wt-nl "#endif"))
+      (wt-nl "#endif")
+      ;; With this we ensure creating a constant with the tag
+      ;; and the initialization file
+      (wt-nl "Cblock->cblock.data_text = \"" (init-name-tag name) "\";")
+      )
     (when si::*compiler-constants*
       (wt-nl "{cl_object data = ecl_symbol_value("
 	     (nth-value 1 (si::mangle-name '*compiler-constants* nil))
@@ -348,13 +353,16 @@
     (wt-h ";"))
 ;  (wt-nl-h "#define VU" *reservation-cmacro*)
   (wt-nl-h "#define VLEX" *reservation-cmacro*)
+  ;; There should be no need to mark lex as volatile, since we
+  ;; are going to pass pointers of this array around and the compiler
+  ;; should definitely keep this in memory.
   (when (plusp *max-lex*)
-    (wt-h " " *volatile* "cl_object lex" *level* "[" *max-lex* "];"))
+    (wt-h " volatile cl_object lex" *level* "[" *max-lex* "];"))
   (wt-nl-h "#define CLSR" *reservation-cmacro*)
   (when (plusp *max-env*)
     (unless (eq closure-type 'CLOSURE)
-      (wt-h " " *volatile* "cl_object env0;"))
-    (wt-h " " *volatile* "cl_object ")
+      (wt-h " cl_object " *volatile* "env0;"))
+    (wt-h " cl_object " *volatile*)
     (dotimes (i *max-env*)
       (wt-h "CLV" i)
       (unless (= (1+ i) *max-env*) (wt-h ",")))
@@ -470,6 +478,7 @@
   (let ((*safety* *safety*)
 	(*space* *space*)
 	(*speed* *speed*)
+	(*debug* *debug*)
         (*notinline* *notinline*))
     (c1add-declarations decls)
     (t2expr body)))
@@ -526,18 +535,18 @@
       (wt *volatile* "cl_narg narg")
       (setf comma ", "))
     (dotimes (n level)
-      (wt-h comma *volatile* "cl_object *")
-      (wt comma *volatile* "cl_object *lex" n)
+      (wt-h comma "volatile cl_object  *")
+      (wt comma "volatile cl_object *lex" n)
       (setf comma ", "))
     (when (eq (fun-closure fun) 'CLOSURE)
-      (wt-h comma *volatile* "cl_object ")
-      (wt comma *volatile* "cl_object env0")
+      (wt-h comma "cl_object " *volatile*)
+      (wt comma "cl_object " *volatile* "env0")
       (setf comma ", "))
     (let ((lcl 0))
       (declare (fixnum lcl))
       (dolist (var requireds)
-	(wt-h comma *volatile* "cl_object ")
-	(wt comma *volatile* "cl_object ") (wt-lcl (incf lcl))
+	(wt-h comma "cl_object " *volatile*)
+	(wt comma "cl_object " *volatile*) (wt-lcl (incf lcl))
 	(setf comma ", ")))
     (when narg
       (wt-h ", ...")
@@ -559,6 +568,8 @@
 	" VLEX" *reservation-cmacro*
 	" CLSR" *reservation-cmacro*)
     (wt-nl *volatile* "cl_object value0;")
+    (when (>= (fun-debug fun) 2)
+      (wt-nl "struct ihs_frame ihs;"))
     (when (eq (fun-closure fun) 'CLOSURE)
       (let ((clv-used (remove-if
 		       #'(lambda (x)
@@ -592,6 +603,12 @@
               (pop clv-used)))
 	  (wt-nl "{ /* ... closure scanning finished */")
 	  (incf *inline-blocks*)))
+    ;; If we ask for high level of debugging information, we push the function
+    ;; name into the invocation stack
+    (when (>= (fun-debug fun) 2)
+      (push 'IHS *unwind-exit*)
+      (wt-nl "ihs_push(&ihs," (add-symbol (fun-name fun)) ");"))
+
     (c2lambda-expr (c1form-arg 0 lambda-expr)
 		   (c1form-arg 2 lambda-expr)
 		   (fun-cfun fun) (fun-name fun)

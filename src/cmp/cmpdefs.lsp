@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
 ;;;;
@@ -169,6 +171,7 @@
   (referred-funs nil)	;;; List of external functions called in this one.
 			;;; We only register direct calls, not calls via object.
   (child-funs nil)	;;; List of local functions defined here.
+  (debug 0)		;;; Debug quality
   )
 
 (defstruct (blk (:include ref))
@@ -292,6 +295,7 @@ The default value is NIL.")
 (defvar *safety* 2)
 (defvar *speed* 3)
 (defvar *space* 0)
+(defvar *debug* 0)
 
 ;;;
 ;;; Compiled code uses the following kinds of variables:

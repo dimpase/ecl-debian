@@ -1,3 +1,5 @@
+;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: SYSTEM -*-
+;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
 ;;;;
@@ -30,7 +32,7 @@
 
 (defun test-error()
   (declare (si::c-local))
-  (error "both test and test are supplied"))
+  (error "both test and test-not are supplied"))
 
 (defun sequence-limits (start end seq)
   (declare (si::c-local))

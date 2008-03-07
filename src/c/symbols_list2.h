@@ -1,3 +1,4 @@
+/* -*- mode: c; c-basic-offset: 8 -*- */
 #ifdef ECL_CMU_FORMAT
 # define ECL_NAME_PPRINT(x) ECL_NAME(x)
 #else
@@ -446,7 +447,7 @@ cl_symbols[] = {
 {"GET-OUTPUT-STREAM-STRING","cl_get_output_stream_string"},
 {"GET-PROPERTIES","cl_get_properties"},
 {"GET-SETF-EXPANSION",NULL},
-{"GET-UNIVERSAL-TIME","ECL_NAME(cl_get_universal_time)"},
+{"GET-UNIVERSAL-TIME","cl_get_universal_time"},
 {"GETF","cl_getf"},
 {"GETHASH","cl_gethash"},
 {"GO",NULL},
@@ -1672,6 +1673,13 @@ cl_symbols[] = {
 {SYS_ "*CURRENT-FORM*",NULL},
 
 {SYS_ "CODE-BLOCK",NULL},
+
+#ifdef CLOS
+{SYS_ "CLEAR-GFUN-HASH","si_clear_gfun_hash"},
+#endif
+
+{SYS_ "FRAME",NULL},
+{SYS_ "APPLY-FROM-STACK-FRAME","si_apply_from_stack_frame"},
 
 /* Tag for end of list */
 {NULL,NULL}};
