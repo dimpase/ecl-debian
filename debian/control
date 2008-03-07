@@ -1,7 +1,8 @@
 Source: ecl
 Section: devel
 Priority: optional
-Maintainer: Peter Van Eynde <pvaneynd@debian.org>
+Maintainer: Debian Common Lisp Team <pkg-common-lisp-devel@lists.alioth.debian.org>
+Uploaders: Peter Van Eynde <pvaneynd@debian.org>
 Build-Depends: debhelper (>> 4.0.0), autotools-dev, libgmp3-dev,  automake1.9, file, xutils, texinfo, libncurses5-dev, fakeroot, libgc-dev, dh-lisp (>= 0.6)
 Build-Conflicts: autoconf2.13, automake1.4
 Standards-Version: 3.7.3.0
