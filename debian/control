@@ -17,8 +17,8 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, libgmp3-dev, libncurses5-dev, libgc
 Provides: lisp-compiler
 Suggests: slime, ecl-doc
 Description: Embeddable Common-Lisp: has an interpreter and can compile to C
- ECL stands for Embeddable Common-Lisp. The ECL project is an 
- effort to modernize Giuseppe Attardi's ECL environment to 
+ ECL stands for Embeddable Common-Lisp. The ECL project is an
+ effort to modernize Giuseppe Attardi's ECL environment to
  produce an implementation of the Common-Lisp language
  which complies to the ANSI X3J13 definition of the language.
  .

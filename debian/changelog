@@ -2,6 +2,7 @@ ecl (0.9j-20080306-2) UNRELEASED; urgency=low
 
   * debian/control:
     + add Vcs-Browser field.
+    + remove trailing spaces from the long Description:.
 
  --
 
