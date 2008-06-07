@@ -8,6 +8,7 @@ Build-Conflicts: autoconf2.13, automake1.4
 Standards-Version: 3.7.3.0
 Homepage: http://ecls.sourceforge.net/
 Vcs-Git: http://git.debian.org/git/pkg-common-lisp/ecl.git
+Vcs-Browser: http://git.debian.org/?p=pkg-common-lisp/ecl.git;a=summary
 
 Package: ecl
 Section: devel
