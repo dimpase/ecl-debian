@@ -34,21 +34,21 @@ config.status: configure
 	 src/gmp/macos/configure \
 	 src/gmp/configure \
 	 src/configure \
-	 src/gmp/mpn/m4-ccas 
-	
+	 src/gmp/mpn/m4-ccas
+
 	touch src/gc/configure.in src/configure.in && \
 	touch src/gc/aclocal.m4  src/aclocal.m4 && \
 	touch src/configure configure
-	
+
 	./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) \
 	   --prefix=/usr --mandir=\$${prefix}/share/man \
 	   --infodir=\$${prefix}/share/info \
 	   --with-system-gmp=yes \
- 	   --with-tcp \
+	   --with-tcp \
 	   --with-clx  \
 	   --enable-threads=auto \
 	   --enable-boehm=system \
-	   --with-x 
+	   --with-x
 	   #--enable-boehm=system
 
 build: build-arch build-indep
@@ -70,7 +70,7 @@ build-indep-stamp: config.status
 clean:
 	dh_testdir
 	dh_testroot
-	rm -f build-*-stamp 
+	rm -f build-*-stamp
 	-test -r /usr/share/misc/config.sub && \
            cp -f /usr/share/misc/config.sub src/gc/config.sub
 	-test -r /usr/share/misc/config.guess && \
@@ -83,9 +83,9 @@ clean:
 	# autoreconf --force
 	# Add here commands to clean up after the build process.
 	-$(MAKE) distclean
-	
+
 	rm -rf build
-	
+
 	dh_clean
 
 install: build-arch
@@ -95,19 +95,19 @@ install: build-arch
 	dh_installdirs -a
 
 	# Add here commands to install the package into debian/ecl
-	$(MAKE) install prefix=$(CURDIR)/debian/ecl/usr 
+	$(MAKE) install prefix=$(CURDIR)/debian/ecl/usr
 
 	rm $(CURDIR)/debian/ecl/usr/share/doc/LGPL
 	rm $(CURDIR)/debian/ecl/usr/share/doc/Copyright
 
 	rm $(CURDIR)/debian/ecl/usr/share/info/ecl.info \
 	   $(CURDIR)/debian/ecl/usr/share/info/clx.info \
-	   $(CURDIR)/debian/ecl/usr/share/info/ecldev.info 
+	   $(CURDIR)/debian/ecl/usr/share/info/ecldev.info
 
 	rm $(CURDIR)/debian/ecl/usr/share/info/dir \
 	   $(CURDIR)/debian/ecl/usr/share/info/dir.old
 
-	rmdir $(CURDIR)/debian/ecl/usr/share/info 
+	rmdir $(CURDIR)/debian/ecl/usr/share/info
 
 	cp ${CURDIR}/debian/install-clc.lisp $(CURDIR)/debian/ecl/usr/lib/ecl/
 	mv $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/ecl/ecl-original
@@ -136,9 +136,9 @@ binary-indep: build-indep
 binary-arch: build-arch install
 	dh_testdir -a
 	dh_testroot -a
-#	dh_installdebconf	
-	ls -l $(CURDIR)/debian/ecl-doc/usr/share/info/	
-	dh_installdocs -a 
+#	dh_installdebconf
+	ls -l $(CURDIR)/debian/ecl-doc/usr/share/info/
+	dh_installdocs -a
 	dh_installexamples -a
 	dh_installmenu -a
 	dh_installman -a
@@ -147,7 +147,7 @@ binary-arch: build-arch install
 	dh_link -a
 	dh_strip -a
 	dh_compress -a
-	dh_fixperms -a 
+	dh_fixperms -a
 	dh_lisp -a ecl
 	dh_makeshlibs -a
 	dh_installdeb -a
@@ -157,4 +157,4 @@ binary-arch: build-arch install
 	dh_builddeb -a
 
 binary: binary-indep binary-arch
-.PHONY: build build-arch build-indep clean binary-indep binary-arch binary install 
+.PHONY: build build-arch build-indep clean binary-indep binary-arch binary install
