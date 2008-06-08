@@ -5,6 +5,13 @@ ecl (0.9j-20080306-2) UNRELEASED; urgency=low
     + add Vcs-Browser field.
     + remove trailing spaces from the long Description:.
 
+  * debian/rules:
+    + fix FTBFS: instead of simply reverting swap of binary-indep
+      and binary-arch targets, create the arch-dependent "ecl"
+      package in binary-arch and the arch-independent "ecl-doc" in
+      binary-indep, thanks to Sebastian Bober <sbober@servercare.de>
+      for the patch (Closes: #471223).
+
  --
 
 ecl (0.9j-20080306-1) unstable; urgency=low
