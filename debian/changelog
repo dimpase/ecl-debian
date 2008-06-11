@@ -6,6 +6,9 @@ ecl (0.9j-20080306-2) UNRELEASED; urgency=low
     + remove trailing spaces from the long Description:.
     - remove xutils from Build-Depends:.
 
+  * debian/ecl-doc.doc-base:
+    + new section 'Programming' (thanks to lintian).
+
   * debian/rules:
     + fix FTBFS: instead of simply reverting swap of binary-indep
       and binary-arch targets, create the arch-dependent "ecl"
