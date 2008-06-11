@@ -13,6 +13,7 @@ ecl (0.9j-20080306-2) UNRELEASED; urgency=low
       binary-indep, thanks to Sebastian Bober <sbober@servercare.de>
       for the patch (Closes: #471223).
     + remove trailing spaces.
+    + correct lintian warning debian-rules-ignores-make-clean-error.
 
  --
 
