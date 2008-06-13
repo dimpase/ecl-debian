@@ -41,4 +41,4 @@ Section: doc
 Architecture: all
 Suggests: ecl
 Description: documentation for Embeddable Common-Lisp
- Contains the info and HTML documentation.
+ Contains the Info and HTML documentation.
