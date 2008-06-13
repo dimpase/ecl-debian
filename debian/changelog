@@ -6,6 +6,7 @@ ecl (0.9j-20080306-2) UNRELEASED; urgency=low
     + remove trailing spaces from the long Description:.
     + conflict with common-lisp-controller << 6.15 because of #477169.
     - remove xutils from Build-Depends:.
+    - remove traling empty lines.
 
   * debian/ecl-doc.doc-base:
     + new section 'Programming' (thanks to lintian).
