@@ -4,6 +4,7 @@ ecl (0.9j-20080306-2) UNRELEASED; urgency=low
     + add myself to Uploaders:.
     + add Vcs-Browser field.
     + remove trailing spaces from the long Description:.
+    + conflict with common-lisp-controller << 6.15 because of #477169.
     - remove xutils from Build-Depends:.
 
   * debian/ecl-doc.doc-base:
