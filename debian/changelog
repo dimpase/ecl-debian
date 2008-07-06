@@ -1,3 +1,11 @@
+ecl (0.9j-20080306-3) UNRELEASED; urgency=low
+
+  * debian/rules:
+    + fix FTBFS: move ls call from binary-arch to binary-indep,
+      thanks to Bastian Blank <waldi@debian.org> (Closes: #488811).
+
+ --
+
 ecl (0.9j-20080306-2) unstable; urgency=low
 
   * debian/control:
