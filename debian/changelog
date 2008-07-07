@@ -1,3 +1,17 @@
+ecl (0.9j-20080306-4) UNRELEASED; urgency=low
+
+  * debian/control:
+    + build-depend on quilt to manage patches.
+
+  * debian/patches/series: new file.
+  * debian/patches/01_src-configure-add-missing-test.patch:
+    + add missing `test' invocation in x86_64 check for dynamic FFI.
+
+  * debian/rules:
+    + adapt to quilt.
+
+ --
+
 ecl (0.9j-20080306-3) unstable; urgency=low
 
   * debian/rules:
