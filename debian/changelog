@@ -1,3 +1,15 @@
+ecl (0.9j-20080306-5) UNRELEASED; urgency=low
+
+  * debian/control:
+    + Build-Depends: on chrpath to remove unnecessary rpath headers
+      from binaries in /usr/lib/ecl/, thanks to Bill Allombert
+      <bill.allombert@math.u-bordeaux1.fr> (Closes: #495756).
+
+  * debian/rules:
+    + add chrpath call to 'install' target.
+
+ --
+
 ecl (0.9j-20080306-4) unstable; urgency=low
 
   * debian/control:

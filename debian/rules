@@ -120,7 +120,11 @@ install: build-arch
 	find $(CURDIR)/debian -name "*.lsp" -print0 | \
 	   xargs -0 chmod a-x || true
 
-
+	# remove rpath from /us/lib/ecl/ binaries (bug #495756)
+	# this is a workaround until upstream properly fixes it
+	find $(CURDIR)/debian/ecl/usr/lib/ecl/ -name "*.fas" -print0 | \
+	   xargs -0 chrpath -d
+	chrpath -d $(CURDIR)/debian/ecl/usr/lib/ecl/ecl-original
 
 # Build architecture-independent files here.
 binary-indep: build-indep
