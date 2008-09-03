@@ -13,7 +13,7 @@ Vcs-Browser: http://git.debian.org/?p=pkg-common-lisp/ecl.git;a=summary
 Package: ecl
 Section: devel
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libgmp3-dev, libncurses5-dev, libgc-dev
+Depends: ${shlibs:Depends}, ${misc:Depends}, libgmp3-dev, libncurses5-dev, libgc-dev, gcc
 Conflicts: common-lisp-controller (<< 6.15)
 Provides: lisp-compiler
 Suggests: slime, ecl-doc
