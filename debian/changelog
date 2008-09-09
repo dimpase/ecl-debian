@@ -1,4 +1,4 @@
-ecl (0.9j-20080306-5) UNRELEASED; urgency=low
+ecl (0.9j-20080306-5) unstable; urgency=low
 
   * debian/control:
     + Build-Depends: on chrpath to remove unnecessary rpath headers
@@ -10,7 +10,7 @@ ecl (0.9j-20080306-5) UNRELEASED; urgency=low
   * debian/rules:
     + add chrpath call to 'install' target.
 
- --
+ -- Luca Capello <luca@pca.it>  Tue, 09 Sep 2008 21:54:43 +0200
 
 ecl (0.9j-20080306-4) unstable; urgency=low
 
