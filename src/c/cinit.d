@@ -29,6 +29,12 @@
  */
 
 extern cl_object
+cl_upgraded_array_element_type(cl_narg narg, cl_object type, ...)
+{
+	return cl_funcall(2, @'upgraded-array-element-type', type);
+}
+
+extern cl_object
 si_safe_eval(cl_narg arg, cl_object form, cl_object env, cl_object error_value, ...)
 {
 	return cl_funcall(4, @'si::safe-eval', form, env, error_value);
@@ -94,7 +100,7 @@ static cl_object si_simple_toplevel ()
 int
 main(int argc, char **args)
 {
-	cl_object top_level;
+	cl_object top_level, features;
 
 	/* This should be always the first call */
 	cl_boot(argc, args);
@@ -106,7 +112,13 @@ main(int argc, char **args)
 	SYM_VAL(@'*load-verbose*') = Cnil;
 #endif
 	SYM_VAL(@'*package*') = cl_core.system_package;
-	SYM_VAL(@'*features*') = CONS(ecl_make_keyword("ECL-MIN"), SYM_VAL(@'*features*'));
+
+	features = SYM_VAL(@'*features*');
+	features = CONS(ecl_make_keyword("ECL-MIN"), features);
+#ifdef HAVE_UNAME
+	features = CONS(ecl_make_keyword("UNAME"), features);
+#endif
+	SYM_VAL(@'*features*') = features;
 	top_level = _ecl_intern("TOP-LEVEL", cl_core.system_package);
 	cl_def_c_function(top_level, si_simple_toplevel, 0);
 	funcall(1, top_level);

@@ -276,7 +276,7 @@ ecl_backup_fopen(const char *filename, const char *option)
 	if (rename(filename, backupfilename))
 		FElibc_error("Cannot rename the file ~S to ~S.", 2,
 			     make_constant_base_string(filename), make_simple_base_string(backupfilename));
-	cl_dealloc(backupfilename, 0);
+	cl_dealloc(backupfilename);
 	return fopen(filename, option);
 }
 
@@ -588,7 +588,6 @@ static cl_object
 list_current_directory(const char *mask, bool only_dir)
 {
 	cl_object out = Cnil;
-	cl_object *out_cdr = &out;
 	char *text;
 
 #if defined(HAVE_DIRENT_H)
@@ -648,8 +647,7 @@ list_current_directory(const char *mask, bool only_dir)
 			continue;
 		if (mask && !string_match(text, mask))
 			continue;
-		*out_cdr = CONS(make_base_string_copy(text), Cnil);
-		out_cdr = &CDR(*out_cdr);
+		out = ecl_cons(make_base_string_copy(text), out);
 	}
 #ifdef HAVE_DIRENT_H
 	closedir(dir);
@@ -660,7 +658,7 @@ list_current_directory(const char *mask, bool only_dir)
 	fclose(fp);
 # endif /* !_MSC_VER */
 #endif /* !HAVE_DIRENT_H */
-	return out;
+	return cl_nreverse(out);
 }
 
 /*
@@ -687,6 +685,14 @@ dir_files(cl_object basedir, cl_object pathname)
 		char *text = new->base_string.self;
 		if (file_kind(text, TRUE) == @':directory')
 			continue;
+		if (ecl_stringp(new) && ecl_member_char(':', new)) {
+			/* File names are allowed to have ':', but ECL
+			 * interprets colons as separators for device names
+			 * By prepending the name with a ':', we set the device
+			 * to NIL and parse the file name properly */
+			new = si_base_string_concatenate(2, make_constant_base_string(":"),
+							 new);
+		}
 		new = cl_pathname(new);
 		if (Null(cl_pathname_match_p(new, mask)))
 			continue;

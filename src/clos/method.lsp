@@ -31,7 +31,7 @@
 ;;; DEFMETHOD
 ;;;
 
-(defmacro defmethod (&rest args &environment env)
+(defmacro defmethod (&whole whole &rest args &environment env)
   (multiple-value-bind (name qualifiers specialized-lambda-list body)
       (parse-defmethod args)
     (multiple-value-bind (lambda-list required-parameters specializers)
@@ -40,20 +40,11 @@
 	  (expand-defmethod name qualifiers lambda-list
 			    required-parameters specializers body env)
 	(declare (ignore required-parameters))
-	`(PROGN
-	  #+PDE
-	  (EVAL-WHEN (LOAD)
-	    (SI:RECORD-SOURCE-PATHNAME
-	     ',name '(DEFMETHOD ',qualifiers ',specializers)))
-	  (INSTALL-METHOD
-	   ',name
-	   ',qualifiers
-	   ,(list 'si::quasiquote specializers)
-	   ',lambda-list
-	   ',doc
-	   ',plist
-	   ,fn-form)
-	  )))))
+	(ext:register-with-pde whole
+			       `(install-method ',name ',qualifiers
+						,(list 'si::quasiquote specializers)
+						',lambda-list ',doc
+						',plist ,fn-form))))))
 
 
 ;;; ----------------------------------------------------------------------
@@ -79,11 +70,11 @@
 			'(&allow-other-keys)
 			(and x (subseq lambda-list x))))))
     (let* ((class-declarations
-	    (nconc (mapcan #'(lambda (p s) (and (symbolp s) s
-						(not (eq s 't))
-						`((type ,s ,p))))
-			   required-parameters
-			   specializers)
+	    (nconc (loop for name in required-parameters
+		      for type in specializers
+		      when (and (not (eq type t)) (symbolp type))
+		      nconc `((type ,type ,name)
+			      (si::no-check-type ,name)))
 		   (cdar declarations)))
 	   (method-lambda
 	    ;; Remove the documentation string and insert the
@@ -112,9 +103,10 @@
 	  (setf plist '(:needs-next-method-p FUNCTION))
 	  (setf real-body
 		`((let* ((.combined-method-args.
-			  (if (listp .combined-method-args.)
-			      .combined-method-args.
-			      (apply #'list .combined-method-args.)))
+			  (locally (declare (special .combined-method-args.))
+			    (if (listp .combined-method-args.)
+				.combined-method-args.
+				(apply #'list .combined-method-args.))))
 			 (.next-methods. *next-methods*))
 		    (flet ((call-next-method (&rest args)
 			     (unless .next-methods.
@@ -271,10 +263,13 @@ have disappeared."
 ;;; ----------------------------------------------------------------------
 ;;;                                                             operations
 
-(defun make-method (qualifiers specializers lambda-list
-		    fun plist options gf method-class)
-  (let ((method (si:allocate-raw-instance nil (find-class 'standard-method nil)
-		   #.(length +standard-method-slots+))))
+(defun make-method (method-class qualifiers specializers lambda-list
+				 fun plist options)
+  (declare (ignore options))
+  (let* ((instance-size (+ #.(length +standard-method-slots+)
+			   (if (eq method-class 'standard-method)
+			       0 2)))
+	 (method (si:allocate-raw-instance nil method-class instance-size)))
     (setf (method-generic-function method) nil
 	  (method-lambda-list method) lambda-list
 	  (method-function method) fun

@@ -8,8 +8,8 @@ dnl  AUTOCONF configuration for ECL
 dnl  Giuseppe Attardi 25.1.1994
 dnl
 
-AC_INIT([ecl],[0.9j],[])
-AC_REVISION([$Revision: 1.152 $])
+AC_INIT([ecl],[0.9l],[])
+AC_REVISION([$Revision: 1.167 $])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -41,14 +41,8 @@ AC_ARG_ENABLE(threads,
 AC_ARG_ENABLE(boehm,
   AS_HELP_STRING( [--enable-boehm],
                   [use the Boehm-Weiser garbage collector]
-                  [(no|included|system|auto, default=included)] ),
-  [], [enable_boehm=included] )
-
-AC_ARG_ENABLE(local-boehm,
-  AS_HELP_STRING( [--enable-local-boehm], [Deprecated! See --enable-boehm] ),
-  [AC_MSG_WARN(
-    [--enable-local-boehm is deprecated, use --enable-boehm=system instead!])
-   test ${withval} = "no" || enable_boehm="system"])
+                  [(no|included|system|auto, default=auto)] ),
+  [], [enable_boehm=auto] )
 
 AC_ARG_ENABLE(slow-config,
   AS_HELP_STRING( [--enable-slow-config],
@@ -64,7 +58,7 @@ AC_ARG_WITH(system-boehm,
 
 AC_ARG_WITH(gmp,
   AS_HELP_STRING( [--with-gmp=args],
-                  [supply arguments for configuring GMP library])
+                  [supply arguments for configuring GMP library]),
   [], [with_gmp=""])
 
 AC_ARG_WITH(system-gmp,
@@ -183,7 +177,7 @@ AC_ARG_ENABLE(longdouble,
   [enable_longdouble=${enableval}], [enable_longdouble=no])
 
 AC_ARG_ENABLE(c99complex,
-  AS_HELP_STRING( [--enable-c99-complex],
+  AS_HELP_STRING( [--enable-c99complex],
                   [include support for C complex type]
                   [(default=NO)]),
   [enable_c99complex=${enableval}], [enable_c99complex=no])
@@ -193,6 +187,24 @@ AC_ARG_ENABLE(hpack,
                   [hierarchical package names]
                   [(default=YES)]),
   [enable_hpack=${enableval}], [enable_hpack=yes])
+
+AC_ARG_ENABLE(asmapply,
+  AS_HELP_STRING( [--enable-asmapply],
+                  [enable optimizations written in assembler]
+                  [(default=YES)]),
+  [enable_asmapply=${enableval}],[enable_asmapply=yes])
+
+AC_ARG_ENABLE(smallcons,
+  AS_HELP_STRING( [--enable-smallcons],
+                  [use small (2 words) cons types. Requires Boehm-Weiser gc.]
+                  [(default=YES)]),
+  [enable_smallcons=${enableval}],[enable_smallcons=yes])
+
+AC_ARG_ENABLE(gengc,
+  AS_HELP_STRING( [--enable-gengc],
+		  [use generational garbage collection. Requires Boehm-Weiser gc.]
+		  [(no|yes, default=NO)]),
+  [], [enable_gengc=no] )
 
 dnl -----------------------------------------------------------------------
 dnl Installation directories
@@ -217,8 +229,6 @@ AC_SUBST(CORE_LIBS, [])         dnl Locally compiled libs to link into
                                 dnl ecl/ecl_min/libecl.so and nowhere else.
 AC_SUBST(SHARED_LDFLAGS)        dnl Flags for shared libraries linker
 AC_SUBST(BUNDLE_LDFLAGS)        dnl Flags for FASL files linker
-AC_SUBST(SHORT_SITE_NAME)       dnl Short name for the machine we built this on
-AC_SUBST(LONG_SITE_NAME)        dnl Long name for the machine we built this on
 AC_SUBST(EXTRA_OBJS)            dnl Extra *.o files to be compiled into libecl.a
 AC_SUBST(TARGETS, ['bin/ecl$(EXE)'])dnl Versions of ECL to be built 
 AC_SUBST(SUBDIRS, [c])          dnl Subdirectories that make should process
@@ -284,7 +294,6 @@ if test "${enable_threads}" = "auto"; then
     enable_threads="yes"
   fi
 fi
-
 if test "${enable_threads}" = "yes" ; then
   if test -z "${THREAD_OBJ}"; then
     AC_MSG_ERROR([Threads aren't supported on this system.])
@@ -305,7 +314,11 @@ fi
 dnl ----------------------------------------------------------------------
 dnl		Boehm-Weiser garbage collector
 if test ${enable_boehm} = "no" ; then
+  AC_MSG_ERROR([Boehm GC library is currently needed to build ECL]);
+fi
+if test ${enable_boehm} = "no" ; then
   EXTRA_OBJS="${EXTRA_OBJS} alloc.${OBJEXT} gbc.${OBJEXT}"
+  enable_smallcons="no"
 else
   if test ${enable_boehm} = "auto"; then
     AC_CHECK_LIB( [gc], [GC_malloc],
@@ -329,7 +342,13 @@ else
   fi
   EXTRA_OBJS="${EXTRA_OBJS} alloc_2.${OBJEXT}"
 fi
+if test "${enable_gengc}" = "yes" ; then
+  AC_DEFINE(GBC_BOEHM_GENGC)
+fi
 
+if test ${enable_smallcons} = "yes" ; then
+   AC_DEFINE(ECL_SMALL_CONS)
+fi
 
 dnl ----------------------------------------------------------------------
 dnl GNU multiprecision library
@@ -399,9 +418,9 @@ AC_C_BIGENDIAN([], [],
 
 dnl ----------------------------------------------------------------------
 dnl This flag is an optimization for GNU
-if test "${GCC}" = "yes"; then
-  CFLAGS="${CFLAGS} -fstrict-aliasing"
-fi
+dnl if test "${GCC}" = "yes"; then
+dnl  CFLAGS="${CFLAGS} -fstrict-aliasing"
+dnl fi
 
 dnl ----------------------------------------------------------------------
 dnl Check the appropiate type for cl_fixnum/cl_index
@@ -445,14 +464,14 @@ AC_CHECK_FUNCS( [floor getcwd gethostbyaddr gethostbyname getpagesize] \
                 [strcasecmp strchr strerror strtol] )
 dnl !!! end autoscan
 
-AC_CHECK_FUNCS( [nanosleep alarm times isnanf select setenv putenv] \
+AC_CHECK_FUNCS( [nanosleep alarm times select setenv putenv] \
                 [lstat mkstemp sigprocmask isatty feenableexcept tzset] \
 		[gettimeofday getrusage] )
 
 AC_CHECK_FUNCS( [expf logf sqrtf cosf sinf tanf sinhf coshf tanhf] \
-		[floorf ceilf fabsf frexpf ldexpf])
+		[floorf ceilf fabsf frexpf ldexpf log1p log1pf log1pl])
 
-AC_CHECK_FUNCS( [sched_yield] )
+AC_CHECK_FUNCS( [sched_yield uname fseeko] )
 
 dnl =====================================================================
 dnl Checks for system services
@@ -565,7 +584,7 @@ case "${enable_boehm}" in
     test -d gc && rm -rf gc
     if mkdir gc; then
      (destdir=`${PWDCMD}`; cd gc; \
-      CC="${CC} ${PICFLAG}" CFLAGS="${CFLAGS}" LDFLAGS="${LDFLAGS}" \
+      CC="${CC} ${PICFLAG}" CFLAGS="-DGC_BUILD ${CFLAGS}" LDFLAGS="${LDFLAGS}" \
         $srcdir/gc/configure --disable-shared --prefix=${destdir} \
 	--includedir=${destdir}/ecl/gc/ --libdir=${destdir} --build=${build_alias} \
 	--host=${host_alias} ${boehm_configure_flags})

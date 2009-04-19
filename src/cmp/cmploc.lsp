@@ -26,6 +26,7 @@
 ;;;	( VV-temp vv-index )
 ;;;	( LCL lcl [representation-type]) local variable, type unboxed
 ;;;	( TEMP temp )			local variable, type object
+;;;	( FRAME ndx )			variable in local frame stack
 ;;;	( CALL c-fun-name args fname )	locs are locations containing the arguments
 ;;;	( CALL-NORMAL fun locs)		similar as CALL, but number of arguments is fixed
 ;;;	( C-INLINE output-type fun/string locs side-effects output-var )
@@ -37,6 +38,7 @@
 ;;;	( MAKE-CCLOSURE cfun )
 ;;;	( FIXNUM-VALUE fixnum-value )
 ;;;	( CHARACTER-VALUE character-code )
+;;;	( LONG-FLOAT-VALUE long-float-value vv )
 ;;;	( DOUBLE-FLOAT-VALUE double-float-value vv )
 ;;;	( SINGLE-FLOAT-VALUE single-float-value vv )
 ;;;	( STACK-POINTER index )	retrieve a value from the stack
@@ -132,7 +134,7 @@
 (defun last-call-p ()
   (member *exit*
           '(RETURN RETURN-FIXNUM RETURN-CHARACTER RETURN-SINGLE-FLOAT
-            RETURN-DOUBLE-FLOAT RETURN-OBJECT)))
+            RETURN-DOUBLE-FLOAT RETURN-LONG-FLOAT RETURN-OBJECT)))
 
 (defun wt-car (loc) (wt "CAR(" loc ")"))
 
@@ -182,8 +184,14 @@
 (defun values-loc (n)
   (list 'VALUE n))
 
+(defun wt-local-frame (n)
+  (if n
+      (wt +ecl-local-stack-variable+ "[" n "]")
+      (wt "((cl_object)&" +ecl-local-stack-frame-variable+ ")")))
+
 ;;; -----------------------------------------------------------------
 
+(put-sysprop 'LOCAL-FRAME 'WT-LOC #'wt-local-frame)
 (put-sysprop 'TEMP 'WT-LOC #'wt-temp)
 (put-sysprop 'LCL 'WT-LOC #'wt-lcl-loc)
 (put-sysprop 'VV 'WT-LOC #'wt-vv)
@@ -193,6 +201,7 @@
 (put-sysprop 'CADR 'WT-LOC #'wt-cadr)
 (put-sysprop 'FIXNUM-VALUE 'WT-LOC #'wt-number)
 (put-sysprop 'CHARACTER-VALUE 'WT-LOC #'wt-character)
+(put-sysprop 'LONG-FLOAT-VALUE 'WT-LOC #'wt-number)
 (put-sysprop 'DOUBLE-FLOAT-VALUE 'WT-LOC #'wt-number)
 (put-sysprop 'SINGLE-FLOAT-VALUE 'WT-LOC #'wt-number)
 (put-sysprop 'VALUE 'WT-LOC #'wt-value)

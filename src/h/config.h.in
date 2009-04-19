@@ -14,6 +14,30 @@
 */
 
 /*
+ * If ECL_API has been predefined, that means we are building the core
+ * library and, under windows, we must tell the compiler to export
+ * extern functions from the shared library.
+ * If ECL_API is not defined, we are simply building an application that
+ * uses ECL and, under windows, we must tell the compiler that certain
+ * will be imported from a DLL.
+ */
+#if defined(mingw32) || defined(_MSC_VER) || defined(cygwin)
+# define ECL_DLLEXPORT __declspec(dllexport)
+# ifdef ECL_API
+#  undef ECL_API
+#  define ECL_API __declspec(dllexport)
+# else
+#  define ECL_API __declspec(dllimport)
+# endif
+#else
+# define ECL_DLLEXPORT
+# ifdef ECL_API
+#  undef ECL_API
+# endif
+# define ECL_API
+#endif
+
+/*
  * FEATURES LINKED IN
  */
 /* Always use CLOS							*/
@@ -76,7 +100,7 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
  * The character type
  */
 #ifdef ECL_UNICODE
-#define	CHAR_CODE_LIMIT	1114111	/*  unicode character code limit  */
+#define	CHAR_CODE_LIMIT	1114112	/*  unicode character code limit  */
 #else
 #define	CHAR_CODE_LIMIT	256	/*  unicode character code limit  */
 #endif
@@ -108,7 +132,7 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 /*	See cmplam.lsp if you change this value				*/
 #define C_ARGUMENTS_LIMIT 64
 
-/*	Maximum number of output arguments				*/
+/*	Maximum number of output arguments (>= C_ARGUMENTS_LIMIT)	*/
 #define ECL_MULTIPLE_VALUES_LIMIT 64
 
 /* A setjmp that does not save signals					*/
@@ -125,9 +149,15 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 
 /* compiler understands long double                                     */
 #undef HAVE_LONG_DOUBLE
+#ifdef HAVE_LONG_DOUBLE
+# define ECL_LONG_FLOAT
+#endif
 /* compiler understands complex                                         */
 #undef HAVE_DOUBLE_COMPLEX
 #undef HAVE_FLOAT_COMPLEX
+
+/* We can use small, two-words conses, without type information		*/
+#undef ECL_SMALL_CONS
 
 /* -CUT-: Everything below this mark will not be installed		*/
 /* -------------------------------------------------------------------- *
@@ -172,14 +202,20 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 /* We use hierarchical package names, like in Allegro CL                */
 #undef ECL_RELATIVE_PACKAGE_NAMES
 
+/* Assembler implementation of APPLY and friends			*/
+#undef ECL_ASM_APPLY
+
+/* Activate Boehm-Weiser incremental garbage collector			*/
+#undef GBC_BOEHM_GENGC
+
 /*
  * SYSTEM FEATURES:
  */
 
 /* Stack grows downwards						*/
 #undef DOWN_STACK
-/* Arguments cannot be accessed as array				*/
-#undef NO_ARGS_ARRAY
+/* Argument list can be access as an array				*/
+#undef ECL_USE_VARARG_AS_POINTER
 /* Most significant byte first						*/
 #undef WORDS_BIGENDIAN
 /* Has <sys/resource.h>							*/
@@ -228,6 +264,8 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #undef HAVE_FENV_H
 /* can activate individual traps in floating point environment		*/
 #undef HAVE_FEENABLEEXCEPT
+/* has support for large files						*/
+#undef HAVE_FSEEKO
 /* the tzset() function gets the current time zone			*/
 #undef HAVE_TZSET
 /* several floating point functions (ISO C99)				*/
@@ -247,8 +285,13 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #undef HAVE_FABSF
 #undef HAVE_FREXPF
 #undef HAVE_LDEXPF
+#undef HAVE_LOG1P
+#undef HAVE_LOG1PF
+#undef HAVE_LOG1PL
 /* whether we have sched_yield() that gives priority to other threads	*/
 #undef HAVE_SCHED_YIELD
+/* uname() for system identification					*/
+#undef HAVE_UNAME
 
 /*
  * we do not manage to get proper signal handling of floating point
@@ -349,5 +392,12 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #  define PTHREAD_MUTEX_ERRORCHECK_NP PTHREAD_MUTEX_ERRORCHECK
 #  define PTHREAD_MUTEX_TIMED_NP PTHREAD_MUTEX_NORMAL
 #  define PTHREAD_MUTEX_ADAPTIVE_NP PTHREAD_MUTEX_NORMAL
+# endif
+#endif
+
+#if defined(mingw32) || defined(_MSC_VER) || defined(cygwin)
+# include <math.h>
+# ifndef isfinite
+#  define isfinite(x) (finite(x))
 # endif
 #endif

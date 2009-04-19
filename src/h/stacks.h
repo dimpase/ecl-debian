@@ -32,17 +32,17 @@ typedef struct bds_bd {
 		bds_overflow()
 
 #ifdef ECL_THREADS
-extern void bds_bind(cl_object symbol, cl_object value);
-extern void bds_push(cl_object symbol);
-extern void bds_unwind1();
-extern void bds_unwind_n(int n);
-extern cl_object *ecl_symbol_slot(cl_object s);
+extern ECL_API void bds_bind(cl_object symbol, cl_object value);
+extern ECL_API void bds_push(cl_object symbol);
+extern ECL_API void bds_unwind1();
+extern ECL_API void bds_unwind_n(int n);
+extern ECL_API cl_object *ecl_symbol_slot(cl_object s);
 #define SYM_VAL(s) (*ecl_symbol_slot(s))
 #if 0
 #define ECL_SET(s,v) ((s)->symbol.value=(v))
 #define ECL_SETQ(s,v) (*ecl_symbol_slot(s)=(v))
 #else
-extern cl_object ecl_set_symbol(cl_object s, cl_object v);
+extern ECL_API cl_object ecl_set_symbol(cl_object s, cl_object v);
 #define ECL_SET(s,v) (ecl_set_symbol(s,v))
 #define ECL_SETQ(s,v) (ecl_set_symbol(s,v))
 #endif
@@ -76,19 +76,18 @@ typedef struct ihs_frame {
 	cl_index index;
 } *ihs_ptr;
 
-#define ihs_push(r,f) do {\
-	(r)->next=cl_env.ihs_top; (r)->function=(f); (r)->lex_env= cl_env.lex_env; \
+#define ihs_push(r,f,e) do {	\
+	(r)->next=cl_env.ihs_top; (r)->function=(f); (r)->lex_env=(e); \
 	(r)->index=cl_env.ihs_top->index+1;\
 	cl_env.ihs_top = (r); \
 } while(0)
 
 #define ihs_pop() do {\
-	cl_env.lex_env = cl_env.ihs_top->lex_env; \
 	if (cl_env.ihs_top->next == NULL) ecl_internal_error("Underflow in IHS stack"); \
 	cl_env.ihs_top = cl_env.ihs_top->next; \
 } while(0)
 
-extern cl_object ihs_top_function_name(void);
+extern ECL_API cl_object ihs_top_function_name(void);
 
 /***************
  * FRAME STACK
@@ -116,20 +115,52 @@ extern cl_object ihs_top_function_name(void);
 typedef struct ecl_frame {
 	jmp_buf		frs_jmpbuf;
 	cl_object	frs_val;
-	cl_object	frs_lex;
 	bds_ptr		frs_bds_top;
 	ihs_ptr		frs_ihs;
 	cl_index	frs_sp;
 } *ecl_frame_ptr;
 
-extern ecl_frame_ptr _frs_push(register cl_object val);
+extern ECL_API ecl_frame_ptr _frs_push(register cl_object val);
 #define frs_push(val)  ecl_setjmp(_frs_push(val)->frs_jmpbuf)
 #define frs_pop() (cl_env.frs_top--)
 
 /*******************
- * C CONTROL STACK
- *******************/
+ * ARGUMENTS STACK
+ *******************
+ * Here we define how we handle the incoming arguments for a
+ * function. Our calling conventions specify that at most
+ * C_ARGUMENTS_LIMIT ar pushed onto the C stack. If the function
+ * receives more than this number of arguments it will keep a copy of
+ * _all_ those arguments _plus_ the remaining ones in the lisp
+ * stack. The caller is responsible for storing and removing such
+ * values.
+ *
+ * Given this structure, we need our own object for handling variable
+ * argument list, cl_va_list. This object joins the C data type for
+ * handling vararg lists and a pointer to the lisp stack, in case the
+ * arguments were passed there.
+ *
+ * Note that keeping a direct reference to the lisp stack effectively
+ * locks it in memory, preventing the block from being garbage
+ * collected if the stack grows -- at least until all references are
+ * eliminated --. This is something we have to live with and which
+ * is somehow unavoidable, given that function arguments have to be
+ * stored somewhere.
+ */
 
+#define cl_va_start(a,p,n,k) { \
+	a[0].narg = (n)-(k); \
+	va_start(a[0].args,p); \
+	a[0].sp = ((n) <= C_ARGUMENTS_LIMIT)? 0 : _ecl_va_sp(a[0].narg); }
+#define cl_va_arg(a) \
+	(a[0].narg--,(a[0].sp? *(a[0].sp++) : va_arg(a[0].args,cl_object)))
+#define cl_va_copy(dest,orig) { \
+	dest[0].narg = orig[0].narg; \
+	dest[0].sp = orig[0].sp; \
+	va_copy(dest[0].args,orig[0].args); \
+}
+#define cl_va_end(a) \
+	va_end(a[0].args)
 #define	check_arg(n) \
 	do { if (narg != (n)) FEwrong_num_arguments_anonym();} while(0)
 
@@ -166,11 +197,9 @@ extern ecl_frame_ptr _frs_push(register cl_object val);
 
 #define CL_NEWENV_BEGIN {\
 	cl_index __i = cl_stack_push_values(); \
-	cl_object __env = cl_env.lex_env;
 
 #define CL_NEWENV_END \
-	cl_stack_pop_values(__i); \
-	cl_env.lex_env = __env; }
+	cl_stack_pop_values(__i); }
 
 #define CL_UNWIND_PROTECT_BEGIN {\
 	bool __unwinding; ecl_frame_ptr __next_fr; \

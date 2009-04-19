@@ -105,6 +105,16 @@ FEtype_error_stream(cl_object strm)
 	FEwrong_type_argument(@'stream', strm);
 }
 
+void
+FEtype_error_sequence(cl_object x) {
+	FEwrong_type_argument(@'sequence', x);
+}
+
+void
+FEtype_error_instance(cl_object x) {
+	FEwrong_type_argument(@'ext::instance', x);
+}
+
 cl_object
 ecl_type_error(cl_object function, const char *place, cl_object o,
 	       cl_object type)
@@ -146,8 +156,8 @@ ecl_type_to_symbol(cl_type t)
 		return @'symbol';
 	case t_package:
 		return @'package';
-	case t_cons:
-		return @'cons';
+	case t_list:
+		return @'list';
 	case t_hashtable:
 		return @'hash-table';
 	case t_array:
@@ -171,7 +181,9 @@ ecl_type_to_symbol(cl_type t)
 	case t_random:
 		return @'random-state';
 	case t_bytecodes:
+	case t_bclosure:
 	case t_cfun:
+	case t_cfunfixed:
 	case t_cclosure:
 		return @'compiled-function';
 #ifdef ECL_THREADS
@@ -335,9 +347,7 @@ cl_type_of(cl_object x)
 	}
 
 	case t_symbol:
-		if (x == Cnil)
-			t = @'null';
-		else if (x == Ct)
+		if (x == Ct)
 			t = @'boolean';
 		else if (x->symbol.hpack == cl_core.keyword_package)
 			t = @'keyword';
@@ -413,6 +423,8 @@ cl_type_of(cl_object x)
 	case t_pathname:
 		t = x->pathname.logical? @'logical-pathname' : @'pathname';
 		break;
+	case t_list:
+		return Null(x) ? @'null' : @'cons';
 	default:
 		t = ecl_type_to_symbol(tx);
 	}

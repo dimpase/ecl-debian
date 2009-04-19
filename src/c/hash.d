@@ -19,10 +19,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <ecl/ecl-inl.h>
 #include <ecl/internal.h>
 #include "newhash.h"
 
 static void corrupted_hash(cl_object hashtable) /*__attribute__((noreturn))*/;
+
+#define SYMBOL_NAME(x) (Null(x)? Cnil_symbol->symbol.name : (x)->symbol.name)
 
 static void
 corrupted_hash(cl_object hashtable)
@@ -75,12 +78,16 @@ static cl_hashkey
 _hash_equal(int depth, cl_hashkey h, cl_object x)
 {
 	switch (type_of(x)) {
-	case t_cons:
-		if (depth++ > 3) {
-			return 0;
+	case t_list:
+		if (Null(x)) {
+			return _hash_equal(depth, h, Cnil_symbol->symbol.name);
 		}
-		h = _hash_equal(depth, h, CAR(x));
-		return _hash_equal(depth, h, CDR(x));
+		if (--depth == 0) {
+			return h;
+		} else {
+			h = _hash_equal(depth, h, ECL_CONS_CAR(x));
+			return _hash_equal(depth, h, ECL_CONS_CDR(x));
+		}
 	case t_symbol:
 		x = x->symbol.name;
 #ifdef ECL_UNICODE
@@ -93,12 +100,12 @@ _hash_equal(int depth, cl_hashkey h, cl_object x)
 		return hash_string(h, x->base_string.self, x->base_string.fillp);
 #endif
 	case t_pathname:
-		h = _hash_equal(depth, h, x->pathname.host);
-		h = _hash_equal(depth, h, x->pathname.device);
-		h = _hash_equal(depth, h, x->pathname.directory);
-		h = _hash_equal(depth, h, x->pathname.name);
-		h = _hash_equal(depth, h, x->pathname.type);
-		return _hash_equal(depth, h, x->pathname.version);
+		h = _hash_equal(0, h, x->pathname.directory);
+		h = _hash_equal(0, h, x->pathname.name);
+		h = _hash_equal(0, h, x->pathname.type);
+		h = _hash_equal(0, h, x->pathname.host);
+		h = _hash_equal(0, h, x->pathname.device);
+		return _hash_equal(0, h, x->pathname.version);
 	case t_bitvector:
 		/* Notice that we may round out some bits. We must do this
 		 * because the fill pointer may be set in the middle of a byte.
@@ -107,7 +114,7 @@ _hash_equal(int depth, cl_hashkey h, cl_object x)
 		 * have different hash keys. */
 		return hash_string(h, x->vector.self.ch, x->vector.fillp / 8);
 	case t_random:
-		return _hash_equal(depth, h, x->random.value);
+		return _hash_equal(0, h, x->random.value);
 	default:
 		return _hash_eql(h, x);
 	}
@@ -120,12 +127,16 @@ _hash_equalp(int depth, cl_hashkey h, cl_object x)
 	switch (type_of(x)) {
 	case t_character:
 		return hash_word(h, toupper(CHAR_CODE(x)));
-	case t_cons:
-		if (depth++ > 3) {
-			return 0;
+	case t_list:
+		if (Null(x)) {
+			return _hash_equalp(depth, h, Cnil_symbol->symbol.name);
 		}
-		h = _hash_equalp(depth, h, CAR(x));
-		return _hash_equalp(depth, h, CDR(x));
+		if (--depth == 0) {
+			return h;
+		} else {
+			h = _hash_equalp(depth, h, ECL_CONS_CAR(x));
+			return _hash_equalp(depth, h, ECL_CONS_CDR(x));
+		}
 #ifdef ECL_UNICODE
 	case t_string:
 #endif
@@ -136,11 +147,10 @@ _hash_equalp(int depth, cl_hashkey h, cl_object x)
 		goto SCAN;
 	case t_array:
 		len = x->vector.dim;
-SCAN:		if (depth++ >= 3) {
-			return 0;
-		}
-		for (i = 0; i < len; i++) {
-			h = _hash_equalp(depth, h, ecl_aref(x, i));
+	SCAN:	if (--depth) {
+			for (i = 0; i < len; i++) {
+				h = _hash_equalp(depth, h, ecl_aref(x, i));
+			}
 		}
 		return h;
 	case t_fixnum:
@@ -164,11 +174,11 @@ SCAN:		if (depth++ >= 3) {
 	case t_bignum:
 		/* FIXME! We should be more precise here! */
 	case t_ratio:
-		h = _hash_equalp(depth, h, x->ratio.num);
-		return _hash_equalp(depth, h, x->ratio.den);
+		h = _hash_equalp(0, h, x->ratio.num);
+		return _hash_equalp(0, h, x->ratio.den);
 	case t_complex:
-		h = _hash_equalp(depth, h, x->complex.real);
-		return _hash_equalp(depth, h, x->complex.imag);
+		h = _hash_equalp(0, h, x->complex.real);
+		return _hash_equalp(0, h, x->complex.imag);
 	case t_instance:
 	case t_hashtable:
 		/* FIXME! We should be more precise here! */
@@ -194,9 +204,9 @@ ecl_search_hash(cl_object key, cl_object hashtable)
 	switch (htest) {
 	case htt_eq:	h = (cl_hashkey)key >> 2; break;
 	case htt_eql:	h = _hash_eql(0, key); break;
-	case htt_equal:	h = _hash_equal(0, 0, key); break;
-	case htt_equalp:h = _hash_equalp(0, 0, key); break;
-	case htt_pack:	h = _hash_equal(0, 0, key);
+	case htt_equal:	h = _hash_equal(3, 0, key); break;
+	case htt_equalp:h = _hash_equalp(3, 0, key); break;
+	case htt_pack:	h = _hash_equal(3, 0, key);
 			ho = MAKE_FIXNUM(h & 0xFFFFFFF);
 			break;
 	default:	corrupted_hash(hashtable);
@@ -225,7 +235,7 @@ ecl_search_hash(cl_object key, cl_object hashtable)
 		case htt_eql:	b = ecl_eql(key, hkey); break;
 		case htt_equal: b = ecl_equal(key, hkey); break;
 		case htt_equalp:b = ecl_equalp(key, hkey); break;
-		case htt_pack:	b = (ho==hkey) && ecl_string_eq(key,e->value->symbol.name);
+		case htt_pack:	b = (ho==hkey) && ecl_string_eq(key,SYMBOL_NAME(e->value));
 				break;
 		}
 		if (b)
@@ -274,9 +284,9 @@ add_new_to_hash(cl_object key, cl_object hashtable, cl_object value)
 	switch (htest) {
 	case htt_eq:	h = (cl_hashkey)key >> 2; break;
 	case htt_eql:	h = _hash_eql(0, key); break;
-	case htt_equal:	h = _hash_equal(0, 0, key); break;
-	case htt_equalp:h = _hash_equalp(0, 0, key); break;
-	case htt_pack:	h = _hash_equal(0, 0, key); break;
+	case htt_equal:	h = _hash_equal(3, 0, key); break;
+	case htt_equalp:h = _hash_equalp(3, 0, key); break;
+	case htt_pack:	h = _hash_equal(3, 0, key); break;
 	default:	corrupted_hash(hashtable);
 	}
 	e = hashtable->hash.data;
@@ -353,7 +363,7 @@ ecl_extend_hashtable(cl_object hashtable)
 	for (i = 0;  i < old_size;  i++)
 		if ((key = old->hash.data[i].key) != OBJNULL) {
 			if (hashtable->hash.test == htt_pack)
-				key = old->hash.data[i].value->symbol.name;
+				key = SYMBOL_NAME(old->hash.data[i].value);
 			add_new_to_hash(key, hashtable, old->hash.data[i].value);
 		}
 }
@@ -368,6 +378,22 @@ ecl_extend_hashtable(cl_object hashtable)
 	@(return cl__make_hash_table(test, size, rehash_size, rehash_threshold,
 				     lockable))
 @)
+
+static void
+do_clrhash(cl_object ht)
+{
+	/*
+	 * Fill a hash with null pointers and ensure it does not have
+	 * any entry. We separate this routine because it is needed
+	 * both by clrhash and hash table initialization.
+	 */
+	cl_index i;
+	ht->hash.entries = 0;
+	for(i = 0; i < ht->hash.size; i++) {
+		ht->hash.data[i].key = OBJNULL;
+		ht->hash.data[i].value = OBJNULL;
+	}
+}
 
 cl_object
 cl__make_hash_table(cl_object test, cl_object size, cl_object rehash_size,
@@ -428,26 +454,29 @@ cl__make_hash_table(cl_object test, cl_object size, cl_object rehash_size,
 	h = cl_alloc_object(t_hashtable);
 	h->hash.test = htt;
 	h->hash.size = hsize;
+        h->hash.entries = 0;
+	h->hash.data = NULL;	/* for GC sake */
+	h->hash.data = (struct ecl_hashtable_entry *)
+		cl_alloc(hsize * sizeof(struct ecl_hashtable_entry));
+	do_clrhash(h);
+
 	h->hash.rehash_size = rehash_size;
 	h->hash.threshold = rehash_threshold;
 	h->hash.factor = ecl_to_double(rehash_threshold);
 	if (h->hash.factor < 0.1) {
 		h->hash.factor = 0.1;
 	}
-        h->hash.entries = 0;
-	h->hash.data = NULL;	/* for GC sake */
-	h->hash.data = (struct ecl_hashtable_entry *)
-		cl_alloc(hsize * sizeof(struct ecl_hashtable_entry));
 	h->hash.lockable = !Null(lockable);
 #ifdef ECL_THREADS
-	if (h->hash.lockable)
+	if (h->hash.lockable) {
 #if defined(_MSC_VER) || defined(mingw32)
 		h->hash.lock = CreateMutex(NULL, FALSE, NULL);
 #else
 		pthread_mutex_init(&h->hash.lock, NULL);
 #endif
+	}
 #endif
-	return cl_clrhash(h);
+	return h;
 }
 
 cl_object
@@ -508,16 +537,12 @@ cl_remhash(cl_object key, cl_object ht)
 cl_object
 cl_clrhash(cl_object ht)
 {
-	cl_index i;
-
 	assert_type_hash_table(ht);
-	HASH_TABLE_LOCK(ht);
-	for(i = 0; i < ht->hash.size; i++) {
-		ht->hash.data[i].key = OBJNULL;
-		ht->hash.data[i].value = OBJNULL;
+	if (ht->hash.entries) {
+		HASH_TABLE_LOCK(ht);
+		do_clrhash(ht);
+		HASH_TABLE_UNLOCK(ht);
 	}
-	ht->hash.entries = 0;
-	HASH_TABLE_UNLOCK(ht);
 	@(return ht)
 }
 
@@ -564,12 +589,12 @@ si_hash_table_iterate(cl_narg narg, cl_object env)
 		for (; ++i < ht->hash.size; ) {
 			struct ecl_hashtable_entry e = ht->hash.data[i];
 			if (e.key != OBJNULL) {
-				@(return (CAR(env) = MAKE_FIXNUM(i))
-					 e.key
-					 e.value)
+				cl_object ndx = MAKE_FIXNUM(i);
+				ECL_RPLACA(env, ndx);
+				@(return ndx e.key e.value)
 			}
 		}
-		CAR(env) = Cnil;
+		ECL_RPLACA(env, Cnil);
 	}
 	@(return Cnil)
 }
@@ -599,10 +624,40 @@ cl_hash_table_rehash_threshold(cl_object ht)
 cl_object
 cl_sxhash(cl_object key)
 {
-	cl_index output = _hash_equal(0, 0, key);
+	cl_index output = _hash_equal(3, 0, key);
 	const cl_index mask = ((cl_index)1 << (FIXNUM_BITS - 3)) - 1;
 	@(return MAKE_FIXNUM(output & mask))
 }
+
+@(defun si::hash-eql (&rest args)
+	cl_index h;
+@
+	for (h = 0; narg; narg--) {
+		cl_object o = cl_va_arg(args);
+		h = _hash_eql(h, o);
+	}
+	@(return MAKE_FIXNUM(h))
+@)
+
+@(defun si::hash-equal (&rest args)
+	cl_index h;
+@
+	for (h = 0; narg; narg--) {
+		cl_object o = cl_va_arg(args);
+		h = _hash_equal(3, h, o);
+	}
+	@(return MAKE_FIXNUM(h))
+@)
+
+@(defun si::hash-equalp (&rest args)
+	cl_index h;
+@
+	for (h = 0; narg; narg--) {
+		cl_object o = cl_va_arg(args);
+		h = _hash_equalp(3, h, o);
+	}
+	@(return MAKE_FIXNUM(h))
+@)
 
 cl_object
 cl_maphash(cl_object fun, cl_object ht)

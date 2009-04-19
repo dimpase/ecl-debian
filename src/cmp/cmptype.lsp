@@ -117,6 +117,9 @@
          (values nil nil))
     (error (c) (values nil nil))))
 
+(defun known-type-p (type)
+  (subtypep type 'T))
+
 (defun type-and (t1 t2)
   ;; FIXME! Should we allow "*" as type name???
   (when (or (eq t1 t2) (eq t2 '*))
@@ -399,7 +402,7 @@
 			   :safe "In the argument ~d of a call to ~a" i fname)
 	    ;; In safe mode, we cannot assume that the type of the
 	    ;; argument is going to be the right one.
-	    (unless (zerop *safety*)
+	    (unless (zerop (cmp-env-optimization 'safety))
               (setf (c1form-type form) old-type))))))
     return-type))
 
@@ -407,3 +410,16 @@
   `(put-sysprop ',fname 'C1TYPE-PROPAGATOR
     #'(ext:lambda-block ,fname ,lambda-list ,body)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; TYPE CHECKING
+;;
+
+(defmacro optional-check-type (&whole whole var-name type &environment env)
+  "Generates a type check that is only activated for the appropriate
+safety settings and when the type is not trivial."
+  (unless (policy-automatic-check-type-p env)
+    (cmpnote "Unable to emit check for variable ~A" whole))
+  (when (policy-automatic-check-type-p env)
+    (unless (subtypep 't type)
+      `(check-type ,var-name ,type))))

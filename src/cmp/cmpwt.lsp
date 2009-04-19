@@ -57,6 +57,8 @@
      (princ form *compiler-output1*))
     ((or DOUBLE-FLOAT SINGLE-FLOAT)
      (format *compiler-output1* "~10,,,,,,'eG" form))
+    (LONG-FLOAT
+     (format *compiler-output1* "~,,,,,,'eEl" form))
     (VAR (wt-var form))
     (t (wt-loc form)))
   nil)
@@ -153,6 +155,7 @@
 	(*print-case* :downcase)
 	(*print-gensym* t)
 	(*print-array* t)
+	(*print-readably* t)
 	(*read-default-float-format* 'single-float)
 	(sys::*print-package* (find-package "CL"))
 	(sys::*print-structure* t)
@@ -201,8 +204,6 @@
 
 (defun add-object (object &key (duplicate nil)
 		   (permanent (or (symbolp object) *permanent-data*)))
-  (when (and (not *compiler-constants*) (typep object '(or function package)))
-    (error "Object ~S cannot be externalized" object))
   ;; FIXME! Currently we have two data vectors and, when compiling
   ;; files, it may happen that a constant is duplicated and stored
   ;; both in VV and VVtemp. This would not be a problem if the

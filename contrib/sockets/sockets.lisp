@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.34 2008/03/05 20:01:55 jgarcia Exp $
+;; $Id: sockets.lisp,v 1.38 2008/08/02 15:29:00 jjgarcia Exp $
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -37,9 +37,12 @@
  "#include <sys/types.h>"
  "#include <sys/socket.h>"
  "#include <sys/un.h>"
+ #-:win32
+ "#include <sys/time.h>"
  "#include <netdb.h>"
  "#include <string.h>"
  "#include <netinet/in.h>"
+ "#include <netinet/tcp.h>"
  "#include <errno.h>"
  "#include <fcntl.h>"
  "#include <stdio.h>"
@@ -1345,6 +1348,25 @@ GET-NAME-SERVICE-ERRNO")
 	ret
 	(error "Sockopt error: ~A" (c-inline () () :cstring "strerror(errno)" :one-liner t)))))
 
+#+wsock
+(defun get-sockopt-timeval (fd const)
+  (* 1000 (get-sockopt-int fd const)))
+
+#-wsock
+(defun get-sockopt-timeval (fd const)
+  (let ((ret (c-inline (fd const) (:int :int) t
+"{
+	struct timeval tv;
+        socklen_t socklen = sizeof(struct timeval);
+        int ret = getsockopt(#0,SOL_SOCKET,#1,&tv,&socklen);
+
+        @(return) = (ret == 0) ? ecl_make_doublefloat((double)tv.tv_sec
+					+ ((double)tv.tv_usec) / 1000000.0) : Cnil;
+}")))
+    (if ret
+	ret
+	(error "Sockopt error: ~A" (c-inline () () :cstring "strerror(errno)" :one-liner t)))))
+
 (defun set-sockopt-int (fd const value)
   (let ((ret (c-inline (fd const value) (:int :int :int) t
 "{
@@ -1367,6 +1389,28 @@ GET-NAME-SERVICE-ERRNO")
 	ret
 	(error "Sockopt error: ~A" (c-inline () () :cstring "strerror(errno)" :one-liner t)))))
 
+#-wsock
+(defun set-sockopt-timeval (fd const value)
+  (let ((ret (c-inline (fd const value) (:int :int :double) t
+"{
+	struct timeval tv;
+	double tmp = #2;
+	int ret;
+
+	tv.tv_sec = (int)tmp;
+	tv.tv_usec = (int)((tmp-trunc(tmp))*1000000.0);
+
+        ret = setsockopt(#0,SOL_SOCKET,#1,&tv,sizeof(struct timeval));
+        @(return) = (ret == 0) ? Ct : Cnil;
+}")))
+    (if ret
+	value
+	(error "Sockopt error: ~A" (c-inline () () :cstring "strerror(errno)" :one-liner t)))))
+
+#+wsock
+(defun set-sockopt-timeval (fd const value)
+  (set-sockopt-int fd const (* 1000 value)))
+
 (eval-when (:compile-toplevel :load-toplevel)
   (defmacro define-sockopt (name c-const type &optional (read-only nil))
     `(progn
@@ -1384,6 +1428,8 @@ GET-NAME-SERVICE-ERRNO")
 
 (define-sockopt sockopt-type "SO_TYPE" int t)
 (define-sockopt sockopt-receive-buffer "SO_RCVBUF" int)
+(define-sockopt sockopt-receive-timeout "SO_RCVTIMEO" timeval)
+(define-sockopt sockopt-send-timeout "SO_SNDTIMEO" timeval)
 (define-sockopt sockopt-reuse-address "SO_REUSEADDR" bool)
 (define-sockopt sockopt-keep-alive "SO_KEEPALIVE" bool)
 (define-sockopt socket-dont-route "SO_DONTROUTE" bool)
@@ -1391,6 +1437,8 @@ GET-NAME-SERVICE-ERRNO")
 
 #-(or :sun4sol2 :linux :wsock :cygwin)
 (define-sockopt sockopt-reuse-port "SO_REUSEPORT" bool)
+
+(define-sockopt sockopt-tcp-nodelay "TCP_NODELAY" bool)
 
 ;; Add sockopts here as you need them...
 

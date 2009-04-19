@@ -35,6 +35,7 @@ ecl_fficall_prepare_extra(struct ecl_fficall_reg *registers)
 	}
 	registers->int_registers_size = 0;
 	registers->fp_registers_size = 0;
+        return registers;
 }
 
 void
@@ -133,7 +134,7 @@ ecl_fficall_execute(void *_f_ptr, struct ecl_fficall *fficall, enum ecl_ffi_tag 
 	:: "a" (registers->fp_registers));
 
 	if (return_type <= ECL_FFI_UNSIGNED_LONG) {
-		fficall->output.i = ((int (*)())f_ptr)();
+		fficall->output.ul = ((unsigned long (*)())f_ptr)();
 	} else if (return_type == ECL_FFI_POINTER_VOID) {
 		fficall->output.pv = ((void * (*)())f_ptr)();
 	} else if (return_type == ECL_FFI_CSTRING) {
@@ -165,7 +166,7 @@ ecl_dynamic_callback_execute(long i1, long i2, long i3, long i4, long i5, long i
 	long i_reg[MAX_INT_REGISTERS];
 	double f_reg[MAX_FP_REGISTERS];
 
-	ECL_BUILD_STACK_FRAME(frame);
+	ECL_BUILD_STACK_FRAME(frame, aux);
 
 	fun = CAR(cbk_info);
 	rtype = CADR(cbk_info);

@@ -17,6 +17,13 @@
 #include <string.h>
 #include <ecl/internal.h>
 
+struct ecl_fficall_reg *
+ecl_fficall_prepare_extra(struct ecl_fficall_reg *registers)
+{
+	/* No need to prepare registers */
+	return 0;
+}
+
 void
 ecl_fficall_push_arg(union ecl_ffi_values *data, enum ecl_ffi_tag type)
 {
@@ -110,7 +117,7 @@ ecl_dynamic_callback_execute(cl_object cbk_info, char *arg_buffer)
 	union ecl_ffi_values output;
 	enum ecl_ffi_tag tag;
 
-	ECL_BUILD_STACK_FRAME(frame);
+	ECL_BUILD_STACK_FRAME(frame, aux);
 
 	fun = CAR(cbk_info);
 	rtype = CADR(cbk_info);

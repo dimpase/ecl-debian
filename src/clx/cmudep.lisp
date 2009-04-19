@@ -7,7 +7,7 @@
 ;;; Scott Fahlman or slisp-group@cs.cmu.edu.
 ;;;
 (ext:file-comment
-  "$Header: /project/ecl/cvsroot/ecl/src/clx/cmudep.lisp,v 1.1 2004/06/11 11:34:29 jjgarcia Exp $")
+  "$Header: /cvsroot/ecls/ecl/src/clx/cmudep.lisp,v 1.1 2004/06/11 11:34:29 jjgarcia Exp $")
 ;;;
 ;;; **********************************************************************
 ;;;

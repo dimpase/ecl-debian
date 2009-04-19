@@ -15,6 +15,7 @@
 #define SYS_ "SI::"
 #define MP_ "MP::"
 #define KEY_ ":"
+#define GRAY_ "GRAY::"
 struct {
 	const char *name, *translation;
 }
@@ -24,6 +25,7 @@ struct {
 #define SYS_
 #define MP_
 #define KEY_
+#define GRAY_
 cl_symbol_initializer
 #endif
 cl_symbols[] = {
@@ -114,7 +116,7 @@ cl_symbols[] = {
 {">","cl_G"},
 {">=","cl_GE"},
 {"ABORT",NULL},
-{"ABS","ECL_NAME(cl_abs)"},
+{"ABS","cl_abs"},
 {"ACONS","cl_acons"},
 {"ACOS","ECL_NAME(cl_acos)"},
 {"ACOSH","ECL_NAME(cl_acosh)"},
@@ -1077,7 +1079,6 @@ cl_symbols[] = {
 {SYS_ "CHAR-SET","si_char_set"},
 {SYS_ "CHDIR","si_chdir"},
 {SYS_ "CLEAR-COMPILER-PROPERTIES","cl_identity"},
-{SYS_ "CLOSE-PIPE","si_close_pipe"},
 {SYS_ "COERCE-TO-BASE-STRING","si_coerce_to_base_string"},
 {SYS_ "COERCE-TO-EXTENDED-STRING","si_coerce_to_extended_string"},
 {SYS_ "COERCE-TO-FILENAME","si_coerce_to_filename"},
@@ -1139,7 +1140,7 @@ cl_symbols[] = {
 {SYS_ "MKDIR","si_mkdir"},
 {SYS_ "MKSTEMP","si_mkstemp"},
 {SYS_ "RMDIR","si_rmdir"},
-{SYS_ "OPEN-PIPE","si_open_pipe"},
+{SYS_ "MAKE-PIPE","si_make_pipe"},
 {SYS_ "PACKAGE-LOCK","si_package_lock"},
 {SYS_ "PACKAGE-HASH-TABLES","si_package_hash_tables"},
 {SYS_ "PATHNAME-TRANSLATIONS","si_pathname_translations"},
@@ -1217,7 +1218,8 @@ cl_symbols[] = {
 {SYS_ "INSTANCEP","si_instancep"},
 {SYS_ "SL-BOUNDP","si_sl_boundp"},
 {SYS_ "SL-MAKUNBOUND","si_sl_makunbound"},
-{SYS_ "SUBCLASSP",NULL},
+{SYS_ "SUBCLASSP","ECL_NAME(si_subclassp)"},
+{SYS_ "OF-CLASS-P","ECL_NAME(si_of_class_p)"},
 /*{SYS_ "UNBOUND","si_unbound"}, */
 #endif
 
@@ -1225,48 +1227,9 @@ cl_symbols[] = {
 {SYS_ "*PROFILE-ARRAY*",NULL},
 #endif
 
-#ifdef ECL_CLOS_STREAMS
-#ifdef ECL_GRAY_STREAMS
-{EXT_ "ANSI-STREAM-CLOSE","si_ansi_stream_close"},
-{EXT_ "ANSI-STREAM-ELEMENT-TYPE","si_ansi_stream_element_type"},
-{EXT_ "ANSI-STREAM-INPUT-STREAM-P","si_ansi_stream_input_stream_p"},
-{EXT_ "ANSI-STREAM-OUTPUT-STREAM-P","si_ansi_stream_output_stream_p"},
-{EXT_ "ANSI-STREAM-OPEN-STREAM-P","si_ansi_stream_open_stream_p"},
-#else
-{EXT_ "STREAM-CLOSE",NULL},
-{EXT_ "STREAM-ELT-TYPE",NULL},
-{EXT_ "STREAM-INPUT-P",NULL},
-{EXT_ "STREAM-OUTPUT-P",NULL},
-{EXT_ "STREAM-OPEN-P",NULL},
-#endif
-{EXT_ "STREAM-CLEAR-INPUT",NULL},
-{EXT_ "STREAM-CLEAR-OUTPUT",NULL},
-{EXT_ "STREAM-FINISH-OUTPUT",NULL},
-{EXT_ "STREAM-FORCE-OUTPUT",NULL},
-{EXT_ "STREAM-FRESH-LINE",NULL},
-{EXT_ "STREAM-INTERACTIVE-P",NULL},
-{EXT_ "STREAM-LINE-COLUMN",NULL},
-{EXT_ "STREAM-LISTEN",NULL},
-{EXT_ "STREAM-PEEK-CHAR",NULL},
-{EXT_ "STREAM-READ-BYTE",NULL},
-{EXT_ "STREAM-READ-CHAR",NULL},
-{EXT_ "STREAM-READ-CHAR-NO-HANG",NULL},
-{EXT_ "STREAM-READ-LINE",NULL},
-{EXT_ "STREAM-READ-SEQUENCE",NULL},
-{EXT_ "STREAM-START-LINE-P",NULL},
-{EXT_ "STREAM-TERPRI",NULL},
-{EXT_ "STREAM-UNREAD-CHAR",NULL},
-{EXT_ "STREAM-WRITE-BYTE",NULL},
-{EXT_ "STREAM-WRITE-CHAR",NULL},
-{EXT_ "STREAM-WRITE-SEQUENCE",NULL},
-{EXT_ "STREAM-WRITE-STRING",NULL},
-#endif
-
-#ifdef PDE
-{SYS_ "*RECORD-SOURCE-PATHNAME-P*",NULL},
-{SYS_ "*SOURCE-PATHNAME*",NULL},
-{SYS_ "RECORD-SOURCE-PATHNAME",NULL},
-#endif
+{EXT_ "*SOURCE-LOCATION*",NULL},
+{EXT_ "*REGISTER-WITH-PDE-HOOK*",NULL},
+{EXT_ "REGISTER-WITH-PDE",NULL},
 
 #ifdef PROFILE
 {SYS_ "PROFILE","si_profile"},
@@ -1537,6 +1500,7 @@ cl_symbols[] = {
 {SYS_ "*EXIT-HOOKS*",NULL},
 
 #ifdef CLOS
+{CLOS_ "*BUILTIN-CLASSES*",NULL},
 {CLOS_ "*OPTIMIZE-SLOT-ACCESS*",NULL},
 {CLOS_ "ACCESSOR-METHOD-SLOT-DEFINITION",NULL},
 {CLOS_ "ADD-DEPENDENT",NULL},
@@ -1668,7 +1632,9 @@ cl_symbols[] = {
 
 {SYS_ "WRONG-TYPE-ARGUMENT",NULL},
 
+#ifdef GBC_BOEHM
 {SYS_ "GC-STATS","si_gc_stats"},
+#endif
 
 {SYS_ "*CURRENT-FORM*",NULL},
 
@@ -1681,6 +1647,59 @@ cl_symbols[] = {
 {SYS_ "FRAME",NULL},
 {SYS_ "APPLY-FROM-STACK-FRAME","si_apply_from_stack_frame"},
 
+#ifdef ECL_CLOS_STREAMS
+{GRAY_ "CLOSE",NULL},
+{GRAY_ "STREAMP",NULL},
+{GRAY_ "INPUT-STREAM-P",NULL},
+{GRAY_ "OUTPUT-STREAM-P",NULL},
+{GRAY_ "OPEN-STREAM-P",NULL},
+{GRAY_ "STREAM-ADVANCE-TO-COLUMN",NULL},
+{GRAY_ "STREAM-CLEAR-INPUT",NULL},
+{GRAY_ "STREAM-CLEAR-OUTPUT",NULL},
+{GRAY_ "STREAM-ELEMENT-TYPE",NULL},
+{GRAY_ "STREAM-FINISH-OUTPUT",NULL},
+{GRAY_ "STREAM-FORCE-OUTPUT",NULL},
+{GRAY_ "STREAM-FRESH-LINE",NULL},
+{GRAY_ "STREAM-INTERACTIVE-P",NULL},
+{GRAY_ "STREAM-LINE-COLUMN",NULL},
+{GRAY_ "STREAM-LISTEN",NULL},
+{GRAY_ "STREAM-PEEK-CHAR",NULL},
+{GRAY_ "STREAM-READ-BYTE",NULL},
+{GRAY_ "STREAM-READ-CHAR",NULL},
+{GRAY_ "STREAM-READ-CHAR-NO-HANG",NULL},
+{GRAY_ "STREAM-READ-LINE",NULL},
+{GRAY_ "STREAM-READ-SEQUENCE",NULL},
+{GRAY_ "STREAM-START-LINE-P",NULL},
+{GRAY_ "STREAM-TERPRI",NULL},
+{GRAY_ "STREAM-UNREAD-CHAR",NULL},
+{GRAY_ "STREAM-WRITE-BYTE",NULL},
+{GRAY_ "STREAM-WRITE-CHAR",NULL},
+{GRAY_ "STREAM-WRITE-SEQUENCE",NULL},
+{GRAY_ "STREAM-WRITE-STRING",NULL},
+{GRAY_ "FUNDAMENTAL-STREAM",NULL},
+{GRAY_ "FUNDAMENTAL-INPUT-STREAM",NULL},
+{GRAY_ "FUNDAMENTAL-OUTPUT-STREAM",NULL},
+{GRAY_ "FUNDAMENTAL-CHARACTER-STREAM",NULL},
+{GRAY_ "FUNDAMENTAL-BINARY-STREAM",NULL},
+{GRAY_ "FUNDAMENTAL-CHARACTER-INPUT-STREAM",NULL},
+{GRAY_ "FUNDAMENTAL-CHARACTER-OUTPUT-STREAM",NULL},
+{GRAY_ "FUNDAMENTAL-BINARY-INPUT-STREAM",NULL},
+{GRAY_ "FUNDAMENTAL-BINARY-OUTPUT-STREAM",NULL},
+#endif
+
+{"LOG1P","si_log1p"},
+
+{EXT_ "BC-FILE","si_bc_file"},
+
+{SYS_ "PROPERTY-LIST",NULL},
+
+{SYS_ "BYTECODES",NULL},
+
+{SYS_ "HASH-EQL","si_hash_eql"},
+{SYS_ "HASH-EQUAL","si_hash_equal"},
+{SYS_ "HASH-EQUALP","si_hash_equalp"},
+
+{EXT_ "INTERACTIVE-INTERRUPT",NULL},
+
 /* Tag for end of list */
 {NULL,NULL}};
-

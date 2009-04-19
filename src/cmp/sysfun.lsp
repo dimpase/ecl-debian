@@ -264,16 +264,16 @@
 (proclaim-function digit-char-p (character *) t :no-side-effects t)
 
 (proclaim-function alphanumericp (character) t :predicate t :no-side-effects t)
-(def-inline alphanumericp :always (character) :bool "isalnum(#0)")
+(def-inline alphanumericp :always (character) :bool "ecl_alphanumericp(#0)")
 
 (proclaim-function character (t) character)
 (proclaim-function char= (character *) t :predicate t :no-side-effects t)
-(def-inline char= :always (character character) :bool "(#0)==(#1)")
 (def-inline char= :always (t t) :bool "ecl_char_code(#0)==ecl_char_code(#1)")
+(def-inline char= :always (character character) :bool "(#0)==(#1)")
 
 (proclaim-function char/= (character *) t :predicate t :no-side-effects t)
-(def-inline char/= :always (character character) :bool "(#0)!=(#1)")
 (def-inline char/= :always (t t) :bool "ecl_char_code(#0)!=ecl_char_code(#1)")
+(def-inline char/= :always (character character) :bool "(#0)!=(#1)")
 
 (proclaim-function char< (character *) t :predicate t :no-side-effects t)
 (def-inline char< :always (character character) :bool "(#0)<(#1)")
@@ -554,7 +554,7 @@
 (def-inline nth :unsafe (fixnum t) t "ecl_nth(#0,#1)")
 
 (proclaim-function first (list) t :no-side-effects t)
-(def-inline first :always (cons) t "CAR(#0)")
+(def-inline first :always (cons) t "ECL_CONS_CAR(#0)")
 (def-inline first :unsafe (t) t "CAR(#0)")
 
 (proclaim-function second (list) t :no-side-effects t)
@@ -576,7 +576,7 @@
 (proclaim-function ninth (list) t)
 (proclaim-function tenth (list) t)
 (proclaim-function rest (list) t :no-side-effects t)
-(def-inline rest :always (cons) t "CDR(#0)")
+(def-inline rest :always (cons) t "ECL_CONS_CDR(#0)")
 (def-inline rest :unsafe (t) t "CDR(#0)")
 
 (proclaim-function nthcdr (fixnum list) t :no-side-effects t)
@@ -586,9 +586,10 @@
 (def-inline nthcdr :unsafe (fixnum t) t "ecl_nthcdr(#0,#1)")
 
 (proclaim-function last (list) t)
+(def-inline last :always (t) t "ecl_last(#0,1)")
 (proclaim-function list (*) list :no-side-effects t)
 (def-inline list :always nil t "Cnil")
-(def-inline list :always (t) t "CONS(#0,Cnil)")
+(def-inline list :always (t) t "ecl_list1(#0)")
 
 (proclaim-function list* (t *) list :no-side-effects t)
 (def-inline list* :always (t) t "#0")
@@ -607,7 +608,9 @@
 
 (proclaim-function nreconc (list t) t)
 (proclaim-function butlast (list *) list)
+(def-inline butlast :always (t) t "ecl_butlast(#0,1)")
 (proclaim-function nbutlast (list *) list)
+(def-inline nbutlast :always (t) t "ecl_nbutlast(#0,1)")
 (proclaim-function ldiff (list t) list)
 (proclaim-function rplaca (cons t) cons)
 (proclaim-function rplacd (cons t) cons)
@@ -1160,18 +1163,33 @@ type_of(#0)==t_bitvector")
 (proclaim-function schar (simple-string fixnum) character :no-side-effects t)
 (def-inline schar :always (t t) t "ecl_elt(#0,fixint(#1))")
 (def-inline schar :always (t fixnum) t "ecl_elt(#0,#1)")
-(def-inline schar :unsafe (t t) t "CODE_CHAR((#0)->base_string.self[fix(#1)])")
+(def-inline schar :unsafe ((array base-char (*)) t) t "CODE_CHAR((#0)->base_string.self[fix(#1)])")
+#-unicode
 (def-inline schar :unsafe (t t) :fixnum "(#0)->base_string.self[fix(#1)]")
+#-unicode
 (def-inline schar :unsafe (t fixnum) :fixnum "(#0)->base_string.self[#1]")
-(def-inline schar :unsafe (t fixnum) :char "(#0)->base_string.self[#1]")
+(def-inline schar :unsafe ((array base-char (*)) t) :fixnum "(#0)->base_string.self[fix(#1)]")
+(def-inline schar :unsafe ((array base-char (*)) fixnum) :fixnum "(#0)->base_string.self[#1]")
+(def-inline schar :unsafe ((array base-char (*)) fixnum) :char "(#0)->base_string.self[#1]")
+#+unicode
+(def-inline schar :unsafe ((array character (*)) t) t "(#0)->string.self[fix(#1)]")
 
 (proclaim-function si:schar-set (string fixnum character) character)
 (def-inline si:schar-set :always (t t t) t "ecl_elt_set(#0,fixint(#1),#2)")
 (def-inline si:schar-set :always (t fixnum t) t "ecl_elt_set(#0,#1,#2)")
+#-unicode
 (def-inline si:schar-set :unsafe (t t t) t
  "@2;((#0)->base_string.self[fix(#1)]=ecl_char_code(#2),(#2))")
+#-unicode
 (def-inline si:schar-set :unsafe (t fixnum base-char) :char
  "(#0)->base_string.self[#1]= #2")
+(def-inline si:schar-set :unsafe ((array base-char (*)) t t) t
+ "@2;((#0)->base_string.self[fix(#1)]=ecl_char_code(#2),(#2))")
+(def-inline si:schar-set :unsafe ((array base-char (*)) fixnum base-char) :char
+ "(#0)->base_string.self[#1]= #2")
+#+unicode
+(def-inline si:schar-set :unsafe ((array character (*)) fixnum t) :char
+ "(#0)->string.self[#1]= #2")
 
 (proclaim-function string= (string-designator string-designator *) t :predicate t :no-side-effects t)
 (def-inline string= :always (string string) :bool "ecl_string_eq(#0,#1)")
@@ -1229,12 +1247,11 @@ type_of(#0)==t_bitvector")
 
 (proclaim-function remprop (symbol t) t)
 (proclaim-function symbol-plist (symbol) t :predicate t :no-side-effects t)
-(def-inline symbol-plist :always (t) t "((#0)->symbol.plist)")
 
 (proclaim-function getf (t t *) t)
 (proclaim-function get-properties (t t) *)
 (proclaim-function symbol-name (symbol) string :no-side-effects t)
-(def-inline symbol-name :always (symbol) t "((#0)->symbol.name)")
+(def-inline symbol-name :always (t) string "ecl_symbol_name(#0)")
 
 (proclaim-function make-symbol (string) symbol)
 (proclaim-function copy-symbol (symbol *) symbol)
@@ -1335,9 +1352,9 @@ type_of(#0)==t_bitvector")
 
 (proclaim-function si:instance-class (t) t :no-side-effects t)
 (def-inline si:instance-class :always (standard-object) t "CLASS_OF(#0)")
-
 (proclaim-function si:instance-class-set (t t) t)
 (proclaim-function si:instancep (t) t :predicate t)
+(def-inline si::instancep :always (t) :bool "@0;ECL_INSTANCEP(#0)")
 (proclaim-function si:unbound (*) t :predicate t :no-side-effects t)
 (def-inline si:unbound :always nil t "ECL_UNBOUND")
 
@@ -1394,7 +1411,7 @@ type_of(#0)==t_bitvector")
     ;; module.lsp
     provide require
     ;; numlib.lsp
-    isqrt abs phase signum cis
+    isqrt phase signum cis
     asin acos asinh acosh atanh ffloor fceiling ftruncate fround
     logtest byte byte-size byte-position ldb ldb-test mask-field dpb
     deposit-field
@@ -1425,20 +1442,22 @@ type_of(#0)==t_bitvector")
      invalid-method-error
      #-(or) standard-instance-access ; this function is a synonym for si:instance-ref
      #-(or) funcallable-standard-instance-access ; same for this one
+     subclassp of-class-p
      )
 ))
 
 (proclaim
   `(si::c-export-fname #+ecl-min ,@c::*in-all-symbols-functions*
-    si::ecase-error si::etypecase-error
+    si::ecase-error si::etypecase-error si::do-check-type
     ccase-error typecase-error-string find-documentation find-declarations
     si::check-keyword si::check-arg-length si::dm-too-few-arguments si::dm-bad-key
     remove-documentation si::get-documentation
     si::set-documentation si::expand-set-documentation
-    si::closest-vector-type si::packages-iterator
+    si::packages-iterator
     si::pprint-logical-block-helper si::pprint-pop-helper
     si::make-seq-iterator si::seq-iterator-ref si::seq-iterator-set si::seq-iterator-next
-    si::assert-slot-type si::define-structure
+    si::structure-type-error si::define-structure
+    si::coerce-to-list si::coerce-to-vector
     #+formatter
     ,@'(
     format-princ format-prin1 format-print-named-character
@@ -1460,6 +1479,7 @@ type_of(#0)==t_bitvector")
      ;; combin.lsp
      clos::simple-code-walker
      ;; standard.lsp
+     clos::safe-instance-ref
      clos::standard-instance-set
      ;; kernel.lsp
      clos::install-method

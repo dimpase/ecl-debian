@@ -14,6 +14,15 @@
 
 (in-package "SYSTEM")
 
+(defvar *subtypep-cache* (si:make-vector t 256 nil nil nil 0))
+
+(defvar *upgraded-array-element-type-cache* (si:make-vector t 128 nil nil nil 0))
+
+(defun subtypep-clear-cache ()
+  (when (fboundp 'fill)
+    (fill *subtypep-cache* nil)
+    (fill *upgraded-array-element-type-cache* nil)))
+
 (defun create-type-name (name)
   (when (member name *alien-declarations*)
     (error "Symbol ~s is a declaration specifier and cannot be used to name a new type" name)))
@@ -24,6 +33,7 @@
   (create-type-name name)
   (put-sysprop name 'DEFTYPE-FORM form)
   (put-sysprop name 'DEFTYPE-DEFINITION function)
+  (subtypep-clear-cache)
   name)
 
 ;;; DEFTYPE macro.
@@ -133,6 +143,9 @@ into the structure at their position.  For example,
 (deftype proper-list ()
   '(OR (CONS T PROPER-LIST) NULL))
 
+(deftype property-list ()
+  '(OR (CONS T (CONS T PROPERTY-LIST)) NULL))
+
 (deftype atom ()
   "An ATOM is an object that is not a CONS."
   '(NOT CONS))
@@ -209,51 +222,67 @@ has no fill-pointer, and is not adjustable."
        (not (array-has-fill-pointer-p x))
        (not (array-displacement x))))
 
-(dolist (l '((ARRAY . ARRAYP)
-	     (ATOM . ATOM)
-             #-unicode
-	     (EXTENDED-CHAR . CONSTANTLY-NIL)
-	     (BASE-CHAR . BASE-CHAR-P)
-	     (CHARACTER . CHARACTERP)
-	     (COMPILED-FUNCTION . COMPILED-FUNCTION-P)
-	     (COMPLEX . COMPLEXP)
-	     (CONS . CONSP)
-	     (FLOAT . FLOATP)
-	     (FUNCTION . FUNCTIONP)
-	     (HASH-TABLE . HASH-TABLE-P)
-	     (INTEGER . INTEGERP)
-	     (FIXNUM . SI::FIXNUMP)
-	     (KEYWORD . KEYWORDP)
-	     (LIST . LISTP)
-	     (LOGICAL-PATHNAME . LOGICAL-PATHNAME-P)
-	     (NIL . CONSTANTLY-NIL)
-	     (NULL . NULL)
-	     (NUMBER . NUMBERP)
-	     (PACKAGE . PACKAGEP)
-	     (RANDOM-STATE . RANDOM-STATE-P)
-	     (RATIONAL . RATIONALP)
-	     (PATHNAME . PATHNAMEP)
-	     (READTABLE . READTABLEP)
-	     (REAL . REALP)
-	     (SIMPLE-ARRAY . SIMPLE-ARRAY-P)
-	     (SIMPLE-STRING . SIMPLE-STRING-P)
-	     (SIMPLE-VECTOR . SIMPLE-VECTOR-P)
-	     (STREAM . STREAMP)
-	     (STRING . STRINGP)
-	     (STRUCTURE . SYS:STRUCTUREP)
-	     (SYMBOL . SYMBOLP)
-	     (T . CONSTANTLY-T)
-	     (VECTOR . VECTORP)
-	     ))
+(eval-when (:execute :load-toplevel :compile-toplevel)
+  (defconstant +known-typep-predicates+
+    '((ARRAY . ARRAYP)
+      (ATOM . ATOM)
+      #-unicode
+      (EXTENDED-CHAR . CONSTANTLY-NIL)
+      (BASE-CHAR . BASE-CHAR-P)
+      (BASE-STRING . BASE-STRING-P)
+      (BIT-VECTOR . BIT-VECTOR-P)
+      (CHARACTER . CHARACTERP)
+      (COMPILED-FUNCTION . COMPILED-FUNCTION-P)
+      (COMPLEX . COMPLEXP)
+      (CONS . CONSP)
+      (FLOAT . FLOATP)
+      (FUNCTION . FUNCTIONP)
+      (HASH-TABLE . HASH-TABLE-P)
+      (INTEGER . INTEGERP)
+      (FIXNUM . SI::FIXNUMP)
+      (KEYWORD . KEYWORDP)
+      (LIST . LISTP)
+      (LOGICAL-PATHNAME . LOGICAL-PATHNAME-P)
+      (NIL . CONSTANTLY-NIL)
+      (NULL . NULL)
+      (NUMBER . NUMBERP)
+      (PACKAGE . PACKAGEP)
+      (RANDOM-STATE . RANDOM-STATE-P)
+      (RATIONAL . RATIONALP)
+      (PATHNAME . PATHNAMEP)
+      (READTABLE . READTABLEP)
+      (REAL . REALP)
+      (SIMPLE-ARRAY . SIMPLE-ARRAY-P)
+      (SIMPLE-STRING . SIMPLE-STRING-P)
+      (SIMPLE-VECTOR . SIMPLE-VECTOR-P)
+      (STREAM . STREAMP)
+      (STRING . STRINGP)
+      (STRUCTURE . SYS:STRUCTUREP)
+      (SYMBOL . SYMBOLP)
+      (T . CONSTANTLY-T)
+      (VECTOR . VECTORP))))
+
+(dolist (l +known-typep-predicates+)
   (put-sysprop (car l) 'TYPE-PREDICATE (cdr l)))
 
 (defconstant +upgraded-array-element-types+
-  '(NIL BASE-CHAR CHARACTER BIT EXT::BYTE8 EXT::INTEGER8 EXT::CL-FIXNUM EXT::CL-INDEX SINGLE-FLOAT DOUBLE-FLOAT T))
+  '(NIL BASE-CHAR #+unicode CHARACTER BIT EXT::BYTE8 EXT::INTEGER8 EXT::CL-FIXNUM EXT::CL-INDEX SINGLE-FLOAT DOUBLE-FLOAT T))
 
 (defun upgraded-array-element-type (element-type &optional env)
-  (dolist (v +upgraded-array-element-types+ 'T)
-    (when (subtypep element-type v)
-      (return v))))
+  (let* ((hash (logand 127 (si:hash-eql element-type)))
+	 (record (aref *upgraded-array-element-type-cache* hash)))
+    (declare (type (integer 0 127) hash))
+    (if (and record (eq (car record) element-type))
+	(cdr record)
+	(let ((answer (if (member element-type +upgraded-array-element-types+
+				  :test #'eq)
+			  element-type
+			  (dolist (v +upgraded-array-element-types+ 'T)
+			    (when (subtypep element-type v)
+			      (return v))))))
+	  (setf (aref *upgraded-array-element-type-cache* hash)
+		(cons element-type answer))
+	  answer))))
 
 (defun upgraded-complex-part-type (real-type &optional env)
   ;; ECL does not have specialized complex types. If we had them, the
@@ -423,13 +452,32 @@ Returns T if X belongs to TYPE; NIL otherwise."
 	    (error-type-specifier type))))))
 
 #+clos
-(defun si::subclassp (low high)
+(defun subclassp (low high)
   (or (eq low high)
-      (member high (sys:instance-ref low 4))) ; (class-precedence-list low)
+      (member high (sys:instance-ref low 4) :test #'eq)) ; (class-precedence-list low)
   #+(or)
   (or (eq low high)
       (dolist (class (sys:instance-ref low 1)) ; (class-superiors low)
 	(when (si::subclassp class high) (return t)))))
+
+#+clos
+(defun of-class-p (object class)
+  (declare (optimize (speed 3) (safety 0)))
+  (macrolet ((class-precedence-list (x)
+	       `(instance-ref ,x 4))
+	     (class-name (x)
+	       `(instance-ref ,x 0)))
+    (let* ((x-class (class-of object)))
+      (declare (class x-class))
+      (if (eq x-class class)
+	  t
+	  (let ((x-cpl (class-precedence-list x-class)))
+	    (if (instancep class)
+		(member class x-cpl :test #'eq)
+		(dolist (c x-cpl nil)
+		  (declare (class c))
+		  (when (eq (class-name c) class)
+		    (return t)))))))))
 
 #+(and clos ecl-min)
 (defun clos::classp (foo)
@@ -519,12 +567,15 @@ if not possible."
 	     (complex (realpart object) (imagpart object))))
 	((member aux '(SINGLE-FLOAT SHORT-FLOAT DOUBLE-FLOAT LONG-FLOAT FLOAT))
 	 (setq aux (coerce object aux))
-	 (unless (typep object type)
-	   (error-coerce object type)))
+	 (unless (typep aux type)
+	   (error-coerce object type))
+	 aux)
 	((eq aux 'AND)
-	 (coerce object (second type))
-	 (unless (typep object type)
-	   (error-coerce object type)))
+	 (dolist (type (rest type))
+	   (setq aux (coerce aux type)))
+	 (unless (typep aux type)
+	   (error-coerce object type))
+	 aux)
 	((or (listp object) (vector object))
 	 (concatenate type object))
 	(t
@@ -759,11 +810,13 @@ if not possible."
 ;;
 (defun fast-upgraded-array-element-type (type)
   (declare (si::c-local))
-  (if (eql type '*)
-      '*
-      (dolist (other-type +upgraded-array-element-types+ 'T)
-	(when (fast-subtypep type other-type)
-	  (return other-type)))))
+  (cond ((eql type '*) '*)
+	((member type +upgraded-array-element-types+ :test #'eq)
+	 type)
+	(t
+	 (dolist (other-type +upgraded-array-element-types+ 'T)
+	   (when (fast-subtypep type other-type)
+	     (return other-type))))))
 
 ;;
 ;; This canonicalizes the array type into the form
@@ -1036,7 +1089,8 @@ if not possible."
 	       (SYNONYM-STREAM)
  	       (TWO-WAY-STREAM)
 	       (STREAM (OR BROADCAST-STREAM CONCATENATED-STREAM ECHO-STREAM
-			   FILE-STREAM STRING-STREAM SYNONYM-STREAM TWO-WAY-STREAM))
+			   FILE-STREAM STRING-STREAM SYNONYM-STREAM TWO-WAY-STREAM
+			   #+clos-streams GRAY:FUNDAMENTAL-STREAM))
 
 	       (READTABLE)
 	       #+threads (MP::PROCESS)
@@ -1191,10 +1245,51 @@ if not possible."
 	   (values nil nil)))))
 
 (defun subtypep (t1 t2 &optional env)
+  ;; One easy case: types are equal
   (when (eq t1 t2)
     (return-from subtypep (values t t)))
-  (let* ((*highest-type-tag* *highest-type-tag*)
-	 (*save-types-database* t)
-	 (*member-types* *member-types*)
-	 (*elementary-types* *elementary-types*))
-    (fast-subtypep t1 t2)))
+  ;; Another easy case: types are classes.
+  (when (and (instancep t1) (instancep t2)
+	     (clos::classp t1) (clos::classp t2))
+    (return-from subtypep (values (subclassp t1 t2) t)))
+  ;; Finally, cached results.
+  (let* ((cache *subtypep-cache*)
+	 (hash (logand (hash-eql t1 t2) 255))
+	 (elt (aref cache hash)))
+    (declare (type (integer 0 255) hash))
+    (when (and elt (eq (caar elt) t1) (eq (cdar elt) t2))
+      (setf elt (cdr elt))
+      (return-from subtypep (values (car elt) (cdr elt))))
+    (let* ((*highest-type-tag* *highest-type-tag*)
+	   (*save-types-database* t)
+	   (*member-types* *member-types*)
+	   (*elementary-types* *elementary-types*))
+      (multiple-value-bind (test confident)
+	  (fast-subtypep t1 t2)
+	(setf (aref cache hash) (cons (cons t1 t2) (cons test confident)))
+	(values test confident)))))
+
+(defun fast-type= (t1 t2)
+  (declare (si::c-local))
+  (when (eq t1 t2)
+    (return-from fast-type= (values t t)))
+  (let* ((tag1 (safe-canonical-type t1))
+	 (tag2 (safe-canonical-type t2)))
+    (cond ((and (numberp tag1) (numberp tag2))
+	   (values (= (safe-canonical-type t1) (safe-canonical-type t2))
+		   t))
+	  #+nil
+	  ((null tag1)
+	   (error "Unknown type specifier ~S." t1))
+	  #+nil
+	  ((null tag2)
+	   (error "Unknown type specifier ~S." t2))
+	  (t
+	   (values nil nil)))))
+
+(defun type= (t1 t2)
+  (let ((*highest-type-tag* *highest-type-tag*)
+	(*save-types-database* t)
+	(*member-types* *member-types*)
+	(*elementary-types* *elementary-types*))
+    (fast-type= t1 t2)))

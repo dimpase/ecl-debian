@@ -15,6 +15,7 @@
 
 #include <string.h>
 #include <ecl/ecl.h>
+#include <ecl/ecl-inl.h>
 #include <ecl/internal.h>
 #include "newhash.h"
 
@@ -35,7 +36,7 @@ reshape_instance(cl_object x, int delta)
 cl_object
 si_set_raw_funcallable(cl_object instance, cl_object function)
 {
-	if (type_of(instance) != t_instance)
+	if (!ECL_INSTANCEP(instance))
 		FEwrong_type_argument(@'ext::instance', instance);
         if (Null(function)) {
 		if (instance->instance.isgf == 2) {
@@ -64,7 +65,7 @@ si_set_raw_funcallable(cl_object instance, cl_object function)
 cl_object
 clos_set_funcallable_instance_function(cl_object x, cl_object function_or_t)
 {
-	if (type_of(x) != t_instance)
+	if (!ECL_INSTANCEP(x))
 		FEwrong_type_argument(@'ext::instance', x);
 	if (x->instance.isgf == ECL_USER_DISPATCH) {
 		reshape_instance(x, -1);
@@ -88,8 +89,7 @@ clos_set_funcallable_instance_function(cl_object x, cl_object function_or_t)
 cl_object
 si_generic_function_p(cl_object x)
 {
-	@(return (((type_of(x) != t_instance) &&
-		   (x->instance.isgf))? Ct : Cnil))
+	@(return ((ECL_INSTANCEP(x) && (x->instance.isgf))? Ct : Cnil))
 }
 
 /**********************************************************************
@@ -98,7 +98,8 @@ si_generic_function_p(cl_object x)
 
 #define RECORD_KEY(e) ((e)[0])
 #define RECORD_VALUE(e) ((e)[1])
-#define RECORD_GEN(e) (((cl_fixnum*)(e+2))[0])
+#define RECORD_GEN(e) fix((e+2)[0])
+#define RECORD_GEN_SET(e,v) ((e+2)[0]=MAKE_FIXNUM(v))
 
 static cl_object
 do_clear_method_hash(struct cl_env_struct *env, cl_object target)
@@ -163,11 +164,11 @@ si_clear_gfun_hash(cl_object what)
 	cl_object list;
 	THREAD_OP_LOCK();
 	list = cl_core.processes;
-	for (; list != Cnil; list = CDR(list)) {
-		cl_object process = CAR(list);
+	loop_for_on_unsafe(list) {
+		cl_object process = ECL_CONS_CAR(list);
 		struct cl_env_struct *env = process->process.env;
 		env->method_hash_clear_list = CONS(what, env->method_hash_clear_list);
-	}
+	} end_loop_for_on;
 	THREAD_OP_UNLOCK();
 #else
 	do_clear_method_hash(&cl_env, what);
@@ -260,7 +261,8 @@ search_method_hash(cl_object keys, cl_object table)
 	 * generation number does not become too large and we can
 	 * expire some elements.
 	 */
-	RECORD_GEN(min_e) = gen = cl_env.method_generation;
+	gen = cl_env.method_generation;
+	RECORD_GEN_SET(min_e, gen);
 	if (gen >= total_size/2) {
 		cl_object *e = table->vector.self.t;
 		gen = 0.5*gen;
@@ -272,7 +274,7 @@ search_method_hash(cl_object keys, cl_object table)
 				RECORD_VALUE(e) = Cnil;
 				g = 0;
 			}
-			RECORD_GEN(e) = g;
+			RECORD_GEN_SET(e, g);
 		}
 	}
 	return min_e;
@@ -281,18 +283,17 @@ search_method_hash(cl_object keys, cl_object table)
 static cl_object
 get_spec_vector(cl_object frame, cl_object gf)
 {
-	cl_object *args = cl_env.stack + frame->frame.sp;
-	cl_index narg = frame->frame.narg;
+	cl_object *args = frame->frame.bottom;
+	cl_index narg = frame->frame.top - args;
 	cl_object spec_how_list = GFUN_SPEC(gf);
 	cl_object vector = cl_env.method_spec_vector;
 	cl_object *argtype = vector->vector.self.t;
-	int spec_no;
-
+	int spec_no = 1;
 	argtype[0] = gf;
-	for (spec_no = 1; spec_how_list != Cnil;) {
-		cl_object spec_how = CAR(spec_how_list);
-		cl_object spec_type = CAR(spec_how);
-		int spec_position = fix(CDR(spec_how));
+	loop_for_on_unsafe(spec_how_list) {
+		cl_object spec_how = ECL_CONS_CAR(spec_how_list);
+		cl_object spec_type = ECL_CONS_CAR(spec_how);
+		int spec_position = fix(ECL_CONS_CDR(spec_how));
 		if (spec_position >= narg)
 			FEwrong_num_arguments(gf);
 		argtype[spec_no++] =
@@ -302,8 +303,7 @@ get_spec_vector(cl_object frame, cl_object gf)
 			args[spec_position];
 		if (spec_no > vector->vector.dim)
 			return OBJNULL;
-		spec_how_list = CDR(spec_how_list);
-	}
+	} end_loop_for_on;
 	vector->vector.fillp = spec_no;
 	return vector;
 }
@@ -313,14 +313,14 @@ compute_applicable_method(cl_object frame, cl_object gf)
 {
 	/* method not cached */
 	cl_object methods, arglist, func;
-	int i;
-	for (i = frame->frame.narg, arglist = Cnil; i; ) {
-		arglist = CONS(ecl_stack_frame_elt(frame, --i), arglist);
+	cl_object *p;
+	for (p = frame->frame.top, arglist = Cnil; p != frame->frame.bottom; ) {
+		arglist = CONS(*(--p), arglist);
 	}
 	methods = funcall(3, @'compute-applicable-methods', gf, arglist);
 	if (methods == Cnil) {
 		func = funcall(3, @'no-applicable-method', gf, arglist);
-		ecl_stack_frame_elt_set(frame, 0, OBJNULL);
+		frame->frame.bottom[0] = OBJNULL;
 		return func;
 	} else {
 		return funcall(4, @'clos::compute-effective-method', gf,
@@ -332,15 +332,27 @@ cl_object
 _ecl_standard_dispatch(cl_object frame, cl_object gf)
 {
 	cl_object func, vector;
+	/*
+	 * We have to copy the frame because it might be stored in cl_env.values
+	 * which will be wiped out by the next function call. However this only
+	 * happens when we cannot reuse the values in the C stack.
+	 */
+#if !defined(ECL_USE_VARARG_AS_POINTER)
+	struct ecl_stack_frame frame_aux;
+	if (frame->frame.stack == (void*)0x1) {
+		frame = ecl_stack_frame_copy((cl_object)&frame_aux, frame);
+	}
+#endif
+	
 #ifdef ECL_THREADS
 	/* See whether we have to clear the hash from some generic functions right now. */
 	if (cl_env.method_hash_clear_list != Cnil) {
 		cl_object clear_list;
 		THREAD_OP_LOCK();
 		clear_list = cl_env.method_hash_clear_list;
-		for ( ; clear_list != Cnil ; clear_list = CDR(clear_list)) {
-			do_clear_method_hash(&cl_env, CAR(clear_list));
-		}
+		loop_for_on_unsafe(clear_list) {
+			do_clear_method_hash(&cl_env, ECL_CONS_CAR(clear_list));
+		} end_loop_for_on;
 		cl_env.method_hash_clear_list = Cnil;
 		THREAD_OP_UNLOCK();
 	}
@@ -365,11 +377,11 @@ _ecl_standard_dispatch(cl_object frame, cl_object gf)
 			RECORD_VALUE(e) = func;
 		}
 	}
-	{
-		ECL_BUILD_STACK_FRAME(frame1);
-		ecl_stack_frame_push(frame1, frame);
-		func = ecl_apply_from_stack_frame(frame1, func);
-		ecl_stack_frame_close(frame1);
-		return func;
-	}
+	func = cl_funcall(3, func, frame, Cnil);
+	/* Only need to close the copy */
+#if !defined(ECL_USE_VARARG_AS_POINTER)
+	if (frame == (cl_object)&frame_aux)
+		ecl_stack_frame_close(frame);
+#endif
+	return func;
 }

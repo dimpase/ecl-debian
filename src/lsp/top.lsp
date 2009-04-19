@@ -21,7 +21,7 @@
 (in-package "SYSTEM")
 
 (export '(*break-readtable* *break-on-warnings* *break-enable*
-	  *tpl-evalhook*))
+	  *tpl-evalhook* *tpl-prompt-hook*))
 
 (defvar *quit-tag* (cons nil nil))
 (defvar *quit-tags* nil)
@@ -241,6 +241,13 @@ rebinds this variable to NIL when control enters a break loop.")
 	~@
 	Disassemble the current function. Currently, only interpreted functions~@
 	can be disassembled.~%")
+      ((:le :lambda-expression) tpl-lambda-expression-command nil
+       ":l(ambda-)e(expression)	Show lisp code for current function"
+       ":lambda-expression				[Break command]~@
+	:le						[Abbreviation]~@
+	~@
+	Show the lisp code of the current function. Only works for interpreted~@
+        functions.~%")
       ((:v :variables) tpl-variables-command nil
        ":v(ariables)	Show local variables, functions, blocks, and tags"
        ":variables &optional no-values			[Break command]~@
@@ -368,12 +375,12 @@ under certain conditions; see file 'Copyright' for details.")
 (defun terminal-interrupt (correctablep)
   (let ((*break-enable* t))
     (if correctablep
-      (cerror "Continues execution." "Console interrupt.")
+      (cerror "Continues execution." 'ext:interactive-interrupt)
       (error "Console interrupt -- cannot continue."))))
 
 (defun tpl (&key ((:commands *tpl-commands*) tpl-commands)
-		 ((:prompt-hook *tpl-prompt-hook*) nil)
-		 (broken-at nil)
+		 ((:prompt-hook *tpl-prompt-hook*) *tpl-prompt-hook*)
+  		 (broken-at nil)
 		 (quiet nil))
   (let* ((*ihs-base* *ihs-top*)
 	 (*ihs-top* (if broken-at (ihs-search t broken-at) (ihs-top 'tpl)))
@@ -405,13 +412,16 @@ under certain conditions; see file 'Copyright' for details.")
 	   (break-where)))))
 
 (defun tpl-prompt ()
-  (fresh-line)
-  (when *tpl-prompt-hook*
-    (funcall *tpl-prompt-hook*))
-  (format t "~A~V,,,'>A "
-	  (if (eq *package* (find-package 'user)) "" (package-name *package*))
-	  (- *tpl-level* *step-level* -1)
-	  ""))
+  (typecase *tpl-prompt-hook*
+    (string (format t *tpl-prompt-hook*))
+    (function (funcall *tpl-prompt-hook*))
+    (t (fresh-line)
+       (format t "~A~V,,,'>A "
+	       (if (eq *package* (find-package 'user))
+		   ""
+		 (package-name *package*))
+	       (- *tpl-level* *step-level* -1)
+	       ""))))
 
 (defun tpl-read ()
   (finish-output)
@@ -554,6 +564,18 @@ under certain conditions; see file 'Copyright' for details.")
       (format t " Function cannot be disassembled.~%"))
     (values)))
 
+(defun tpl-lambda-expression-command (&optional no-values)
+  (let*((*print-level* 2)
+	(*print-length* 4)
+	(*print-pretty* t)
+	(*print-readably* nil)
+	(function (ihs-fun *ihs-current*))
+	(le (function-lambda-expression function)))
+    (if le
+	(pprint le)
+	(format t " No source code available for this function.~%"))
+    (values)))
+
 (defun reconstruct-bytecodes-lambda-list (data)
   (declare (si::c-local data))
   (let ((output '()))
@@ -614,18 +636,21 @@ under certain conditions; see file 'Copyright' for details.")
 	(*print-length* 4)
 	(*print-pretty* t)
 	(*print-readably* nil)
-	(functions) (blocks) (variables))
+	(functions '())
+	(blocks '())
+	(variables '())
+	record0 record1)
     (dolist (record *break-env*)
-      (let* ((record0 (car record))
-	     (record1 (cdr record)))
-	(cond ((symbolp record0)
-	       (setq variables (list* record0 record1 variables)))
-	      ((not (fixnump record0))
-	       (push record1 functions))
-	      ((symbolp record1)
-	       (push record1 blocks))
-	      (t
-	       ))))
+      (cond ((atom record)
+	     (push (compiled-function-name record) functions))
+	    ((progn
+	       (setf record0 (car record) record1 (cdr record))
+	       (symbolp record0))
+	     (setq variables (list* record0 record1 variables)))
+	    ((symbolp record1)
+	     (push record1 blocks))
+	    (t
+	     )))
     (format t "~:[~;Local functions: ~:*~{~s~^, ~}.~%~]" functions)
     (format t "~:[~;Block names: ~:*~{~s~^, ~}.~%~]" blocks)
     (format t "Local variables: ~:[~:[none~;~:*~{~s~1*~:@{, ~s~1*~}~}~]~;~
@@ -684,13 +709,21 @@ under certain conditions; see file 'Copyright' for details.")
   (format *debug-io* "    FRS[~d]: ---> IHS[~d],BDS[~d]~%"
 	  i (frs-ihs i) (frs-bds i)))
 
-(defun break-where (&aux (fname (ihs-fname *ihs-current*)))
+(defun break-where ()
   (if (<= *tpl-level* 0)
     (format t "Top level.~%")
-    (format t "Broken at ~:@(~S~).~%" (ihs-fname *ihs-current*))))
+    (tpl-print-current)))
 
 (defun tpl-print-current ()
-  (format t "Broken at ~:@(~S~)." (ihs-fname *ihs-current*))
+  (let ((name (ihs-fname *ihs-current*)))
+    (format t "Broken at ~:@(~S~)." name))
+  (let ((fun (ihs-fun *ihs-current*)))
+    (when (and (symbolp fun) (fboundp fun))
+      (setf fun (fdefinition fun)))
+    (multiple-value-bind (file position)
+	(si::bc-file fun)
+      (when file
+	(format t " File: ~S (Form #~D)" file position))))
   (values))
 
 (defun tpl-hide (fname)
@@ -729,7 +762,7 @@ under certain conditions; see file 'Copyright' for details.")
     (when (and (consp fname) (eq 'SETF (car fname)))
 	  (setq fname (second fname)))
     (or (eq fname 'EVAL)
-	(eq fname 'EVAL-WITH-ENV)
+	(eq fname 'BYTECODES)
 	(and (not (member (symbol-package fname) *break-hidden-packages*
 			  :TEST #'eq))
 	     (not (null fname))
@@ -751,7 +784,7 @@ under certain conditions; see file 'Copyright' for details.")
   (set-break-env))
 
 (defun set-break-env ()
-  (setq *break-env* (if (= *ihs-current* *ihs-top*) nil (ihs-env *ihs-current*))))
+  (setq *break-env* (ihs-env *ihs-current*)))
 
 (defun ihs-search (string unrestricted &optional (start (si::ihs-top 'tpl)))
   (do ((ihs start (si::ihs-prev ihs)))

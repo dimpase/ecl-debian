@@ -18,6 +18,7 @@
 #endif
 #include <stdio.h>
 #include <ecl/ecl.h>
+#include <ecl/ecl-inl.h>
 #include <ecl/internal.h>
 #include <ecl/page.h>
 #ifdef ECL_WSOCK
@@ -93,7 +94,9 @@ cl_alloc_object(cl_type t)
 	case t_readtable:
 	case t_pathname:
 	case t_bytecodes:
+	case t_bclosure:
 	case t_cfun:
+	case t_cfunfixed:
 	case t_cclosure:
 #ifdef CLOS
 	case t_instance:
@@ -123,14 +126,33 @@ cl_alloc_object(cl_type t)
 cl_object
 ecl_cons(cl_object a, cl_object d)
 {
-	cl_object obj;
+	struct ecl_cons *obj = GC_MALLOC(sizeof(struct ecl_cons));
+#ifdef ECL_SMALL_CONS
+	obj->car = a;
+	obj->cdr = d;
+	return ECL_PTR_CONS(obj);
+#else
+	obj->t = t_list;
+	obj->car = a;
+	obj->cdr = d;
+	return (cl_object)obj;
+#endif
+}
 
-	obj = (cl_object)GC_MALLOC(sizeof(struct ecl_cons));
-	obj->d.t = (short)t_cons;
-	CAR(obj) = a;
-	CDR(obj) = d;
-
-	return obj;
+cl_object
+ecl_list1(cl_object a)
+{
+	struct ecl_cons *obj = GC_MALLOC(sizeof(struct ecl_cons));
+#ifdef ECL_SMALL_CONS
+	obj->car = a;
+	obj->cdr = Cnil;
+	return ECL_PTR_CONS(obj);
+#else
+	obj->t = t_list;
+	obj->car = a;
+	obj->cdr = Cnil;
+	return (cl_object)obj;
+#endif
 }
 
 cl_object
@@ -168,9 +190,25 @@ init_alloc(void)
 	int i;
 	if (alloc_initialized) return;
 	alloc_initialized = TRUE;
-
+	/*
+	 * Garbage collector restrictions: we set up the garbage collector
+	 * library to work as follows
+	 *
+	 * 1) The garbage collector shall not scan shared libraries
+	 *    explicitely.
+	 * 2) We only detect objects that are referenced by a pointer to
+	 *    the begining or to the first byte.
+	 * 3) Out of the incremental garbage collector, we only use the
+	 *    generational component.
+	 */
 	GC_no_dls = 1;
+	GC_all_interior_pointers = 0;
+	GC_time_limit = GC_TIME_UNLIMITED;
 	GC_init();
+#ifdef GBC_BOEHM_GENGC
+	GC_enable_incremental();
+#endif
+	GC_register_displacement(1);
 #if 0
 	GC_init_explicit_typing();
 #endif
@@ -183,10 +221,11 @@ init_alloc(void)
 	}
 	init_tm(t_singlefloat, "SINGLE-FLOAT", /* 8 */
 		sizeof(struct ecl_singlefloat));
-	init_tm(t_cons, "CONS", sizeof(struct ecl_cons)); /* 12 */
+	init_tm(t_list, "CONS", sizeof(struct ecl_cons)); /* 12 */
 	init_tm(t_doublefloat, "DOUBLE-FLOAT", /* 16 */
 		sizeof(struct ecl_doublefloat));
 	init_tm(t_bytecodes, "BYTECODES", sizeof(struct ecl_bytecodes));
+	init_tm(t_bclosure, "BCLOSURE", sizeof(struct ecl_bclosure));
 	init_tm(t_base_string, "BASE-STRING", sizeof(struct ecl_base_string)); /* 20 */
 #ifdef ECL_UNICODE
 	init_tm(t_string, "STRING", sizeof(struct ecl_string));
@@ -206,6 +245,7 @@ init_alloc(void)
 	init_tm(t_random, "RANDOM-STATE", sizeof(struct ecl_random));
 	init_tm(t_readtable, "READTABLE", sizeof(struct ecl_readtable));
 	init_tm(t_cfun, "CFUN", sizeof(struct ecl_cfun));
+	init_tm(t_cfunfixed, "CFUN", sizeof(struct ecl_cfun));
 	init_tm(t_cclosure, "CCLOSURE", sizeof(struct ecl_cclosure));
 #ifndef CLOS
 	init_tm(t_structure, "STRUCTURE", sizeof(struct ecl_structure));
@@ -270,16 +310,16 @@ static void
 group_finalizer(cl_object l, cl_object no_data)
 {
 	CL_NEWENV_BEGIN {
-		do {
-			cl_object record = CAR(l);
-			cl_object o = CAR(record);
-			cl_object procedure = CDR(record);
-			l = CDR(l);
+		while (CONSP(l)) {
+			cl_object record = ECL_CONS_CAR(l);
+			cl_object o = ECL_CONS_CAR(record);
+			cl_object procedure = ECL_CONS_CDR(record);
+			l = ECL_CONS_CDR(l);
 			if (procedure != Ct) {
 				funcall(2, procedure, o);
 			}
 			standard_finalizer(o);
-		} while (l != Cnil);
+		}
 	} CL_NEWENV_END;
 }
 
@@ -297,14 +337,14 @@ queueing_finalizer(cl_object o, cl_object finalizer)
 			   get executed as a consequence of these calls. */
 			volatile cl_object aux = ACONS(o, finalizer, Cnil);
 			cl_object l = cl_core.to_be_finalized;
-			if (l == Cnil) {
+			if (ATOM(l)) {
 				GC_finalization_proc ofn;
 				void *odata;
 				cl_core.to_be_finalized = aux;
 				GC_register_finalizer_no_order(aux, (GC_finalization_proc*)group_finalizer, NULL, &ofn, &odata);
 			} else {
-				CDR(aux) = CDR(l);
-				CDR(l) = aux;
+				ECL_RPLACD(aux, ECL_CONS_CDR(l));
+				ECL_RPLACD(l, aux);
 			}
 		}
 	}
@@ -347,10 +387,15 @@ si_gc_stats(cl_object enable)
 	cl_object old_status = cl_core.gc_stats? Ct : Cnil;
 	cl_core.gc_stats = (enable != Cnil);
 	if (cl_core.bytes_consed == Cnil) {
+#ifndef WITH_GMP
+		cl_core.bytes_consed = MAKE_FIXNUM(0);
+		cl_core.gc_counter = MAKE_FIXNUM(0);
+#else
 		cl_core.bytes_consed = cl_alloc_object(t_bignum);
 		mpz_init2(cl_core.bytes_consed->big.big_num, 128);
 		cl_core.gc_counter = cl_alloc_object(t_bignum);
 		mpz_init2(cl_core.gc_counter->big.big_num, 128);
+#endif
 	}
 	@(return
 	  big_register_normalize(cl_core.bytes_consed)
@@ -369,6 +414,8 @@ finalize_queued()
 {
 	cl_object l = cl_core.to_be_finalized;
 	if (cl_core.gc_stats) {
+#ifdef WITH_GMP
+		/* Sorry, no gc stats if you do not use bignums */
 #if GBC_BOEHM == 0
 		mpz_add_ui(cl_core.bytes_consed->big.big_num,
 			   cl_core.bytes_consed->big.big_num,
@@ -380,13 +427,13 @@ finalize_queued()
 		   integer.*/
 		static cl_index bytes = 0;
 		cl_index new_bytes = GC_get_total_bytes();
-		if (bytes < new_bytes) {
+		if (bytes > new_bytes) {
 			cl_index wrapped;
 			wrapped = ~((cl_index)0) - bytes;
 			mpz_add_ui(cl_core.bytes_consed->big.big_num,
 				   cl_core.bytes_consed->big.big_num,
 				   wrapped);
-			bytes = 0;
+			bytes = new_bytes;
 		}
 		mpz_add_ui(cl_core.bytes_consed->big.big_num,
 			   cl_core.bytes_consed->big.big_num,
@@ -395,6 +442,7 @@ finalize_queued()
 		mpz_add_ui(cl_core.gc_counter->big.big_num,
 			   cl_core.gc_counter->big.big_num,
 			   1);
+#endif
 	}
 	if (l != Cnil) {
 		cl_core.to_be_finalized = Cnil;
@@ -468,11 +516,12 @@ stacks_scanner()
 	if (l == OBJNULL) {
 		ecl_mark_env(&cl_env);
 	} else {
-		for (l = cl_core.processes; l != Cnil; l = CDR(l)) {
-			cl_object process = CAR(l);
+		l = cl_core.processes;
+		loop_for_on_unsafe(l) {
+			cl_object process = ECL_CONS_CAR(l);
 			struct cl_env_struct *env = process->process.env;
 			ecl_mark_env(env);
-		}
+		} end_loop_for_on;
 	}
 #else
 	ecl_mark_env(&cl_env);

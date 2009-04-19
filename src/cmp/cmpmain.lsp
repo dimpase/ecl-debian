@@ -28,11 +28,13 @@
 	      string result))
     result))
 
-(defun compile-file-pathname (name &key (output-file name) (type :fasl)
+(defun compile-file-pathname (name &key (output-file name) (type nil type-supplied-p)
                               verbose print c-file h-file data-file shared-data-file
                               system-p load)
   (let ((format '())
 	(extension '()))
+    (unless type-supplied-p
+      (setf type (if system-p :object :fasl)))
     (case type
       ((:shared-library :dll) (setf format +shared-library-format+))
       ((:static-library :library :lib) (setf format +static-library-format+))
@@ -56,11 +58,12 @@
 	       (cmp-delete-file the-pathname)))))
 
 (defun cmp-delete-file (file)
-  (if *debug-compiler*
-      (progn
-	(format t "~%Postponing deletion of ~A" file)
-	(push file *files-to-be-deleted*))
-      (delete-file file)))
+  (cond ((null *delete-files*))
+	(*debug-compiler*
+	 (format t "~%Postponing deletion of ~A" file)
+	 (push file *files-to-be-deleted*))
+	(t
+	 (delete-file file))))
 
 (push #'(lambda () (mapc #'delete-file *files-to-be-deleted*))
       si::*exit-hooks*)
@@ -82,7 +85,7 @@
 	   (si::coerce-to-filename o-pathname)
 	   (fix-for-mingw (ecl-library-directory))
 	   options
-	   *ld-flags* (fix-for-mingw (ecl-library-directory)))))
+	   *ld-flags*)))
 
 #+dlopen
 (defun shared-cc (o-pathname &rest options)
@@ -94,17 +97,16 @@
 	   (si::coerce-to-filename o-pathname)
 	   (fix-for-mingw (ecl-library-directory))
 	   options
-	   *ld-shared-flags* (fix-for-mingw (ecl-library-directory))))
+	   *ld-shared-flags*))
   #+(or mingw32)
   (let ((lib-file (compile-file-pathname o-pathname :type :lib)))
     (safe-system
      (format nil
-	     "dllwrap --export-all-symbols -o ~S -L~S ~{~S ~} ~@?"
+	     "gcc -shared -o ~S -L~S ~{~S ~} ~@?"
 	     (si::coerce-to-filename o-pathname)
 	     (fix-for-mingw (ecl-library-directory))
 	     options
-	     *ld-shared-flags*
-	     (fix-for-mingw (ecl-library-directory))))))
+	     *ld-shared-flags*))))
 
 #+dlopen
 (defun bundle-cc (o-pathname init-name &rest options)
@@ -117,18 +119,17 @@
 	   (fix-for-mingw (ecl-library-directory))
 	   options
 	   #-msvc *ld-bundle-flags*
-	   #+msvc (concatenate 'string *ld-bundle-flags* " /EXPORT:"
-			       init-name)
-	   (ecl-library-directory)))
+	   #+msvc (concatenate 'string *ld-bundle-flags*
+			       " /EXPORT:" init-name
+			       " /LIBPATH:" (ecl-library-directory))))
   #+(or mingw32)
   (safe-system
    (format nil
-	   "dllwrap -o ~A --export-all-symbols -L~S ~{~S ~} ~@?"
+	   "gcc -shared -o ~A -Wl,--export-all-symbols -L~S ~{~S ~} ~@?"
 	   (si::coerce-to-filename o-pathname)
 	   (fix-for-mingw (ecl-library-directory))
 	   options
-	   *ld-bundle-flags*
-	   (fix-for-mingw (ecl-library-directory)))))
+	   *ld-bundle-flags*)))
 
 (defconstant +lisp-program-header+ "
 #include <ecl/ecl.h>
@@ -298,7 +299,10 @@ filesystem or in the database of ASDF modules."
 		(init-name nil)
 		(prologue-code "")
 		(epilogue-code (when (eq target :program) '(SI::TOP-LEVEL)))
-		#+:win32 (system :console))
+		#+:win32 (system :console)
+		&aux
+		(*suppress-compiler-notes* (or *suppress-compiler-notes* (not *compile-verbose*)))
+		(*suppress-compiler-warnings* (or *suppress-compiler-warnings* (not *compile-verbose*))))
   ;;
   ;; The epilogue-code can be either a string made of C code, or a
   ;; lisp form.  In the latter case we add some additional C code to
@@ -473,8 +477,7 @@ static cl_object VV[VM];
 			   (*compile-verbose* verbose)
 			   (*suppress-compiler-notes* (or *suppress-compiler-notes* (not verbose)))
 			   (*suppress-compiler-warnings* (or *suppress-compiler-warnings* (not verbose)))
-			   init-name
-			   #+PDE sys:*source-pathname*)
+			   init-name)
   (declare (notinline compiler-cc))
 
   #-dlopen
@@ -496,9 +499,8 @@ static cl_object VV[VM];
   (setq *compile-file-truename* (truename *compile-file-pathname*))
 
   (when (eq output-file 'T)
-    (setf output-file (compile-file-pathname *compile-file-truename* :type (if system-p :object :fasl))))
-
-  #+PDE (setq sys:*source-pathname* *compile-file-truename*)
+    (setf output-file *compile-file-truename*))
+  (setf output-file (compile-file-pathname output-file :type (if system-p :object :fasl)))
 
   (when (and system-p load)
     (error "Cannot load system files."))
@@ -544,10 +546,12 @@ Cannot compile ~a."
 	  (data-init))
 
       (with-open-file (*compiler-input* *compile-file-pathname*)
-	(do ((form (read *compiler-input* nil eof)
+	(do ((ext:*source-location* (cons *compile-file-pathname* 0))
+	     (form (read *compiler-input* nil eof)
 		   (read *compiler-input* nil eof)))
 	    ((eq form eof))
-	  (t1expr form)))
+	  (t1expr form)
+	  (incf (cdr ext:*source-location*))))
 
       (when (zerop *error-count*)
 	(when *compile-verbose* (format t "~&;;; End of Pass 1.  "))
@@ -837,7 +841,7 @@ Cannot compile ~a."
   (safe-system
    (format nil
 	   *cc-format*
-	   *cc* *cc-flags* (>= *speed* 2) *cc-optimize*
+	   *cc* *cc-flags* (>= (cmp-env-optimization 'speed) 2) *cc-optimize*
 	   (fix-for-mingw (ecl-include-directory))
 	   (si::coerce-to-filename c-pathname)
 	   (si::coerce-to-filename o-pathname))

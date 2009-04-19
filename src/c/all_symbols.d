@@ -7,6 +7,7 @@
 #define CL_PACKAGE 0
 #define SI_PACKAGE 4
 #define EXT_PACKAGE SI_PACKAGE
+#define GRAY_PACKAGE 32
 #define KEYWORD_PACKAGE 8
 #define MP_PACKAGE 12
 #define CLOS_PACKAGE 16
@@ -32,6 +33,7 @@
 #define CLOS_ORDINARY	CLOS_PACKAGE | ORDINARY_SYMBOL
 #define CLOS_SPECIAL	CLOS_PACKAGE | SPECIAL_SYMBOL
 #define KEYWORD		KEYWORD_PACKAGE | CONSTANT_SYMBOL
+#define GRAY_ORDINARY	GRAY_PACKAGE | ORDINARY_SYMBOL
 
 #include "symbols_list.h"
 
@@ -83,12 +85,12 @@ mangle_name(cl_object output, char *source, int l)
 	cl_object maxarg = MAKE_FIXNUM(CALL_ARGUMENTS_LIMIT);
 	cl_object minarg = MAKE_FIXNUM(0);
 	bool is_symbol;
+	cl_object name;
 @
-	symbol = ecl_check_cl_type(@'si::mangle-name', symbol, t_symbol);
+	name = ecl_symbol_name(symbol);
 	is_symbol = Null(as_function);
 	if (is_symbol) {
 		cl_fixnum p;
-
 		if (symbol == Cnil)
 			@(return Ct make_constant_base_string("Cnil"))
 		else if (symbol == Ct)
@@ -98,14 +100,13 @@ mangle_name(cl_object output, char *source, int l)
 			found = Ct;
 			output = cl_format(4, Cnil,
 					   make_constant_base_string("ECL_SYM(~S,~D)"),
-					   symbol->symbol.name, MAKE_FIXNUM(p));
+					   name, MAKE_FIXNUM(p));
 			@(return found output maxarg)
 		}
-	} else {
-		cl_object fun;
-		fun = symbol->symbol.gfdef;
-		if (fun != OBJNULL && type_of(fun) == t_cfun &&
-		    fun->cfun.block == OBJNULL) {
+	} else if (!Null(symbol)) {
+		cl_object fun = symbol->symbol.gfdef;
+		cl_type t = (fun == OBJNULL)? t_other : type_of(fun);
+		if ((t == t_cfun || t == t_cfunfixed) && fun->cfun.block == OBJNULL) {
 			for (l = 0; l <= cl_num_symbols_in_core; l++) {
 				cl_object s = (cl_object)(cl_symbols + l);
 				if (fun == SYM_FUN(s)) {
@@ -120,8 +121,10 @@ mangle_name(cl_object output, char *source, int l)
 			}
 		}
 	}
-	package= symbol->symbol.hpack;
-	if (package == cl_core.lisp_package)
+	package = ecl_symbol_package(symbol);
+	if (Null(package))
+		;
+	else if (package == cl_core.lisp_package)
 		package = make_constant_base_string("cl");
 	else if (package == cl_core.system_package)
 		package = make_constant_base_string("si");
@@ -129,7 +132,7 @@ mangle_name(cl_object output, char *source, int l)
 		package = Cnil;
 	else
 		package = package->pack.name;
-	symbol = symbol->symbol.name;
+	symbol = ecl_symbol_name(symbol);
 	l      = symbol->base_string.fillp;
 	source = symbol->base_string.self;
 	output = cl_alloc_simple_base_string(ecl_length(package) + l + 1);
@@ -176,7 +179,7 @@ make_this_symbol(int i, cl_object s, int code, const char *name,
 	case CONSTANT_SYMBOL: stp = stp_constant; break;
 	case FORM_SYMBOL: form = 1; stp = stp_ordinary;
 	}
-	switch (code & 28) {
+	switch (code & ~(int)3) {
 	case CL_PACKAGE: package = cl_core.lisp_package; break;
 	case SI_PACKAGE: package = cl_core.system_package; break;
 	case KEYWORD_PACKAGE: package = cl_core.keyword_package; break;
@@ -186,31 +189,43 @@ make_this_symbol(int i, cl_object s, int code, const char *name,
 #ifdef CLOS
 	case CLOS_PACKAGE: package = cl_core.clos_package; break;
 #endif
+#ifdef ECL_CLOS_STREAMS
+	case GRAY_PACKAGE: package = cl_core.gray_package; break;
+#endif
 	}
 	s->symbol.t = t_symbol;
 	s->symbol.dynamic = 0;
-	s->symbol.mflag = FALSE;
 	ECL_SET(s, OBJNULL);
 	SYM_FUN(s) = Cnil;
 	s->symbol.plist = Cnil;
 	s->symbol.hpack = Cnil;
 	s->symbol.stype = stp;
-	s->symbol.mflag = FALSE;
-	s->symbol.isform = FALSE;
 	s->symbol.hpack = package;
 	s->symbol.name = make_constant_base_string(name);
 	if (package == cl_core.keyword_package) {
 		ecl_sethash(s->symbol.name, package->pack.external, s);
 		ECL_SET(s, s);
 	} else {
+		int intern_flag;
 		ECL_SET(s, value);
-		cl_import2(s, package);
+		if (ecl_find_symbol(s->symbol.name, package, &intern_flag) != Cnil
+		    && intern_flag == INHERITED) {
+			ecl_shadowing_import(s, package);
+		} else {
+			cl_import2(s, package);
+		}
 		cl_export2(s, package);
 	}
-	if (!(s->symbol.isform = form) && fun) {
-		cl_object f = cl_make_cfun_va(fun, s, NULL);
+	if (form) {
+		s->symbol.stype |= stp_special_form;
+	} else if (fun) {
+		cl_object f;
+		if (narg >= 0) {
+			f = cl_make_cfun(fun, s, NULL, narg);
+		} else {
+			f = cl_make_cfun_va(fun, s, NULL);
+		}
 		SYM_FUN(s) = f;
-		f->cfun.narg = narg;
 	}
 	cl_num_symbols_in_core = i + 1;
 }

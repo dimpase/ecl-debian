@@ -154,14 +154,7 @@ MV="mv"
 AC_SUBST(ARCHITECTURE)dnl	Type of processor for which this is compiled
 AC_SUBST(SOFTWARE_TYPE)dnl	Type of operating system
 AC_SUBST(SOFTWARE_VERSION)dnl	Version number of operating system
-AC_SUBST(MACHINE_INSTANCE)dnl	Identifier of the machine
 AC_SUBST(MACHINE_VERSION)dnl	Version of the machine
-SOFTWARE_TYPE="${host_os}"
-SOFTWARE_VERSION="unknown"
-MACHINE_INSTANCE="${host_cpu}"
-MACHINE_VERSION="unknown"
-ARCHITECTURE=`echo "${host_cpu}" | tr a-z A-Z` # i386 -> I386
-
 
 AC_SUBST(LDRPATH)dnl	Sometimes the path for finding DLLs must be hardcoded.
 AC_SUBST(LIBPREFIX)dnl	Name components of a statically linked library
@@ -195,7 +188,7 @@ case "${host_os}" in
 		LDRPATH='-Wl,--rpath,~A'
 		clibs="-ldl"
 		# Maybe CFLAGS="-D_ISOC99_SOURCE ${CFLAGS}" ???
-		CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
+		CFLAGS="-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 ${CFLAGS}"
 		;;
 	gnu*)
 		thehost='gnu'
@@ -304,7 +297,7 @@ case "${host_os}" in
 		clibs="-Wld=-lrld"
 		;;
 	*)
-		Thehost="$host_os"
+		thehost="$host_os"
 		shared="no"
 		;;
 esac
@@ -325,9 +318,12 @@ LIBS="${clibs} ${LIBS}"
 AC_MSG_CHECKING(for required libraries)
 AC_MSG_RESULT([${clibs}])
 AC_MSG_CHECKING(for architecture)
+ARCHITECTURE=`echo "${host_cpu}" | tr a-z A-Z` # i386 -> I386
 AC_MSG_RESULT([${ARCHITECTURE}])
 AC_MSG_CHECKING(for software type)
-AC_MSG_RESULT([${SOFTWARE_TYPE}])
+SOFTWARE_TYPE="$thehost"
+SOFTWARE_VERSION=""
+AC_MSG_RESULT([${SOFTWARE_TYPE} / ${SOFTWARE_VERSION}])
 ])
 
 dnl
@@ -553,12 +549,16 @@ dnl
 AC_DEFUN([ECL_FFI],[
 AC_MSG_CHECKING([whether we can dynamically build calls to C functions])
 case "${host_cpu}" in
-   i686 |i586 | pentium* | athlon* )
+   i686 | i586 | pentium* | athlon* )
 	EXTRA_OBJS="${EXTRA_OBJS} ffi_x86.o"
+	if test "${enable_asmapply}" = "yes" ; then
+		EXTRA_OBJS="${EXTRA_OBJS} apply_x86.o"
+		AC_DEFINE(ECL_ASM_APPLY)
+	fi
 	dynamic_ffi=yes
 	;;
    x86_64 )
-        if [ "${CL_FIXNUM_BITS}" = 32 ]; then
+        if test "${CL_FIXNUM_BITS}" = 32 ; then
 	  EXTRA_OBJS="${EXTRA_OBJS} ffi_x86.o"
 	else
 	  EXTRA_OBJS="${EXTRA_OBJS} ffi_x86_64.o"
