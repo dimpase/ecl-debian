@@ -130,7 +130,7 @@ si_free_foreign_data(cl_object f)
 		FEwrong_type_argument(@'si::foreign-data', f);
 	}
 	if (f->foreign.size) {
-		cl_dealloc(f->foreign.data, f->foreign.size);
+		cl_dealloc(f->foreign.data);
 	}
 	f->foreign.size = 0;
 	f->foreign.data = NULL;
@@ -434,8 +434,8 @@ si_load_foreign_module(cl_object filename)
 	output = ecl_library_open(filename, 0);
 	if (output->cblock.handle == NULL)
 	{
-		output = ecl_library_error(output);
 		ecl_library_close(output);
+		output = ecl_library_error(output);
 	}
 OUTPUT:
 #ifdef ECL_THREADS
@@ -496,6 +496,7 @@ ecl_fficall_prepare(cl_object return_type, cl_object arg_type, cl_object cc_type
 	fficall->buffer_size = 0;
 	fficall->cstring = Cnil;
 	fficall->cc = ecl_foreign_cc_code(cc_type);
+        fficall->registers = ecl_fficall_prepare_extra(fficall->registers);
 }
 
 void
@@ -573,7 +574,7 @@ ecl_fficall_align(int data)
 	cl_object data;
 	cl_object cbk;
 @
-	data = CONS(fun, CONS(rtype, CONS(argtypes, Cnil)));
+	data = cl_list(3, fun, rtype, argtypes);
 	cbk  = ecl_make_foreign_data(@':pointer-void', 0, ecl_dynamic_callback_make(data, ecl_foreign_cc_code(cctype)));
 
 	si_put_sysprop(sym, @':callback', CONS(cbk, data));

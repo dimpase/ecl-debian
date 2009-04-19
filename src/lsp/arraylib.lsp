@@ -43,22 +43,9 @@ in raw-major indexing is actually the reference to the (I + DISPLACED-INDEX-
 OFFSET)th element of the given array.If the STATIC argument is supplied
 with a non-nil value, then the body of the array is allocated as a
 contiguous block."
-  (setq element-type (upgraded-array-element-type element-type))
-
-  (let (x)
+  (let ((x (sys:make-pure-array element-type dimensions adjustable
+				fill-pointer displaced-to displaced-index-offset)))
     (declare (array x))
-    (cond ((or (integerp dimensions)
-	       (when (= (length dimensions) 1)
-		 (setq dimensions (first dimensions))))
-	   (setf x (sys:make-vector element-type dimensions
-				    adjustable fill-pointer
-				    displaced-to displaced-index-offset)))
-	  (fill-pointer
-	   (error ":FILL-POINTER may not be specified for an array of rank ~D"
-		  (length dimensions)))
-	  (t
-	   (setf x (apply #'sys:make-pure-array element-type adjustable
-			  displaced-to displaced-index-offset dimensions))))
     (when initial-element-supplied-p
       (dotimes (i (array-total-size x))
 	(declare (fixnum i))
@@ -71,7 +58,8 @@ contiguous block."
   (declare (si::c-local))
   (labels ((iterate-over-contents (array contents dims written)
 	     (declare (fixnum written)
-		      (array array))
+		      (array array)
+		      (optimize (safety 0)))
 	     (when (/= (length contents) (first dims))
 	       (error "In MAKE-ARRAY: the elements in :INITIAL-CONTENTS do not match the array dimensions"))
 	     (if (= (length dims) 1)
@@ -96,10 +84,9 @@ contiguous block."
   "Args: (&rest objects)
 Creates and returns a simple-vector, with the N-th OBJECT being the N-th
 element."
-  (make-array (list (length objects))
-	      :element-type t
-	      :initial-contents objects))
-
+  (let ((a (si:make-vector t (length objects) nil nil nil 0)))
+    (fill-array a objects)
+    a))
 
 (defun array-dimensions (array)
   "Args: (array)
@@ -285,7 +272,8 @@ pointer is 0 already."
     (aref vector (the fixnum (1- fp)))))
 
 (defun copy-array-contents (dest orig)
-  (declare (si::c-local))
+  (declare (si::c-local)
+	   (optimize (safety 0)))
   (labels
       ((do-copy (dest orig dims1 dims2 start1 start2)
 	 (declare (array dest orig)

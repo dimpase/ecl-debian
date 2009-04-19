@@ -113,6 +113,7 @@
     (wt-nl-h "#include <string.h>"))
   ;;; Initialization function.
   (let* ((*lcl* 0) (*lex* 0) (*max-lex* 0) (*max-env* 0) (*max-temp* 0)
+	 (*max-stack* 0)
 	 (*reservation-cmacro* (next-cmacro))
 	 (c-output-file *compiler-output1*)
 	 (*compiler-output1* (make-string-output-stream))
@@ -123,9 +124,11 @@
     (wt-nl1 "#ifdef __cplusplus")
     (wt-nl1 "extern \"C\"")
     (wt-nl1 "#endif")
-    (wt-nl1 "void " name "(cl_object flag)")
-    (wt-nl1 "{ VT" *reservation-cmacro* " VLEX" *reservation-cmacro*
-            " CLSR" *reservation-cmacro*)
+    (wt-nl1 "ECL_DLLEXPORT void " name "(cl_object flag)")
+    (wt-nl1 "{ VT" *reservation-cmacro*
+	    " VLEX" *reservation-cmacro*
+            " CLSR" *reservation-cmacro*
+	    " STCK" *reservation-cmacro*)
     (wt-nl "cl_object value0;")
     (wt-nl "cl_object *VVtemp;")
     (when shared-data
@@ -334,7 +337,8 @@
 (defun wt-function-prolog (&optional sp local-entry)
   (wt " VT" *reservation-cmacro*
       " VLEX" *reservation-cmacro*
-      " CLSR" *reservation-cmacro*)
+      " CLSR" *reservation-cmacro*
+      " STCK" *reservation-cmacro*)
   (wt-nl "cl_object value0;")
   (when sp (wt-nl "bds_check;"))
   ; (when (compiler-push-events) (wt-nl "ihs_check;"))
@@ -359,6 +363,11 @@
   (when (plusp *max-lex*)
     (wt-h " volatile cl_object lex" *level* "[" *max-lex* "];"))
   (wt-nl-h "#define CLSR" *reservation-cmacro*)
+  (wt-nl-h "#define STCK" *reservation-cmacro*)
+  (unless (zerop *max-stack*)
+    (wt-h " cl_object " +ecl-local-stack-variable+ "[" *max-stack* "]; "
+	  "struct ecl_stack_frame " +ecl-local-stack-frame-variable+
+	  " = { t_frame, 0, 0, 0, " +ecl-local-stack-variable+ ", 0, 0 };"))
   (when (plusp *max-env*)
     (unless (eq closure-type 'CLOSURE)
       (wt-h " cl_object " *volatile* "env0;"))
@@ -424,9 +433,7 @@
   (when *compile-time-too* (cmp-eval form))
   (let ((*compile-toplevel* nil)
 	(*compile-time-too* nil))
-    (setq form (c1expr form))
-    (add-load-time-values)
-    (make-c1form* 'ORDINARY :args form)))
+    (add-load-time-values (make-c1form* 'ORDINARY :args (c1expr form)))))
 
 (defun t2ordinary (form)
   (let* ((*exit* (next-label))
@@ -435,20 +442,26 @@
     (c2expr form)
     (wt-label *exit*)))
 
-(defun add-load-time-values ()
-  (when (listp *load-time-values*)
-    (setq *top-level-forms* (nconc *load-time-values* *top-level-forms*))
-    (setq *load-time-values* nil))
-  (when (listp *make-forms*)
-    (setq *top-level-forms*
-	  (nconc (nreverse *make-forms*) *top-level-forms*))
-    (setq *make-forms* nil)))
+(defun add-load-time-values (form)
+  (let ((previous (append (and (consp *load-time-values*)
+			       (nreverse *load-time-values*))
+			  (nreverse *make-forms*))))
+    (when previous
+      (setf *load-time-values* nil
+	    *make-forms* nil)
+      (setf form (make-c1form* 'PROGN :args (nconc previous (list form))))))
+  form)
 
 (defun c1load-time-value (args)
   (check-args-number 'LOAD-TIME-VALUE args 1 2)
   (let ((form (first args))
 	loc)
-    (cond ((listp form)
+    (cond ((not (listp *load-time-values*))
+	   ;; When using COMPILE, we set *load-time-values* to 'VALUES and
+	   ;; thus signal that we do not want to compile these forms, but
+	   ;; just to retain their value.
+	   (return-from c1load-time-value (c1constant-value (cmp-eval form) :always t)))
+          ((typep form '(or list symbol))
 	   (setf loc (data-empty-loc))
 	   (push (make-c1form* 'LOAD-TIME-VALUE :args loc (c1expr form))
 		 *load-time-values*))
@@ -475,10 +488,7 @@
     (wt-label *exit*)))
 
 (defun t2decl-body (decls body)
-  (let ((*safety* *safety*)
-	(*space* *space*)
-	(*speed* *speed*)
-	(*debug* *debug*)
+  (let ((*cmp-env* *cmp-env*)
         (*notinline* *notinline*))
     (c1add-declarations decls)
     (t2expr body)))
@@ -524,7 +534,7 @@
     (wt-comment "... shares definition with " (fun-name (fun-shares-with fun)))
     (return-from t3local-fun))
   (cond ((fun-exported fun)
-	 (wt-nl-h #+(and msvc (not ecl-min)) "__declspec(dllexport) " "cl_object " cfun "(")
+	 (wt-nl-h "ECL_DLLEXPORT cl_object " cfun "(")
 	 (wt-nl1 "cl_object " cfun "("))
 	(t
 	 (wt-nl-h "static cl_object " cfun "(")
@@ -566,7 +576,8 @@
     (wt-nl1 "{")
     (wt " VT" *reservation-cmacro*
 	" VLEX" *reservation-cmacro*
-	" CLSR" *reservation-cmacro*)
+	" CLSR" *reservation-cmacro*
+	" STCK" *reservation-cmacro*)
     (wt-nl *volatile* "cl_object value0;")
     (when (>= (fun-debug fun) 2)
       (wt-nl "struct ihs_frame ihs;"))
@@ -607,7 +618,7 @@
     ;; name into the invocation stack
     (when (>= (fun-debug fun) 2)
       (push 'IHS *unwind-exit*)
-      (wt-nl "ihs_push(&ihs," (add-symbol (fun-name fun)) ");"))
+      (wt-nl "ihs_push(&ihs," (add-symbol (fun-name fun)) ",Cnil);"))
 
     (c2lambda-expr (c1form-arg 0 lambda-expr)
 		   (c1form-arg 2 lambda-expr)

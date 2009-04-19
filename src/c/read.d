@@ -514,7 +514,7 @@ ecl_parse_number(cl_object str, cl_index start, cl_index end,
 			output = OBJNULL;
 		}
 	OUTPUT:
-		cl_dealloc(buffer, length+1);
+		cl_dealloc(buffer);
 		return output;
 	}
 }
@@ -739,7 +739,7 @@ sharp_C_reader(cl_object in, cl_object c, cl_object d)
 		FEend_of_file(in);
 	if (read_suppress)
 		@(return Cnil);
-	if (type_of(x) != t_cons || ecl_length(x) != 2)
+	if (Null(x) || type_of(x) != t_list || ecl_length(x) != 2)
 		FEreader_error("Reader macro #C should be followed by a list",
 			       in, 0);
 	real = CAR(x);
@@ -811,7 +811,7 @@ static cl_object
 sharp_Y_reader(cl_object in, cl_object c, cl_object d)
 {
         cl_index i;
-        cl_object x, rv, nth;
+        cl_object x, rv, nth, lex;
 
 	if (d != Cnil && !read_suppress)
 		extra_argument('C', in, d);
@@ -820,14 +820,14 @@ sharp_Y_reader(cl_object in, cl_object c, cl_object d)
 		FEend_of_file(in);
 	if (read_suppress)
 		@(return Cnil);
-	if (type_of(x) != t_cons || ecl_length(x) != 6)
+	if (Null(x) || type_of(x) != t_list || ecl_length(x) != 6)
 		FEreader_error("Reader macro #Y should be followed by a list",
 			       in, 0);
 
         rv = cl_alloc_object(t_bytecodes);
 
         rv->bytecodes.name = CAR(x); x = CDR(x);
-        rv->bytecodes.lex = CAR(x); x = CDR(x);
+        lex = CAR(x); x = CDR(x);
         rv->bytecodes.specials = CAR(x); x = CDR(x);
         rv->bytecodes.definition = CAR(x); x = CDR(x);
 
@@ -842,6 +842,12 @@ sharp_Y_reader(cl_object in, cl_object c, cl_object d)
         for ( i=0, nth=CAR(x) ; !ecl_endp(nth) ; i++, nth=CDR(nth) )
              ((cl_object*)(rv->bytecodes.data))[i] = CAR(nth);
 
+	if (lex != Cnil) {
+		cl_object x = cl_alloc_object(t_bclosure);
+		x->bclosure.code = rv;
+		x->bclosure.lex = lex;
+		rv = x;
+	}
         @(return rv);
 }
 
@@ -1122,12 +1128,13 @@ sharp_eq_reader(cl_object in, cl_object c, cl_object d)
 		FEreader_error("The #= readmacro requires an argument.", in, 0);
 	if (ecl_assql(d, sharp_eq_context) != Cnil)
 		FEreader_error("Duplicate definitions for #~D=.", in, 1, d);
-	pair = CONS(d, Cnil);
+	pair = ecl_list1(d);
 	ECL_SETQ(@'si::*sharp-eq-context*', CONS(pair, sharp_eq_context));
 	value = ecl_read_object(in);
 	if (value == pair)
 		FEreader_error("#~D# is defined by itself.", in, 1, d);
-	@(return (CDR(pair) = value))
+	ECL_RPLACD(pair, value);
+	@(return value)
 }
 
 static cl_object
@@ -1148,18 +1155,21 @@ static cl_object
 do_patch_sharp(cl_object x)
 {
 	switch (type_of(x)) {
-	case t_cons: {
+	case t_list: {
 	  	cl_object y = x;
 		cl_object *place = &x;
+		if (Null(x))
+			break;
 		do {
 			/* This was the result of a #d# */
 			if (CAR(y) == OBJNULL) {
 				*place = CDR(y);
 				return x;
-			} else
-				CAR(y) = do_patch_sharp(CAR(y));
-			place = &CDR(y);
-			y = CDR(y);
+			} else {
+				ECL_RPLACA(y, do_patch_sharp(CAR(y)));
+			}
+			place = &ECL_CONS_CDR(y);
+			y = ECL_CONS_CDR(y);
 		} while (CONSP(y));
 		break;
 	}
@@ -1195,18 +1205,20 @@ do_patch_sharp(cl_object x)
 static cl_object
 patch_sharp(cl_object x)
 {
-	cl_object pair, sharp_eq_context = SYM_VAL(@'si::*sharp-eq-context*');
+	cl_object pairs, sharp_eq_context = SYM_VAL(@'si::*sharp-eq-context*');
 
-	pair = sharp_eq_context;
-	loop_for_in(pair) { 
-		CAAR(pair) = OBJNULL;
+	pairs = sharp_eq_context;
+	loop_for_in(pairs) { 
+		cl_object pair = ECL_CONS_CAR(pairs);
+		ECL_RPLACA(pair, OBJNULL);
 	} end_loop_for_in;
 
 	x = do_patch_sharp(x);
 
-	pair = sharp_eq_context;
-	loop_for_in(pair) { 
-		CAAR(pair) = Cnil;
+	pairs = sharp_eq_context;
+	loop_for_in(pairs) {
+		cl_object pair = ECL_CONS_CAR(pairs);
+		ECL_RPLACA(pair, Cnil);
 	} end_loop_for_in;
 	return x;
 }
@@ -1470,8 +1482,8 @@ do_read_delimited_list(int d, cl_object in, bool proper_list)
 			}
 			*p = x;
 		} else if (!suppress) {
-			*p = CONS(x, Cnil);
-			p = &(CDR(*p));
+			*p = ecl_list1(x);
+			p = &ECL_CONS_CDR(*p);
 		}
 	} while (1);
 }
@@ -1503,7 +1515,7 @@ do_read_delimited_list(int d, cl_object in, bool proper_list)
 	strm = stream_or_default_input(strm);
 #ifdef ECL_CLOS_STREAMS
 	if (type_of(strm) != t_stream) {
-		return funcall(2, @'ext::stream-read-line', strm);
+		return funcall(2, @'gray::stream-read-line', strm);
 	}
 #endif
 	token = si_get_buffer_string();
@@ -1607,7 +1619,7 @@ do_read_delimited_list(int d, cl_object in, bool proper_list)
 	strm = stream_or_default_input(strm);
 #ifdef ECL_CLOS_STREAMS
 	if (type_of(strm) != t_stream) {
-		cl_object output = funcall(2,@'ext::stream-read-char-no-hang', strm);
+		cl_object output = funcall(2,@'gray::stream-read-char-no-hang', strm);
 		if (output == @':eof')
 			goto END_OF_FILE;
 		@(return output);
@@ -1700,7 +1712,7 @@ CANNOT_PARSE:		FEparse_error("Cannot parse an integer in the string ~S.",
 @
 #ifdef ECL_CLOS_STREAMS
 	if (type_of(stream) != t_stream)
-		return funcall(5, @'ext::stream-read-sequence', stream, sequence, start, end);
+		return funcall(5, @'gray::stream-read-sequence', stream, sequence, start, end);
 	else
 #endif
 		return si_do_read_sequence(sequence, stream, start, end);
@@ -2055,7 +2067,7 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 	volatile cl_object x;
 	cl_index i, len, perm_len, temp_len;
 	cl_object in;
-	cl_object *VV, *VVtemp;
+	cl_object *VV, *VVtemp = 0;
 
 	if (block == NULL) {
 		block = cl_alloc_object(t_codeblock);
@@ -2130,11 +2142,9 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 			}
 		} end_loop_for_on;
 		if (VVtemp) {
-			cl_index bytes = sizeof(*VVtemp) * temp_len;
 			block->cblock.temp_data = NULL;
 			block->cblock.temp_data_size = 0;
-			memset(VVtemp, 0, bytes);
-			cl_dealloc(VVtemp, bytes);
+			cl_dealloc(VVtemp);
 		}
 		bds_unwind1();
 	} CL_UNWIND_PROTECT_EXIT {

@@ -22,8 +22,7 @@
 cl_object
 si_specialp(cl_object sym)
 {
-	@(return ((SYMBOLP(sym) && sym->symbol.stype == stp_special) ?
-		   Ct : Cnil))
+	@(return ((ecl_symbol_type(sym) & stp_special)? Ct : Cnil))
 }
 
 cl_fixnum
@@ -203,8 +202,8 @@ cl_grab_rest_args(cl_va_list args)
 	cl_object rest = Cnil;
 	cl_object *r = &rest;
 	while (args[0].narg) {
-		*r = CONS(cl_va_arg(args), Cnil);
-		r = &CDR(*r);
+		*r = ecl_list1(cl_va_arg(args));
+		r = &ECL_CONS_CDR(*r);
 	}
 	return rest;
 }
@@ -219,46 +218,46 @@ cl_parse_key(
      cl_object *rest,		/* if rest != NULL, where to collect rest values */
      bool allow_other_keys)	/* whether other key are allowed */
 {
-  int i;
-  cl_object supplied_allow_other_keys = OBJNULL;
-  cl_object unknown_keyword = OBJNULL;
+	int i;
+	cl_object supplied_allow_other_keys = OBJNULL;
+	cl_object unknown_keyword = OBJNULL;
 
-  if (rest != NULL) *rest = Cnil;
+	if (rest != NULL) *rest = Cnil;
 
-  for (i = 0; i < 2*nkey; i++)
-    vars[i] = Cnil;             /* default values: NIL, supplied: NIL */
-  if (args[0].narg <= 0) return;
+	for (i = 0; i < 2*nkey; i++)
+		vars[i] = Cnil;             /* default values: NIL, supplied: NIL */
+	if (args[0].narg <= 0) return;
 
-  for (; args[0].narg > 1; ) {
-    cl_object keyword = cl_va_arg(args);
-    cl_object value = cl_va_arg(args);
-    if (!SYMBOLP(keyword))
-      FEprogram_error("LAMBDA: Keyword expected, got ~S.", 1, keyword);
-    if (rest != NULL) {
-      rest = &CDR(*rest = CONS(keyword, Cnil));
-      rest = &CDR(*rest = CONS(value, Cnil));
-    }
-    for (i = 0; i < nkey; i++) {
-      if (keys[i] == keyword) {
-	if (vars[nkey+i] == Cnil) {
-	  vars[i] = value;
-	  vars[nkey+i] = Ct;
+	for (; args[0].narg > 1; ) {
+		cl_object keyword = cl_va_arg(args);
+		cl_object value = cl_va_arg(args);
+		if (!SYMBOLP(keyword))
+			FEprogram_error("LAMBDA: Keyword expected, got ~S.", 1, keyword);
+		if (rest != NULL) {
+			rest = &ECL_CONS_CDR(*rest = ecl_list1(keyword));
+			rest = &ECL_CONS_CDR(*rest = ecl_list1(value));
+		}
+		for (i = 0; i < nkey; i++) {
+			if (keys[i] == keyword) {
+				if (vars[nkey+i] == Cnil) {
+					vars[i] = value;
+					vars[nkey+i] = Ct;
+				}
+				goto goon;
+			}
+		}
+		/* the key is a new one */
+		if (keyword == @':allow-other-keys') {
+			if (supplied_allow_other_keys == OBJNULL)
+				supplied_allow_other_keys = value;
+		} else if (unknown_keyword == OBJNULL)
+			unknown_keyword = keyword;
+	goon:;
 	}
-	goto goon;
-      }
-    }
-    /* the key is a new one */
-    if (keyword == @':allow-other-keys') {
-      if (supplied_allow_other_keys == OBJNULL)
-	supplied_allow_other_keys = value;
-    } else if (unknown_keyword == OBJNULL)
-      unknown_keyword = keyword;
-  goon:;
-  }
-  if (args[0].narg != 0)
-    FEprogram_error("Odd number of keys", 0);
-  if (unknown_keyword != OBJNULL && !allow_other_keys &&
-      (supplied_allow_other_keys == Cnil ||
-       supplied_allow_other_keys == OBJNULL))
-    FEprogram_error("Unknown keyword ~S", 1, unknown_keyword);
+	if (args[0].narg != 0)
+		FEprogram_error("Odd number of keys", 0);
+	if (unknown_keyword != OBJNULL && !allow_other_keys &&
+	    (supplied_allow_other_keys == Cnil ||
+	     supplied_allow_other_keys == OBJNULL))
+		FEprogram_error("Unknown keyword ~S", 1, unknown_keyword);
 }

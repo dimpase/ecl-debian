@@ -16,25 +16,12 @@
 */
 
 #include <ecl/ecl.h>
-#include <math.h>
 #include <float.h>
+#include <math.h>
 #ifdef _MSC_VER
 # undef complex
 #endif
-#include <float.h>
 #include <ecl/internal.h>
-
-#ifndef HAVE_ISNANF
-#define isnanf(x) isnan(x)
-#endif
-
-#ifndef M_PI
-# ifdef PI
-#  define M_PI PI
-# else
-#   define M_PI 3.14159265358979323846
-# endif
-#endif
 
 cl_fixnum
 fixint(cl_object x)
@@ -161,10 +148,10 @@ ecl_make_singlefloat(float f)
 	ecl_detect_fpe();
 	if (f == (float)0.0)
 		return(cl_core.singlefloat_zero);
-	if (isnanf(f)) {
+	if (isnan(f)) {
 		cl_error(1, @'division-by-zero');
 	}
-	if (!finite(f)) {
+	if (!isfinite(f)) {
 		cl_error(1, @'floating-point-overflow');
 	}
 	x = cl_alloc_object(t_singlefloat);
@@ -183,7 +170,7 @@ ecl_make_doublefloat(double f)
 	if (isnan(f)) {
 		cl_error(1, @'division-by-zero');
 	}
-	if (!finite(f)) {
+	if (!isfinite(f)) {
 		cl_error(1, @'floating-point-overflow');
 	}
 	x = cl_alloc_object(t_doublefloat);
@@ -200,10 +187,10 @@ make_longfloat(long double f)
 	ecl_detect_fpe();
 	if (f == (long double)0.0)
 		return cl_core.longfloat_zero;
-	if (isnanl(f)) {
+	if (isnan(f)) {
 		cl_error(1, @'division-by-zero');
 	}
-	if (!finitel(f)) {
+	if (!isfinite(f)) {
 		cl_error(1, @'floating-point-overflow');
 	}
 	x = cl_alloc_object(t_longfloat);
@@ -330,7 +317,7 @@ ecl_make_complex(cl_object r, cl_object i)
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
 		if (ti != t_longfloat)
-			r = make_longfloat((long double)ecl_to_double(r));
+			i = make_longfloat((long double)ecl_to_double(i));
 		break;
 #endif
 	default:
@@ -607,7 +594,11 @@ init_number(void)
 	cl_core.imag_two =
 	    ecl_make_complex(ecl_make_singlefloat(0.0), ecl_make_singlefloat(2.0));
 
-	ECL_SET(@'pi', ecl_make_doublefloat(M_PI));
+#ifdef ECL_LONG_FLOAT
+	ECL_SET(@'pi', make_longfloat((long double)ECL_PI_L));
+#else
+	ECL_SET(@'pi', ecl_make_doublefloat((double)ECL_PI_D));
+#endif
 
 	init_big();
 

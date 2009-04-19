@@ -493,8 +493,6 @@ write_base(int base, cl_object stream)
 #define G_EXP_STRING "Lg"
 #define DBL_TYPE long double
 #define strtod strtold
-#define isnan isnanl
-#define finite finitel
 extern long double strtold(const char *nptr, char **endptr);
 #else
 #define EXP_STRING "e"
@@ -510,8 +508,7 @@ int edit_double(int n, DBL_TYPE d, int *sp, char *s, int *ep)
 	fenv_t env;
 	feholdexcept(&env);
 #endif
-
-	if (isnan(d) || !finite(d))
+	if (isnan(d) || !isfinite(d))
 		FEerror("Can't print a non-number.", 0);
 	if (n < -DBL_MAX_DIGITS)
 		n = DBL_MAX_DIGITS;
@@ -661,8 +658,7 @@ do_write_integer(cl_object x, struct powers *powers, cl_index len,
 				write_positive_fixnum(0, powers->base, len, stream);
 			powers--;
 		}
-		ecl_floor2(x, powers->number);
-		left = VALUES(0);
+		left = ecl_floor2(x, powers->number);
 		x = VALUES(1);
 		if (len) len -= powers->n_digits;
 		do_write_integer(left, powers-1, len, stream);
@@ -821,10 +817,18 @@ write_symbol(cl_object x, cl_object stream)
 	cl_object print_package = ecl_symbol_value(@'si::*print-package*');
 	cl_object readtable = ecl_current_readtable();
 	cl_object print_case = ecl_print_case();
-	cl_object package = x->symbol.hpack;
-	cl_object name = x->symbol.name;
+	cl_object package;
+	cl_object name;
 	int intern_flag;
 	bool print_readably = ecl_print_readably();
+
+	if (Null(x)) {
+		package = Cnil_symbol->symbol.hpack;
+		name = Cnil_symbol->symbol.name;
+	} else {
+		package = x->symbol.hpack;
+		name = x->symbol.name;
+	}
 
 	if (!print_readably && !ecl_print_escape()) {
 		write_symbol_string(name, readtable->readtable.read_case,
@@ -1180,9 +1184,13 @@ si_write_ugly_object(cl_object x, cl_object stream)
 				write_ch('0', stream);
 		break;
 
-	case t_cons: {
+	case t_list: {
 		bool circle;
 		cl_fixnum print_level, print_length;
+		if (Null(x)) {
+			write_symbol(x, stream);
+			break;
+		}
 		if (CAR(x) == @'si::#!') {
 			write_str("#!", stream);
 			x = CDR(x);
@@ -1462,9 +1470,29 @@ si_write_ugly_object(cl_object x, cl_object stream)
 		si_write_ugly_object(namestring, stream);
 		break;
 	}
+	case t_bclosure:
+                if ( ecl_print_readably() ) {
+	                cl_index i;
+			cl_object lex = x->bclosure.lex;
+                        cl_object code_l=Cnil, data_l=Cnil;
+			x = x->bclosure.code;
+                        for ( i=x->bytecodes.code_size-1 ; i<(cl_index)(-1l) ; i-- )
+                             code_l = ecl_cons(MAKE_FIXNUM(((cl_opcode*)(x->bytecodes.code))[i]), code_l);
+                        for ( i=x->bytecodes.data_size-1 ; i<(cl_index)(-1l) ; i-- )
+                             data_l = ecl_cons(x->bytecodes.data[i], data_l);
+
+                        write_str("#Y", stream);
+                        si_write_ugly_object(
+			    cl_list(6, x->bytecodes.name, lex,
+				    x->bytecodes.specials, Cnil /* x->bytecodes.definition */,
+				    code_l, data_l),
+			    stream);
+			break;
+                }
 	case t_bytecodes:
                 if ( ecl_print_readably() ) {
 	                cl_index i;
+			cl_object lex = Cnil;
                         cl_object code_l=Cnil, data_l=Cnil;
                         for ( i=x->bytecodes.code_size-1 ; i<(cl_index)(-1l) ; i-- )
                              code_l = ecl_cons(MAKE_FIXNUM(((cl_opcode*)(x->bytecodes.code))[i]), code_l);
@@ -1473,10 +1501,11 @@ si_write_ugly_object(cl_object x, cl_object stream)
 
                         write_str("#Y", stream);
                         si_write_ugly_object(
-			    cl_list(6, x->bytecodes.name, x->bytecodes.lex,
+			    cl_list(6, x->bytecodes.name, lex,
 				    x->bytecodes.specials, Cnil /* x->bytecodes.definition */,
 				    code_l, data_l),
 			    stream);
+			break;
                 } else {
                         cl_object name = x->bytecodes.name;
                         write_str("#<bytecompiled-function ", stream);
@@ -1488,6 +1517,7 @@ si_write_ugly_object(cl_object x, cl_object stream)
                 }
                 break;
         case t_cfun:
+	case t_cfunfixed:
 		if (ecl_print_readably()) FEprint_not_readable(x);
 		write_str("#<compiled-function ", stream);
 		if (x->cfun.name != Cnil)
@@ -1513,7 +1543,7 @@ si_write_ugly_object(cl_object x, cl_object stream)
 		break;
 #ifdef CLOS
 	case t_instance:
-		if (type_of(CLASS_OF(x)) != t_instance)
+		if (!ECL_INSTANCEP(CLASS_OF(x)))
 			FEwrong_type_argument(@'ext::instance', CLASS_OF(x));
 		call_print_object(x, stream);
 		break;
@@ -1529,9 +1559,9 @@ si_write_ugly_object(cl_object x, cl_object stream)
 	case t_frame:
 		if (ecl_print_readably()) FEprint_not_readable(x);
 		write_str("#<frame ", stream);
-		write_decimal(x->frame.narg, stream);
+		write_decimal(x->frame.top - x->frame.bottom, stream);
 		write_ch(' ', stream);
-		write_decimal(x->frame.sp, stream);
+		write_decimal(x->frame.bottom, stream);
 		write_ch('>', stream);
 		break;
 #ifdef ECL_THREADS
@@ -1590,8 +1620,8 @@ si_write_object_recursive(cl_object x, cl_object stream)
 	}
 #endif /* ECL_CMU_FORMAT */
 	circle = ecl_print_circle();
-	if (circle && !IMMEDIATE(x) &&
-	    ((type_of(x) != t_symbol) || (Null(x->symbol.hpack))))
+	if (circle && !Null(x) && !FIXNUMP(x) && !CHARACTERP(x) &&
+	    (LISTP(x) || (x->d.t != t_symbol) || (Null(x->symbol.hpack))))
 	{
 		cl_object circle_counter;
 		cl_fixnum code;
@@ -1846,7 +1876,7 @@ potential_number_p(cl_object strng, int base)
 	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
 	if (type_of(strm) != t_stream)
-		funcall(5, @'ext::stream-write-string', strm, strng, start, end);
+		funcall(5, @'gray::stream-write-string', strm, strng, start, end);
 	else
 #endif
 		si_do_write_sequence(strng, strm, start, end);
@@ -1874,7 +1904,7 @@ potential_number_p(cl_object strng, int base)
  	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
 	if (type_of(strm) != t_stream) {
-		return funcall(2, @'ext::stream-fresh-line', strm);
+		return funcall(2, @'gray::stream-fresh-line', strm);
 	}
 #endif
 	if (ecl_file_column(strm) == 0)
@@ -1889,7 +1919,7 @@ potential_number_p(cl_object strng, int base)
  	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
 	if (type_of(strm) != t_stream) {
-		return funcall(2, @'ext::stream-finish-output', strm);
+		return funcall(2, @'gray::stream-finish-output', strm);
 	}
 #endif
 	ecl_force_output(strm);
@@ -1921,7 +1951,7 @@ cl_write_byte(cl_object integer, cl_object binary_output_stream)
 @
 #ifdef ECL_CLOS_STREAMS
 	if (type_of(stream) != t_stream)
-		return funcall(5, @'ext::stream-write-sequence', stream, sequence, start, end);
+		return funcall(5, @'gray::stream-write-sequence', stream, sequence, start, end);
 	else
 #endif
 		return si_do_write_sequence(sequence, stream, start, end);
@@ -1965,7 +1995,7 @@ ecl_terpri(cl_object strm)
 	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
 	if (type_of(strm) != t_stream) {
-		return funcall(2, @'ext::stream-terpri', strm);
+		return funcall(2, @'gray::stream-terpri', strm);
 	}
 #endif
 	ecl_write_char('\n', strm);

@@ -84,9 +84,8 @@ ecl_library_find(cl_object filename)
 	cl_object libraries = cl_core.libraries;
 	cl_index i;
 	for (i = 0; i < libraries->vector.fillp; i++) {
-		if (ecl_string_eq(libraries->vector.self.t[i]->cblock.name,
-				  filename))
-		{
+		cl_object name = libraries->vector.self.t[i]->cblock.name;
+		if (!Null(name) && ecl_string_eq(name, filename)) {
 			return libraries->vector.self.t[i];
 		}
 	}
@@ -261,11 +260,11 @@ ecl_library_close(cl_object block) {
 	cl_object libraries = cl_core.libraries;
 	int i;
 
-	if (block->cblock.name)
-		filename = block->cblock.name->base_string.self;
-	else
+	if (Null(block->cblock.name))
 		filename = "<anonymous>";
-	if (block->cblock.links) {
+	else
+		filename = block->cblock.name->base_string.self;
+	if (!Null(block->cblock.links)) {
 		cl_mapc(2, @'si::unlink-symbol', block->cblock.links);
 	}
         if (block->cblock.handle != NULL) {
@@ -316,8 +315,11 @@ si_load_binary(cl_object filename, cl_object verbose, cl_object print)
 	cl_object output;
 
 	/* A full garbage collection enables us to detect unused code
-	   and leave space for the library to be loaded. */
+	   and leave space for the library to be loaded. This is only
+	   required when we use the dlopen wrappers. */
+#ifndef GBC_BOEHM_GENGC
 	si_gc(Ct);
+#endif
 
 	/* We need the full pathname */
 	filename = cl_namestring(cl_truename(filename));
@@ -390,6 +392,9 @@ si_load_source(cl_object source, cl_object verbose, cl_object print)
 			@(return Cnil)
 	}
 	CL_UNWIND_PROTECT_BEGIN {
+		cl_object form_index = MAKE_FIXNUM(0);
+		cl_object location = CONS(source, form_index);
+		bds_bind(@'ext::*source-location*', location);
 		for (;;) {
 			x = cl_read(3, strm, Cnil, OBJNULL);
 			if (x == OBJNULL)
@@ -399,7 +404,10 @@ si_load_source(cl_object source, cl_object verbose, cl_object print)
 				@write(1, x);
 				@terpri(0);
 			}
+			form_index = ecl_plus(MAKE_FIXNUM(1),form_index);
+			ECL_RPLACD(location, form_index);
 		}
+		bds_unwind1();
 	} CL_UNWIND_PROTECT_EXIT {
 		/* We do not want to come back here if close_stream fails,
 		   therefore, first we frs_pop() current jump point, then
@@ -420,7 +428,7 @@ si_load_source(cl_object source, cl_object verbose, cl_object print)
 	bool not_a_filename = 0;
 @
 	/* If source is a stream, read conventional lisp code from it */
-	if (type_of(source) != t_pathname && type_of(source) != t_base_string) {
+	if (type_of(source) != t_pathname && !ecl_stringp(source)) {
 		/* INV: if "source" is not a valid stream, file.d will complain */
 		filename = source;
 		function = Cnil;

@@ -313,27 +313,37 @@ ecl_aset1(cl_object v, cl_index index, cl_object val)
 /*
 	Internal function for making arrays of more than one dimension:
 
-		(si:make-pure-array element-type adjustable
-			            displaced-to displaced-index-offset
-			            dim0 dim1 ... )
+		(si:make-pure-array dimension-list element-type adjustable
+			            displaced-to displaced-index-offset)
 */
-@(defun si::make_pure_array (etype adj displ disploff &rest dims)
-@ {
+cl_object
+si_make_pure_array(cl_object etype, cl_object dims, cl_object adj,
+		   cl_object fillp, cl_object displ, cl_object disploff)
+{
 	cl_index r, s, i, j;
 	cl_object x;
-	r = narg - 4;
+	if (FIXNUMP(dims)) {
+		return si_make_vector(etype, dims, adj, fillp, displ, disploff);
+	}
+	r = ecl_length(dims);
+	if (r >= ARANKLIM) {
+		FEerror("The array rank, ~R, is too large.", 1, MAKE_FIXNUM(r));
+	} else if (r == 1) {
+		return si_make_vector(etype, ECL_CONS_CAR(dims), adj, fillp,
+				      displ, disploff);
+	} else if (!Null(fillp)) {
+		FEerror(":FILL-POINTER may not be specified for an array of rank ~D",
+			1, MAKE_FIXNUM(r));
+	}
 	x = cl_alloc_object(t_array);
 	x->array.displaced = Cnil;
 	x->array.self.t = NULL;		/* for GC sake */
 	x->array.rank = r;
 	x->array.elttype = (short)ecl_symbol_to_elttype(etype);
 	x->array.dims = (cl_index *)cl_alloc_atomic_align(sizeof(cl_index)*r, sizeof(cl_index));
-	if (r >= ARANKLIM) {
-		FEerror("The array rank, ~R, is too large.", 1, MAKE_FIXNUM(r));
-	}
-	for (i = 0, s = 1;  i < r;  i++) {
-		j = ecl_fixnum_in_range(@'make-array',"dimension",cl_va_arg(dims),
-					0,ADIMLIM);
+	for (i = 0, s = 1;  i < r;  i++, dims = ECL_CONS_CDR(dims)) {
+		j = ecl_fixnum_in_range(@'make-array', "dimension",
+					ECL_CONS_CAR(dims), 0, ADIMLIM);
 		s *= (x->array.dims[i] = j);
 		if (s > ATOTLIM)
 			FEerror("The array total size, ~D, is too large.", 1, MAKE_FIXNUM(s));
@@ -345,7 +355,7 @@ ecl_aset1(cl_object v, cl_index index, cl_object val)
 	else
 		displace(x, displ, disploff);
 	@(return x);
-} @)
+}
 
 /*
 	Internal function for making vectors:
@@ -519,9 +529,15 @@ ecl_symbol_to_elttype(cl_object x)
 		return(aet_index);
 	else if (x == @'single-float' || x == @'short-float')
 		return(aet_sf);
-	else if (x == @'long-float' || x == @'double-float')
+	else if (x == @'double-float')
 		return(aet_df);
-	else if (x == @'ext::byte8')
+	else if (x == @'long-float') {
+#ifdef ECL_LONG_FLOAT
+		return(aet_object);
+#else
+		return(aet_df);
+#endif
+	} else if (x == @'ext::byte8')
 		return(aet_b8);
 	else if (x == @'ext::integer8')
 		return(aet_i8);
@@ -530,7 +546,7 @@ ecl_symbol_to_elttype(cl_object x)
 	else if (x == Cnil) {
 		FEerror("ECL does not support arrays with element type NIL", 0);
 	}
-	x = cl_funcall(2, @'upgraded-array-element-type', x);
+	x = cl_upgraded_array_element_type(1, x);
 	goto BEGIN;
 }
 
@@ -631,11 +647,10 @@ because the element types don't match.", 0);
 because the total size of the to-array is too small.", 0);
 		j = ecl_fixnum_in_range(@'adjust-array',"array displacement",offset,
 					0, to->array.dim - from->array.dim);
-		from->array.displaced = CONS(to, Cnil);
+		from->array.displaced = ecl_list1(to);
 		if (Null(to->array.displaced))
-			to->array.displaced = CONS(Cnil, Cnil);
-		CDR(to->array.displaced) =
-			CONS(from, CDR(to->array.displaced));
+			to->array.displaced = ecl_list1(Cnil);
+		ECL_RPLACD(to->array.displaced, CONS(from, CDR(to->array.displaced)));
 		if (fromtype == aet_bit) {
 			j += to->vector.offset;
 			from->vector.offset = j%CHAR_BIT;

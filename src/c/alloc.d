@@ -16,6 +16,15 @@
     See file '../Copyright' for full details.
 */
 
+/********************************************************************************
+ ***                                                                          ***
+ ***  IMPORTANT: This is obsolete code. The current garbage collector of ECL  ***
+ ***  is the Boehm-Weiser garbage collector and it is dealt with in           ***
+ ***                           alloc_2.d                                      ***
+ ***  This file is kept here because of historical purposes, but also because ***
+ ***  it might be useful in the future to implement another garbage collector ***
+ ***                                                                          ***
+ ********************************************************************************/
 
 /*
   			Heap and Relocatable Area
@@ -48,6 +57,10 @@
 #include <ulimit.h>
 #else
 #include <sys/resource.h>
+#endif
+
+#ifdef ECL_SMALL_CONS
+#error "Internal error: ECL cannot be built with --disable-boehm and --enable-smallcons"
 #endif
 
 /******************************* EXPORTS ******************************/
@@ -258,8 +271,10 @@ ONCE_MORE:
 	 */
 	switch (t) {
 	case t_bignum:
+#ifdef WITH_GMP
 	  obj->big.big_dim = obj->big.big_size = 0;
 	  obj->big.big_limbs = NULL;
+#endif
 	  break;
 	case t_ratio:
 	  obj->ratio.num = OBJNULL;
@@ -292,8 +307,9 @@ ONCE_MORE:
 	  obj->pack.external = OBJNULL;
 	  break;
 	case t_cons:
-	  CAR(obj) = OBJNULL;
-	  CDR(obj) = OBJNULL;
+#error "FIXME"	  
+	  obj->cons.car = OBJNULL;
+	  obj->cons.cdr = OBJNULL;
 	  break;
 	case t_hashtable:
 	  obj->hash.rehash_size = OBJNULL;
@@ -358,7 +374,12 @@ ONCE_MORE:
 	  obj->bytecodes.data_size = 0;
 	  obj->bytecodes.data = NULL;
 	  break;
+	case t_bclosure:
+	  obj->bclosure.code =
+	  obj->bclosure.lex = Cnil;
+	  break;
 	case t_cfun:
+	case t_cfunfixed:
 	  obj->cfun.name = OBJNULL;
 	  obj->cfun.block = NULL;
 	  break;
@@ -470,8 +491,8 @@ ONCE_MORE:
 	(tm->tm_nused)++;
 	obj->d.t = (short)t_cons;
 	obj->d.m = FALSE;
-	CAR(obj) = a;
-	CDR(obj) = d;
+	obj->cons.car = a;
+	obj->cons.cdr = d;
 
 	end_critical_section();
 	return(obj);
@@ -703,6 +724,7 @@ init_alloc(void)
 	init_tm(t_doublefloat, "LDOUBLE-FLOAT", /* 16 */
 		sizeof(struct ecl_doublefloat), 1);
 	init_tm(t_bytecodes, "bBYTECODES", sizeof(struct ecl_bytecodes), 64);
+	init_tm(t_bytecodes, "bBCLOSURE", sizeof(struct ecl_bclosure), 64);
 	init_tm(t_base_string, "\"BASE-STRING", sizeof(struct ecl_base_string), 64); /* 20 */
 #ifdef ECL_UNICODE
 	init_tm(t_string, "\"STRING", sizeof(struct ecl_string), 64);
@@ -722,6 +744,7 @@ init_alloc(void)
 	init_tm(t_random, "$RANDOM-STATE", sizeof(struct ecl_random), 1);
 	init_tm(t_readtable, "rREADTABLE", sizeof(struct ecl_readtable), 1);
 	init_tm(t_cfun, "fCFUN", sizeof(struct ecl_cfun), 32);
+	init_tm(t_cfunfixed, "fCFUN", sizeof(struct ecl_cfun), 32);
 	init_tm(t_cclosure, "cCCLOSURE", sizeof(struct ecl_cclosure), 1);
 #ifndef CLOS
 	init_tm(t_structure, "SSTRUCTURE", sizeof(struct ecl_structure), 32);

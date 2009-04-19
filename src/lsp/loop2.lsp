@@ -51,7 +51,7 @@
 
 #+cmu
 (ext:file-comment
- "$Header: /project/ecl/cvsroot/ecl/src/lsp/loop2.lsp,v 1.14 2008/02/02 19:14:06 jgarcia Exp $")
+ "$Header: /cvsroot/ecls/ecl/src/lsp/loop2.lsp,v 1.14 2008/02/02 19:14:06 jgarcia Exp $")
 
 ;;;; LOOP Iteration Macro
 

@@ -71,7 +71,7 @@ ecl_elt(cl_object seq, cl_fixnum index)
 	if (index < 0)
 		goto E;
 	switch (type_of(seq)) {
-	case t_cons:
+	case t_list:
 		for (i = index, l = seq;  i > 0;  --i)
 			if (ecl_endp(l))
 				goto E;
@@ -95,11 +95,8 @@ ecl_elt(cl_object seq, cl_fixnum index)
 			goto E;
 		return(CODE_CHAR(seq->base_string.self[index]));
 
-	case t_symbol:
-		if (Null(seq))
-			break;
 	default:
-		FEwrong_type_argument(@'sequence', seq);
+		FEtype_error_sequence(seq);
 	}
 E:
 	FEtype_error_index(seq, MAKE_FIXNUM(index));
@@ -120,7 +117,7 @@ ecl_elt_set(cl_object seq, cl_fixnum index, cl_object val)
 	if (index < 0)
 		goto E;
 	switch (type_of(seq)) {
-	case t_cons:
+	case t_list:
 		for (i = index, l = seq;  i > 0;  --i)
 			if (ecl_endp(l))
 				goto E;
@@ -128,7 +125,8 @@ ecl_elt_set(cl_object seq, cl_fixnum index, cl_object val)
 				l = CDR(l);
 		if (ecl_endp(l))
 			goto E;
-		return(CAR(l) = val);
+		ECL_RPLACA(l, val);
+		return val;
 
 #ifdef ECL_UNICODE
 	case t_string:
@@ -147,7 +145,7 @@ ecl_elt_set(cl_object seq, cl_fixnum index, cl_object val)
 		return(val);
 
 	default:
-		FEwrong_type_argument(@'sequence', seq);
+		FEtype_error_sequence(seq);
 	}
 E:
 	FEtype_error_index(seq, MAKE_FIXNUM(index));
@@ -163,7 +161,7 @@ E:
 	else
 		e = fixnnint(end);
 	switch (type_of(sequence)) {
-	case t_symbol:
+	case t_list:
 		if (Null(sequence)) {
 			if (s > 0)
 				goto ILLEGAL_START_END;
@@ -171,9 +169,6 @@ E:
 				goto ILLEGAL_START_END;
 			@(return Cnil)
 		}
-		FEwrong_type_argument(@'sequence', sequence);
-
-	case t_cons:
 		if (e >= 0)
 			if ((e -= s) < 0)
 				goto ILLEGAL_START_END;
@@ -188,7 +183,7 @@ E:
 		  for (i = 0;  i < e;  i++) {
 		    if (ATOM(sequence))
 		      goto ILLEGAL_START_END;
-		    z = &CDR(*z = CONS(CAR(sequence), Cnil));
+		    z = &ECL_CONS_CDR(*z = ecl_list1(CAR(sequence)));
 		    sequence = CDR(sequence);
 		  }
 		}
@@ -211,7 +206,7 @@ E:
 		@(return x)
 
 	default:
-		FEwrong_type_argument(@'sequence', sequence);
+		FEtype_error_sequence(sequence);
 	}
 
 ILLEGAL_START_END:
@@ -237,12 +232,7 @@ ecl_length(cl_object x)
 	cl_fixnum i;
 
 	switch (type_of(x)) {
-	case t_symbol:
-		if (Null(x))
-			return(0);
-		FEwrong_type_argument(@'sequence', x);
-
-	case t_cons:
+	case t_list:
 		/* INV: A list's length always fits in a fixnum */
 		i = 0;
 		loop_for_in(x) {
@@ -259,7 +249,7 @@ ecl_length(cl_object x)
 		return(x->vector.fillp);
 
 	default:
-		FEwrong_type_argument(@'sequence', x);
+		FEtype_error_sequence(x);
 	}
 }
 
@@ -269,13 +259,7 @@ cl_reverse(cl_object seq)
 	cl_object output, x;
 
 	switch (type_of(seq)) {
-	case t_symbol:
-		if (Null(seq))
-			output = Cnil;
-		else
-			FEwrong_type_argument(@'sequence', seq);
-		break;
-	case t_cons: {
+	case t_list: {
 		for (x = seq, output = Cnil;  !ecl_endp(x);  x = CDR(x))
 			output = CONS(CAR(x), output);
 		break;
@@ -292,7 +276,7 @@ cl_reverse(cl_object seq)
 		break;
 
 	default:
-		FEwrong_type_argument(@'sequence', seq);
+		FEtype_error_sequence(seq);
 	}
 	@(return output)
 }
@@ -301,19 +285,17 @@ cl_object
 cl_nreverse(cl_object seq)
 {
 	switch (type_of(seq)) {
-	case t_symbol:
-		if (!Null(seq))
-			FEwrong_type_argument(@'sequence', seq);
-		break;
-	case t_cons: {
+	case t_list: {
 		cl_object x, y, z;
+		if (Null(seq))
+			break;
 		for (x = Cnil, y = seq;  !ecl_endp(CDR(y));) {
 			z = y;
 			y = CDR(y);
-			CDR(z) = x;
+			ECL_RPLACD(z, x);
 			x = z;
 		}
-		CDR(y) = x;
+		ECL_RPLACD(y, x);
 		seq = y;
 		break;
 	}
@@ -326,7 +308,7 @@ cl_nreverse(cl_object seq)
 		ecl_reverse_subarray(seq, 0, seq->vector.fillp);
 		break;
 	default:
-		FEwrong_type_argument(@'sequence', seq);
+		FEtype_error_sequence(seq);
 	}
 	@(return seq)
 }

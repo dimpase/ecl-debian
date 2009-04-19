@@ -124,8 +124,10 @@
 		 (list 'quote (rest option)))))
 	(setf options (list* `',option-name option-value options))))
     `(eval-when (compile load eval)
-      (ensure-class ',name :direct-superclasses ',superclasses
-       :direct-slots ,slots ,@options))))
+       ,(ext:register-with-pde form
+			       `(ensure-class ',name :direct-superclasses
+					      ',superclasses
+					      :direct-slots ,slots ,@options)))))
 
 ;;; ----------------------------------------------------------------------
 ;;; ENSURE-CLASS
@@ -249,7 +251,10 @@
 (defun class-ordering-error (root element path precedence-alist)
   (declare (si::c-local))
   (setq path (cons element (reverse (member element (reverse path) :test #'eq))))
-  (flet ((pretty (class) (or (class-name class) class)))
+  (flet ((pretty (class)
+	   (declare (type class class)
+		    (optimize (safety 0)))
+	   (or (class-name class) class)))
     (let ((explanations ()))
       (do ((tail path (cdr tail)))
 	  ((null (cdr tail)))

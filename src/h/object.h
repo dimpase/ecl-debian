@@ -31,6 +31,70 @@ typedef int bool;
 #endif
 typedef unsigned char byte;
 
+#ifdef ECL_SHORT_FLOAT
+#undef ECL_SHORT_FLOAT
+#endif
+
+/*
+	Implementation types.
+*/
+typedef enum {
+	t_start = 0,
+	t_list = 1,
+	/* The most specific numeric types come first. Assumed by
+	   some routines, like cl_expt */
+	t_character = 2,	/* immediate character */
+	t_fixnum = 3,		/* immediate fixnum */
+#ifdef ECL_SHORT_FLOAT
+	t_shortfloat,
+#endif
+	t_bignum = 4,
+	t_ratio,
+	t_singlefloat,
+	t_doublefloat,
+#ifdef ECL_LONG_FLOAT
+	t_longfloat,
+#endif
+	t_complex,
+	t_symbol,
+	t_package,
+	t_hashtable,
+	t_array,
+	t_vector,
+#ifdef ECL_UNICODE
+	t_string,
+#endif
+	t_base_string,
+	t_bitvector,
+	t_stream,
+	t_random,
+	t_readtable,
+	t_pathname,
+	t_bytecodes,
+	t_bclosure,
+	t_cfun,
+	t_cfunfixed,
+	t_cclosure,
+#ifdef CLOS
+	t_instance,
+#else
+	t_structure,
+#endif /* CLOS */
+#ifdef ECL_THREADS
+	t_process,
+	t_lock,
+	t_condition_variable,
+#endif
+	t_codeblock,
+	t_foreign,
+	t_frame,
+	t_end,
+	t_other,
+	t_contiguous,		/*  contiguous block  */
+	FREE = 127		/*  free object  */
+} cl_type;
+
+
 /*
 	Definition of the type of LISP objects.
 */
@@ -50,20 +114,20 @@ typedef cl_object (*cl_objectfn_fixed)();
 	Definition of each implementation type.
 */
 
-#define IMMEDIATE(obje)		((cl_fixnum)(obje) & 3)
+#define IMMEDIATE(o)		((cl_fixnum)(o) & 3)
 #define IMMEDIATE_TAG		3
 
 /* Immediate fixnums:		*/
-#define FIXNUM_TAG		2
+#define FIXNUM_TAG		t_fixnum
 #define MAKE_FIXNUM(n)		((cl_object)(((cl_fixnum)(n) << 2) | FIXNUM_TAG))
 #define FIXNUM_MINUSP(n)	((cl_fixnum)(n) < 0)
 #define FIXNUM_PLUSP(n)		((cl_fixnum)(n) >= (cl_fixnum)MAKE_FIXNUM(0))
 #define	fix(obje)		(((cl_fixnum)(obje)) >> 2)
-#define FIXNUMP(obje)		(((cl_fixnum)(obje)) & FIXNUM_TAG)
+#define FIXNUMP(o)		(IMMEDIATE(o) == t_fixnum)
 
 /* Immediate characters:	*/
-#define CHARACTER_TAG		1
-#define CHARACTERP(obje)	(((cl_fixnum)(obje)) & CHARACTER_TAG)
+#define CHARACTER_TAG		t_character
+#define CHARACTERP(o)		(IMMEDIATE(o) == t_character)
 #ifdef ECL_UNICODE
 #define BASE_CHAR_P(obje)	((((cl_fixnum)(obje)) & 0xFFFFFC03) == CHARACTER_TAG)
 #define BASE_CHAR_CODE_P(x)	((x & ~((cl_fixnum)0xFF)) == 0)
@@ -86,13 +150,6 @@ typedef cl_object (*cl_objectfn_fixed)();
 #define HEADER3(field1,flag2,flag3) int8_t t, m, field1; uint8_t flag2:4, flag3:4
 #define HEADER4(field1,flag2,flag3,flag4) int8_t t, m, field1; uint8_t flag2:4, flag3:2, flag4:2
 
-#ifdef ECL_SHORT_FLOAT
-#undef FIXNUMP
-#define FIXNUMP(o)		(IMMEDIATE(o) == FIXNUM_TAG)
-#undef CHARACTERP
-#define CHARACTERP(o)		(IMMEDIATE(o) == CHARACTER_TAG)
-#endif
-
 struct ecl_singlefloat {
 	HEADER;
 	float SFVAL;	/*  singlefloat value  */
@@ -107,8 +164,7 @@ struct ecl_doublefloat {
 #define	df(obje)	(obje)->DF.DFVAL
 #define ecl_double_float(o) ((o)->doublefloat.value)
 
-#ifdef HAVE_LONG_DOUBLE
-#define ECL_LONG_FLOAT
+#ifdef ECL_LONG_FLOAT
 struct ecl_long_float {
 	HEADER;
 	long double value;
@@ -157,12 +213,15 @@ struct ecl_complex {
 };
 
 enum ecl_stype {		/*  symbol type  */
-	stp_ordinary,		/*  ordinary  */
-	stp_constant,		/*  constant  */
-        stp_special		/*  special  */
+	stp_ordinary = 0,
+	stp_constant = 1,
+        stp_special = 2,
+	stp_macro = 4,
+	stp_special_form = 8
 };
 
-#define	Cnil			((cl_object)cl_symbols)
+#define	Cnil			((cl_object)t_list)
+#define	Cnil_symbol		((cl_object)cl_symbols)
 #define	Ct			((cl_object)(cl_symbols+1))
 #define ECL_UNBOUND		((cl_object)(cl_symbols+2))
 #define ECL_PROTECT_TAG		((cl_object)(cl_symbols+3))
@@ -207,15 +266,59 @@ struct ecl_package {
 #define	EXTERNAL	2
 #define	INHERITED	3
 
-#define LISTP(x)	(x == Cnil || CONSP(x))
-#define CONSP(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_cons))
-#define ATOM(x)		((IMMEDIATE(x) != 0) || ((x)->d.t != t_cons))
-#define SYMBOLP(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol))
+/*
+ * CONSES
+ *
+ * We implement two variants. The "small cons" type carries the type
+ * information in the least significant bits of the pointer. We have
+ * to do some pointer arithmetics to find out the CAR / CDR of the
+ * cons but the overall result is faster and memory efficient, only
+ * using two words per cons.
+ *
+ * The other scheme stores conses as three-words objects, the first
+ * word carrying the type information. This is kept for backward
+ * compatibility and also because the oldest garbage collector does
+ * not yet support the smaller datatype.
+ *
+ * To make code portable and independent of the representation, only
+ * access the objects using the common macros below (that is all
+ * except ECL_CONS_PTR or ECL_PTR_CONS).
+ */
+
+#ifdef ECL_SMALL_CONS
+#define LISTP(x)	(IMMEDIATE(x) == t_list)
+#define CONSP(x)	(LISTP(x) && !Null(x))
+#define ATOM(x)		(Null(x) || !LISTP(x))
+#define SYMBOLP(x)	(Null(x) || ((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
+
+#define ECL_PTR_CONS(x)	(cl_object)((char*)(x) + t_list)
+#define ECL_CONS_PTR(x)	((struct ecl_cons *)((char *)(x) - t_list))
+#define ECL_CONS_CAR(x)	(*(cl_object*)((char *)(x) - t_list))
+#define ECL_CONS_CDR(x)	(*(cl_object*)((char *)(x) + sizeof(cl_object) - t_list))
+#define ECL_RPLACA(x,v)	(ECL_CONS_CAR(x)=(v))
+#define ECL_RPLACD(x,v)	(ECL_CONS_CDR(x)=(v))
+
+struct ecl_cons {
+	cl_object car;		/*  car  */
+	cl_object cdr;		/*  cdr  */
+};
+#else
+#define LISTP(x)	(IMMEDIATE(x)? Null(x) : ((x)->d.t == t_list))
+#define CONSP(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_list))
+#define ATOM(x)		(IMMEDIATE(x) || ((x)->d.t != t_list))
+#define SYMBOLP(x)	(Null(x) || ((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
+
+#define ECL_CONS_CAR(x)	((x)->cons.car)
+#define ECL_CONS_CDR(x)	((x)->cons.cdr)
+#define ECL_RPLACA(x,v)	(ECL_CONS_CAR(x)=(v))
+#define ECL_RPLACD(x,v)	(ECL_CONS_CDR(x)=(v))
+
 struct ecl_cons {
 	HEADER;
-	cl_object cdr;		/*  cdr  */
 	cl_object car;		/*  car  */
+	cl_object cdr;		/*  cdr  */
 };
+#endif
 
 enum ecl_httest {		/*  hash table key test function  */
 	htt_eq,			/*  eq  */
@@ -447,9 +550,6 @@ struct ecl_codeblock {
 	const char *data_text;		/*  string with objects to be defined  */
 	int	data_text_size;
 	cl_object next;			/*  next codeblock within same library */
-#ifdef PDE
-	int	source_pathname;
-#endif
 	cl_object name;
 	cl_object links;		/*  list of symbols with linking calls  */
 };
@@ -457,13 +557,20 @@ struct ecl_codeblock {
 struct ecl_bytecodes {
 	HEADER;
 	cl_object name;		/*  function name  */
-	cl_object lex;		/*  lexical environment  */
 	cl_object specials;	/*  list of special variables  */
 	cl_object definition;	/*  function definition in list form  */
 	cl_index code_size;	/*  number of bytecodes  */
 	cl_index data_size;	/*  number of constants  */
 	char *code;		/*  the intermediate language  */
 	cl_object *data;	/*  non-inmediate constants used in the code  */
+	cl_object file;		/*  file where it was defined...  */
+	cl_index file_position;	/*  and where it was created  */
+};
+
+struct ecl_bclosure {
+	HEADER;
+	cl_object code;
+	cl_object lex;
 };
 
 struct ecl_cfun {		/*  compiled function header  */
@@ -480,6 +587,50 @@ struct ecl_cclosure {		/*  compiled closure header  */
 	cl_object block;	/*  descriptor of C code block for GC  */
 };
 
+#define ECL_FFICALL_LIMIT 256
+
+enum ecl_ffi_tag {
+	ECL_FFI_CHAR = 0,
+	ECL_FFI_UNSIGNED_CHAR,
+	ECL_FFI_BYTE,
+	ECL_FFI_UNSIGNED_BYTE,
+	ECL_FFI_SHORT,
+	ECL_FFI_UNSIGNED_SHORT,
+	ECL_FFI_INT,
+	ECL_FFI_UNSIGNED_INT,
+	ECL_FFI_LONG,
+	ECL_FFI_UNSIGNED_LONG,
+	ECL_FFI_POINTER_VOID,
+	ECL_FFI_CSTRING,
+	ECL_FFI_OBJECT,
+	ECL_FFI_FLOAT,
+	ECL_FFI_DOUBLE,
+	ECL_FFI_VOID
+};
+
+union ecl_ffi_values {
+	char c;
+	unsigned char uc;
+	int8_t b;
+	uint8_t ub;
+	int i;
+	unsigned int ui;
+	short s;
+	unsigned short us;
+	long l;
+	unsigned long ul;
+	void *pv;
+	char *pc;
+	cl_object o;
+	float f;
+	double d;
+};
+
+enum ecl_ffi_calling_convention {
+	ECL_FFI_CC_CDECL = 0,
+	ECL_FFI_CC_STDCALL
+};
+
 struct ecl_foreign {		/*  user defined datatype  */
 	HEADER;
 	cl_object tag;		/*  a tag identifying the type  */
@@ -489,8 +640,9 @@ struct ecl_foreign {		/*  user defined datatype  */
 
 struct ecl_stack_frame {
 	HEADER;
-	cl_index narg;		/*  Size */
-	cl_index sp;		/*  Stack pointer start */
+	cl_object *bottom;	/*  Bottom part  */
+	cl_object *top;		/*  Top part  */
+	cl_object *stack;	/*  Is this relative to the lisp stack?  */
 };
 
 /*
@@ -533,6 +685,7 @@ struct ecl_condition_variable {
 #define CLASS_INFERIORS(x)	(x)->instance.slots[2]
 #define CLASS_SLOTS(x)		(x)->instance.slots[3]
 #define CLASS_CPL(x)		(x)->instance.slots[4]
+#define ECL_INSTANCEP(x)	((IMMEDIATE(x)==0) && ((x)->d.t==t_instance))
 #define ECL_NOT_FUNCALLABLE	0
 #define ECL_STANDARD_DISPATCH	1
 #define ECL_USER_DISPATCH	2
@@ -550,6 +703,9 @@ struct ecl_instance {		/*  instance header  */
 	Definition of lispunion.
 */
 union cl_lispunion {
+#ifndef ECL_SMALL_CONS
+	struct ecl_cons		cons;		/*  unoptimized cons  */
+#endif
 	struct ecl_bignum	big;		/*  bignum  */
 	struct ecl_ratio	ratio;		/*  ratio  */
 	struct ecl_singlefloat	SF; 		/*  single floating-point number  */
@@ -560,7 +716,6 @@ union cl_lispunion {
 	struct ecl_complex	complex;	/*  complex number  */
 	struct ecl_symbol	symbol;		/*  symbol  */
 	struct ecl_package	pack;		/*  package  */
-	struct ecl_cons		cons;		/*  cons  */
 	struct ecl_hashtable	hash;		/*  hash table  */
 	struct ecl_array	array;		/*  array  */
 	struct ecl_vector	vector;		/*  vector  */
@@ -572,7 +727,8 @@ union cl_lispunion {
 	struct ecl_random	random;		/*  random-states  */
 	struct ecl_readtable	readtable; 	/*  read table  */
 	struct ecl_pathname	pathname; 	/*  path name  */
-	struct ecl_bytecodes	bytecodes; 	/*  bytecompiled closure */
+	struct ecl_bytecodes	bytecodes; 	/*  bytecompiled function / code */
+	struct ecl_bclosure	bclosure; 	/*  bytecompiled closure */
 	struct ecl_cfun		cfun;		/*  compiled function  */
 	struct ecl_cclosure	cclosure; 	/*  compiled closure  */
 
@@ -593,67 +749,9 @@ union cl_lispunion {
 };
 
 /*
-	Implementation types.
-*/
-typedef enum {
-	t_cons = 0,
-	t_start = 0,
-	/* The most specific numeric types come first. Assumed by
-	   some routines, like cl_expt */
-	t_character,		/* immediate character */
-	t_fixnum,		/* immediate fixnum */
-#ifdef ECL_SHORT_FLOAT
-	t_shortfloat,
-#endif
-	t_bignum = 4,
-	t_ratio,
-	t_singlefloat,
-	t_doublefloat,
-#ifdef ECL_LONG_FLOAT
-	t_longfloat,
-#endif
-	t_complex,
-	t_symbol,
-	t_package,
-	t_hashtable,
-	t_array,
-	t_vector,
-#ifdef ECL_UNICODE
-	t_string,
-#endif
-	t_base_string,
-	t_bitvector,
-	t_stream,
-	t_random,
-	t_readtable,
-	t_pathname,
-	t_bytecodes,
-	t_cfun,
-	t_cclosure,
-#ifdef CLOS
-	t_instance,
-#else
-	t_structure,
-#endif /* CLOS */
-#ifdef ECL_THREADS
-	t_process,
-	t_lock,
-	t_condition_variable,
-#endif
-	t_codeblock,
-	t_foreign,
-	t_frame,
-	t_end,
-	t_other,
-	t_contiguous,		/*  contiguous block  */
-	FREE = 127		/*  free object  */
-} cl_type;
-
-
-/*
 	Type_of.
 */
-#if defined(__cplusplus) || defined(__GNUC__)
+#if defined(__cplusplus) || (defined(__GNUC__) && !defined(__STRICT_ANSI__))
 static inline cl_type type_of(cl_object o) {
 	int i = IMMEDIATE(o);
 	return (i? (cl_type)i : (cl_type)(o->d.t));
@@ -667,9 +765,9 @@ static inline cl_type type_of(cl_object o) {
 	This is used to retrieve optional arguments
 */
 typedef struct {
-  va_list args;
-  cl_index sp;
-  int narg;
+	va_list args;
+	cl_object *sp;
+	int narg;
 } cl_va_list[1];
 
 #ifdef __cplusplus

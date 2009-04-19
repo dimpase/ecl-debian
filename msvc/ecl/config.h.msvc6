@@ -14,6 +14,30 @@
 */
 
 /*
+ * If ECL_API has been predefined, that means we are building the core
+ * library and, under windows, we must tell the compiler to export
+ * extern functions from the shared library.
+ * If ECL_API is not defined, we are simply building an application that
+ * uses ECL and, under windows, we must tell the compiler that certain
+ * will be imported from a DLL.
+ */
+#if defined(mingw32) || defined(_MSC_VER) || defined(cygwin)
+# define ECL_DLLEXPORT __declspec(dllexport)
+# ifdef ECL_API
+#  undef ECL_API
+#  define ECL_API __declspec(dllexport)
+# else
+#  define ECL_API __declspec(dllimport)
+# endif
+#else
+# define ECL_DLLEXPORT
+# ifdef ECL_API
+#  undef ECL_API
+# endif
+# define ECL_API
+#endif
+
+/*
  * FEATURES LINKED IN
  */
 /* Always use CLOS							*/
@@ -119,6 +143,9 @@ typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 
+/* We can use small, two-words conses, without type information		*/
+/* #undef ECL_SMALL_CONS */
+
 /* -CUT-: Everything below this mark will not be installed		*/
 /* -------------------------------------------------------------------- *
  *	BUILD OPTIONS WHICH NEED NOT BE EXPORTED			*
@@ -161,6 +188,10 @@ typedef unsigned int uint32_t;
 
 /* We have non-portable implementation of FFI calls			*/
 #define ECL_DYNAMIC_FFI 1
+
+/* Assembler implementation of APPLY and friends			*/
+/* #undef ECL_ASM_APPLY */
+
 
 /*
  * SYSTEM FEATURES:
@@ -288,3 +319,8 @@ typedef unsigned int uint32_t;
 #define sleep _sleep
 
 #include "@ECL_FPE_CODE@"
+
+#include <math.h>
+#ifndef isfinite
+#define isfinite(x) (finite(x))
+#endif

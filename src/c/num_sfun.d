@@ -21,12 +21,44 @@
 # undef complex
 #endif
 #include "ecl/internal.h"
-#ifndef M_PI
-# ifdef PI
-#  define M_PI PI
-# else
-#   define M_PI 3.14159265358979323846
-# endif
+
+#ifndef HAVE_LOG1P
+double
+log1p(double x)
+{
+	double u = 1.0 + x;
+	if (u == 1) {
+		return 0.0;
+	} else {
+		return (log(u) * x)/(u - 1.0);
+	}
+}
+#endif
+
+#ifndef HAVE_LOG1PF
+float
+log1pf(float x)
+{
+	float u = (float)1 + x;
+	if (u == 1) {
+		return (float)0;
+	} else {
+		return (logf(u) * x)/(u - (float)1);
+	}
+}
+#endif
+
+#if !defined(HAVE_LOG1PL) && defined(ECL_LONG_FLOAT)
+long double
+log1pl(long double x)
+{
+	long double u = (long double)1 + x;
+	if (u == 1) {
+		return (long double)1;
+	} else {
+		return (logl(u) * x)/(u - (long double)1);
+	}
+}
 #endif
 
 #ifdef mingw32
@@ -48,9 +80,48 @@ acosh(double x)
 double
 atanh(double x)
 {
-	return (log(x+1) - log(x-1))/2;
+	return log1p(2*x/(1-x))/2;
 }
 #endif /* mingw32 */
+
+cl_object
+ecl_abs(cl_object x)
+{
+	if (type_of(x) != t_complex) {
+		if (ecl_minusp(x)) {
+			x = ecl_negate(x);
+		}
+	} else {
+		/* Compute sqrt(r*r + i*i) carefully to prevent overflow.
+		 * Assume |i| >= |r|. Then sqrt(i*i + r*r) = |i|*sqrt(1 +(r/i)^2).
+		 */
+		cl_object r = x->complex.real;
+		cl_object i = x->complex.imag;
+		int comparison;
+		if (ecl_minusp(r)) r = ecl_negate(r);
+		if (ecl_minusp(i)) i = ecl_negate(i);
+		comparison = ecl_number_compare(r, i);
+		if (comparison == 0) {
+			r = ecl_times(r, r);
+			x = cl_sqrt(ecl_plus(r, r));
+		} else {
+			if (comparison > 0) {
+				cl_object aux = i;
+				i = r; r = aux;
+			}
+			r = ecl_divide(r, i);
+			r = ecl_plus(MAKE_FIXNUM(1), ecl_times(r, r));
+			x = ecl_times(cl_sqrt(r), i);
+		}
+	}
+	return x;
+}
+
+cl_object
+cl_abs(cl_object x)
+{
+	@(return ecl_abs(x))
+}
 
 cl_fixnum
 ecl_fixnum_expt(cl_fixnum x, cl_fixnum y)
@@ -176,11 +247,18 @@ cl_expt(cl_object x, cl_object y)
 static cl_object
 ecl_log1_complex(cl_object r, cl_object i)
 {
-	cl_object a = ecl_times(r, r);
-	cl_object p = ecl_times(i, i);
-	a = ecl_plus(a, p);
-	a = ecl_log1(a);
-	a = ecl_divide(a, MAKE_FIXNUM(2));
+	cl_object a = ecl_abs(r);
+	cl_object p = ecl_abs(i);
+	if (ecl_number_compare(a, p) > 0) {
+		cl_object aux = p;
+		p = a; a = aux;
+	}
+	/* For the real part of the output we use the formula
+	 *	log(sqrt(p^2 + a^2)) = log(sqrt(p^2*(1 + (a/p)^2)))
+	 *			     = log(p) + log(1 + (a/p)^2)/2; */
+	a = ecl_divide(a, p);
+	a = ecl_plus(ecl_divide(ecl_log1p(ecl_times(a,a)), MAKE_FIXNUM(2)),
+		     ecl_log1(p));
 	p = ecl_atan2(i, r);
 	return ecl_make_complex(a, p);
 }
@@ -233,6 +311,50 @@ ecl_log2(cl_object x, cl_object y)
 }
 
 cl_object
+ecl_log1p(cl_object x)
+{
+	cl_type tx;
+ AGAIN:
+	tx = type_of(x);
+	if (!ECL_NUMBER_TYPE_P(tx)) {
+		x = ecl_type_error(@'log',"argument",x,@'number');
+		goto AGAIN;
+	}
+	if (tx == t_complex) {
+		return ecl_log1(ecl_plus(MAKE_FIXNUM(1), x));
+	} else if (ecl_number_compare(x, MAKE_FIXNUM(-1)) < 0) {
+		return ecl_log1p(ecl_make_complex(x, MAKE_FIXNUM(0)));
+	}
+	switch (tx) {
+	case t_fixnum:
+	case t_bignum:
+	case t_ratio:
+		return ecl_make_singlefloat(log1pf(number_to_float(x)));
+#ifdef ECL_SHORT_FLOAT
+	case t_shortfloat:
+		return make_shortfloat(log1pf(ecl_short_float(x)));
+#endif
+	case t_singlefloat:
+		return ecl_make_singlefloat(log1pf(sf(x)));
+	case t_doublefloat:
+		return ecl_make_doublefloat(log1p(df(x)));
+#ifdef ECL_LONG_FLOAT
+	case t_longfloat:
+		return make_longfloat(log1pl(ecl_long_float(x)));
+#endif
+	default:
+		/* We do not reach here */
+		(void)0;
+	}
+}
+
+cl_object
+si_log1p(cl_object x)
+{
+	@(return ecl_log1p(x));
+}
+
+cl_object
 cl_sqrt(cl_object x)
 {
 	cl_object z;
@@ -272,39 +394,99 @@ cl_sqrt(cl_object x)
 	@(return z);
 }
 
+static double
+ecl_atan2_double(double y, double x)
+{
+	if (x > 0) {
+		if (y > 0) {
+			return atan(y / x);
+		} else if (y == 0) {
+			return (double)0;
+		} else {
+			return -atan(-y / x);
+		}
+	} else if (x == 0) {
+		if (y > 0) {
+			return ECL_PI2_D;
+		} else if (y == 0) {
+			FEerror("Logarithmic singularity.", 0);
+		} else {
+			return -ECL_PI2_D;
+		}
+	} else {
+		if (y > 0) {
+			return ECL_PI_D - atan(y / -x);
+		} else if (y == 0) {
+			return ECL_PI_D;
+		} else {
+			return -ECL_PI_D + atan(-y / -x);
+		}
+	}
+}
+
+#ifdef ECL_LONG_FLOAT
+static long double
+ecl_atan2_long_double(long double y, long double x)
+{
+	if (x > 0) {
+		if (y > 0) {
+			return atanl(y / x);
+		} else if (y == 0) {
+			return (long double)0;
+		} else {
+			return -atanl(-y / x);
+		}
+	} else if (x == 0) {
+		if (y > 0) {
+			return ECL_PI2_L;
+		} else if (y == 0) {
+			FEerror("Logarithmic singularity.", 0);
+		} else {
+			return -ECL_PI2_L;
+		}
+	} else {
+		if (y > 0) {
+			return ECL_PI_L - atanl(y / -x);
+		} else if (y == 0) {
+			return ECL_PI_L;
+		} else {
+			return -ECL_PI_L + atanl(-y / -x);
+		}
+	}
+}
+#endif
+
 cl_object
 ecl_atan2(cl_object y, cl_object x)
 {
-	cl_object z;
-	double dy, dx, dz;
-
-	dy = ecl_to_double(y);
-	dx = ecl_to_double(x);
-	if (dx > 0.0)
-		if (dy > 0.0)
-			dz = atan(dy / dx);
-		else if (dy == 0.0)
-			dz = 0.0;
-		else
-			dz = -atan(-dy / dx);
-	else if (dx == 0.0)
-		if (dy > 0.0)
-			dz = M_PI / 2.0;
-		else if (dy == 0.0)
-			FEerror("Logarithmic singularity.", 0);
-		else
-			dz = -M_PI / 2.0;
-	else
-		if (dy > 0.0)
-			dz = M_PI - atan(dy / -dx);
-		else if (dy == 0.0)
-			dz = M_PI;
-		else
-			dz = -M_PI + atan(-dy / -dx);
-	if (type_of(x) == t_doublefloat || type_of(y) == t_doublefloat)
+#ifdef ECL_LONG_FLOAT
+	int tx = type_of(x);
+	int ty = type_of(y);
+	if (tx < ty)
+		tx = ty;
+	if (tx == t_longfloat) {
+		return make_longfloat(ecl_atan2_long_double(ecl_to_long_double(y),
+							    ecl_to_long_double(x)));
+	} else {
+		double dx = ecl_to_double(x);
+		double dy = ecl_to_double(y);
+		double dz = ecl_atan2_double(dy, dx);
+		if (tx == t_doublefloat) {
+			return ecl_make_doublefloat(dz);
+		} else {
+			return ecl_make_singlefloat(dz);
+		}
+	}
+#else
+	double dy = ecl_to_double(y);
+	double dx = ecl_to_double(x);
+	double dz = ecl_atan2_double(dy, dx);
+	if (type_of(x) == t_doublefloat || type_of(y) == t_doublefloat) {
 		return ecl_make_doublefloat(dz);
-	else
+	} else {
 		return ecl_make_singlefloat(dz);
+	}
+#endif
 }
 
 cl_object
@@ -352,7 +534,7 @@ cl_sin(cl_object x)
 		output = ecl_make_doublefloat(sin(df(x))); break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		output = make_longfloat(sinf(ecl_long_float(x))); break;
+		output = make_longfloat(sinl(ecl_long_float(x))); break;
 #endif
 	case t_complex: {
 		/*
@@ -360,16 +542,11 @@ cl_sin(cl_object x)
 		  z = x + I y
 		  sin(z) = sinh(I z) = sinh(-y + I x)
 		*/
-		double dx = ecl_to_double(x->complex.real);
-		double dy = ecl_to_double(x->complex.imag);
-		double a = sin(dx) * cosh(dy);
-		double b = cos(dx) * sinh(dy);
-		if (type_of(x->complex.real) != t_doublefloat)
-			output = ecl_make_complex(ecl_make_singlefloat(a),
-					      ecl_make_singlefloat(b));
-		else
-			output = ecl_make_complex(ecl_make_doublefloat(a),
-					      ecl_make_doublefloat(b));
+		cl_object dx = x->complex.real;
+		cl_object dy = x->complex.imag;
+		cl_object a = ecl_times(cl_sin(dx), cl_cosh(dy));
+		cl_object b = ecl_times(cl_cos(dx), cl_sinh(dy));
+		output = ecl_make_complex(a, b);
 		break;
 	}
 	default:
@@ -406,16 +583,11 @@ cl_cos(cl_object x)
 		  z = x + I y
 		  cos(z) = cosh(I z) = cosh(-y + I x)
 		*/
-		double dx = ecl_to_double(x->complex.real);
-		double dy = ecl_to_double(x->complex.imag);
-		double a =  cos(dx) * cosh(dy);
-		double b = -sin(dx) * sinh(dy);
-		if (type_of(x->complex.real) != t_doublefloat)
-			output = ecl_make_complex(ecl_make_singlefloat(a),
-					      ecl_make_singlefloat(b));
-		else
-			output = ecl_make_complex(ecl_make_doublefloat(a),
-					      ecl_make_doublefloat(b));
+		cl_object dx = x->complex.real;
+		cl_object dy = x->complex.imag;
+		cl_object a = ecl_times(cl_cos(dx), cl_cosh(dy));
+		cl_object b = ecl_times(ecl_negate(cl_sin(dx)), cl_sinh(dy));
+		output = ecl_make_complex(a, b);
 		break;
 	}
 	default:
@@ -424,6 +596,18 @@ cl_cos(cl_object x)
 	}
 	@(return output)
 }
+
+/*
+ * As of 2006-10-13 I found this bug in GLIBC's tanf, which overflows
+ * when the argument is pi/4. It is 2008 and this has not yet been
+ * solved. Not only that, but if we use tan() on float, GCC automatically
+ * and stupidly forces the use of tanf().
+ */
+#if defined(__amd64__) && defined(__GLIBC__)
+static double safe_tanf(double x) { return tan(x); }
+#else
+# define safe_tanf(x) tanf(x)
+#endif
 
 cl_object
 cl_tan(cl_object x)
@@ -434,13 +618,13 @@ cl_tan(cl_object x)
 	case t_fixnum:
 	case t_bignum:
 	case t_ratio:
-		output = ecl_make_singlefloat(tanf(number_to_float(x))); break;
+		output = ecl_make_singlefloat(safe_tanf(number_to_float(x))); break;
 #ifdef ECL_SHORT_FLOAT
 	case t_shortfloat:
-		output = make_shortfloat(tanf(ecl_short_float(x))); break;
+		output = make_shortfloat(safe_tanf(ecl_short_float(x))); break;
 #endif
 	case t_singlefloat:
-		output = ecl_make_singlefloat(tanf(sf(x))); break;
+		output = ecl_make_singlefloat(safe_tanf(sf(x))); break;
 	case t_doublefloat:
 		output = ecl_make_doublefloat(tan(df(x))); break;
 #ifdef ECL_LONG_FLOAT
@@ -480,7 +664,7 @@ cl_sinh(cl_object x)
 		output = ecl_make_doublefloat(sinh(df(x))); break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		output = make_longfloat(sinhf(ecl_long_float(x))); break;
+		output = make_longfloat(sinhl(ecl_long_float(x))); break;
 #endif
 	case t_complex: {
 		/*
@@ -489,16 +673,11 @@ cl_sinh(cl_object x)
 		          = (exp(x)*(cos(y)+Isin(y))-exp(-x)*(cos(y)-Isin(y)))/2
 			  = sinh(x)*cos(y) + Icosh(x)*sin(y);
 		*/
-		double dx = ecl_to_double(x->complex.real);
-		double dy = ecl_to_double(x->complex.imag);
-		double a = sinh(dx) * cos(dy);
-		double b = cosh(dx) * sin(dy);
-		if (type_of(x->complex.real) != t_doublefloat)
-			output = ecl_make_complex(ecl_make_singlefloat(a),
-					      ecl_make_singlefloat(b));
-		else
-			output = ecl_make_complex(ecl_make_doublefloat(a),
-					      ecl_make_doublefloat(b));
+		cl_object dx = x->complex.real;
+		cl_object dy = x->complex.imag;
+		cl_object a = ecl_times(cl_sinh(dx), cl_cos(dy));
+		cl_object b = ecl_times(cl_cosh(dx), cl_sin(dy));
+		output = ecl_make_complex(a, b);
 		break;
 	}
 	default:
@@ -537,16 +716,11 @@ cl_cosh(cl_object x)
 		          = (exp(x)*(cos(y)+Isin(y))+exp(-x)*(cos(y)-Isin(y)))/2
 			  = cosh(x)*cos(y) + Isinh(x)*sin(y);
 		*/
-		double dx = ecl_to_double(x->complex.real);
-		double dy = ecl_to_double(x->complex.imag);
-		double a = cosh(dx) * cos(dy);
-		double b = sinh(dx) * sin(dy);
-		if (type_of(x->complex.real) != t_doublefloat)
-			output = ecl_make_complex(ecl_make_singlefloat(a),
-					      ecl_make_singlefloat(b));
-		else
-			output = ecl_make_complex(ecl_make_doublefloat(a),
-					      ecl_make_doublefloat(b));
+		cl_object dx = x->complex.real;
+		cl_object dy = x->complex.imag;
+		cl_object a = ecl_times(cl_cosh(dx), cl_cos(dy));
+		cl_object b = ecl_times(cl_sinh(dx), cl_sin(dy));
+		output = ecl_make_complex(a, b);
 		break;
 	}
 	default:
@@ -576,7 +750,7 @@ cl_tanh(cl_object x)
 		output = ecl_make_doublefloat(tanh(df(x))); break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		output = make_longfloat(coshl(ecl_long_float(x))); break;
+		output = make_longfloat(tanhl(ecl_long_float(x))); break;
 #endif
 	case t_complex: {
 		cl_object a = cl_sinh(x);

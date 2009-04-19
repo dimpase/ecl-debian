@@ -14,15 +14,11 @@
 */
 
 #include <ecl/ecl.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <ecl/ecl-inl.h>
 #include <ecl/bytecodes.h>
-
-#undef frs_pop
-#define frs_pop() { \
-	cl_env.stack_top = cl_env.stack + cl_env.frs_top->frs_sp; \
-	cl_env.frs_top--; }
 
 /* -------------------- INTERPRETER STACK -------------------- */
 
@@ -45,7 +41,7 @@ cl_stack_set_size(cl_index new_size)
 #ifdef BOEHM_GBC
 	GC_free(cl_env.stack);
 #else
-	cl_dealloc(cl_env.stack, cl_env.stack_size);
+	cl_dealloc(cl_env.stack);
 #endif
 	cl_env.stack_size = new_size;
 	cl_env.stack = new_stack;
@@ -95,17 +91,6 @@ cl_stack_set_index(cl_index index) {
 }
 
 void
-cl_stack_insert(cl_index where, cl_index n) {
-	if (cl_env.stack_top + n > cl_env.stack_limit) {
-		cl_index delta = (n + (LISP_PAGESIZE-1))/LISP_PAGESIZE;
-		cl_stack_set_size(cl_env.stack_size + delta * LISP_PAGESIZE);
-	}
-	cl_env.stack_top += n;
-	memmove(&cl_env.stack[where+n], &cl_env.stack[where],
-		(cl_env.stack_top - cl_env.stack) * sizeof(cl_object));
-}
-
-void
 cl_stack_pop_n(cl_index index) {
 	cl_object *new_top = cl_env.stack_top - index;
 	if (new_top < cl_env.stack)
@@ -126,19 +111,6 @@ cl_stack_pop_values(cl_index n) {
 	NVALUES = n;
 	while (n > 0)
 		VALUES(--n) = cl_stack_pop();
-}
-
-cl_index
-cl_stack_push_va_list(cl_va_list args) {
-	cl_index sp;
-
-	sp = cl_env.stack_top - cl_env.stack;
-	while (cl_env.stack_top + args[0].narg > cl_env.stack_limit)
-		cl_stack_grow();
-	while (args[0].narg > 0) {
-		*(cl_env.stack_top++) = cl_va_arg(args);
-	}
-	return sp;
 }
 
 cl_index
@@ -164,131 +136,174 @@ cl_stack_push_list(cl_object list)
 	return n;
 }
 
-void
-ecl_stack_frame_reserve(cl_object f, cl_index size)
+cl_object
+ecl_stack_frame_open(cl_object f, cl_index size)
 {
-	cl_index sp = cl_stack_index();
-	cl_index n = f->frame.narg;
-	if (n == 0) {
-		f->frame.sp = sp;
-	} else if (sp != f->frame.sp + n) {
+	cl_object *top = cl_env.stack_top;
+	if (size) {
+		if (cl_env.stack_limit - top < size) {
+			cl_index delta = (size + (LISP_PAGESIZE-1))/LISP_PAGESIZE;
+			cl_stack_set_size(cl_env.stack_size + delta * LISP_PAGESIZE);
+			top = cl_env.stack_top;
+		}
+	}
+	f->frame.t = t_frame;
+	f->frame.stack = cl_env.stack;
+	f->frame.bottom = top;
+	cl_env.stack_top = f->frame.top = (top + size);
+	return f;
+}
+
+void
+ecl_stack_frame_enlarge(cl_object f, cl_index size)
+{
+	cl_object *top;
+	if (f->frame.stack == 0) {
 		ecl_internal_error("Inconsistency in interpreter stack frame");
 	}
-	f->frame.narg = n+size;
-	cl_stack_insert(sp, size);
+	top = cl_env.stack_top;
+	if ((cl_env.stack_limit - top) < size) {
+		cl_index delta = (size + (LISP_PAGESIZE-1))/LISP_PAGESIZE;
+		cl_stack_set_size(cl_env.stack_size + delta * LISP_PAGESIZE);
+		f->frame.bottom = (f->frame.bottom - f->frame.stack) + cl_env.stack;
+		f->frame.stack = cl_env.stack;
+		top = cl_env.stack_top;
+	} else if (top != f->frame.top) {
+		f->frame.bottom = (f->frame.bottom - f->frame.stack) + cl_env.stack;
+		f->frame.stack = cl_env.stack;
+		top = cl_env.stack_top;
+	}
+	cl_env.stack_top = f->frame.top = (top + size);
 }
 
 void
 ecl_stack_frame_push(cl_object f, cl_object o)
 {
-	cl_index sp = cl_stack_index();
-	cl_index n = f->frame.narg;
-	if (n == 0) {
-		f->frame.sp = sp;
-	} else if (sp != f->frame.sp + n) {
+	cl_object *top;
+	if (f->frame.stack == 0) {
 		ecl_internal_error("Inconsistency in interpreter stack frame");
 	}
-	f->frame.narg = n+1;
-	cl_stack_push(o);
+	top = cl_env.stack_top;
+	if (top >= cl_env.stack_limit) {
+		cl_stack_grow();
+		f->frame.bottom = (f->frame.bottom - f->frame.stack) + cl_env.stack;
+		f->frame.stack = cl_env.stack;
+		top = cl_env.stack_top;
+	} else if (top != f->frame.top) {
+		f->frame.bottom = (f->frame.bottom - f->frame.stack) + cl_env.stack;
+		f->frame.stack = cl_env.stack;
+		top = cl_env.stack_top;
+	}
+	*(top++) = o;
+	cl_env.stack_top = f->frame.top = top;
 }
 
 void
 ecl_stack_frame_push_values(cl_object f)
 {
-	cl_index sp = cl_stack_index();
-	cl_index n = f->frame.narg;
-	if (n == 0) {
-		f->frame.sp = sp;
-	} else if (sp != f->frame.sp + n) {
+	if (f->frame.stack == 0) {
 		ecl_internal_error("Inconsistency in interpreter stack frame");
 	}
-	f->frame.narg = n+cl_stack_push_values();
-}
-
-void
-ecl_stack_frame_push_va_list(cl_object f, cl_va_list args)
-{
-	cl_index sp = cl_stack_index();
-	cl_index n = f->frame.narg;
-	if (n == 0) {
-		f->frame.sp = sp;
-	} else if (sp != f->frame.sp + n) {
-		ecl_internal_error("Inconsistency in interpreter stack frame");
-	}
-	f->frame.narg = n + args[0].narg;
-	cl_stack_push_va_list(args);
+	cl_stack_push_values();
+	f->frame.bottom = (f->frame.bottom - f->frame.stack) + cl_env.stack;
+	f->frame.stack = cl_env.stack;
+	f->frame.top = cl_env.stack_top;
 }
 
 cl_object
 ecl_stack_frame_pop_values(cl_object f)
 {
-	cl_stack_pop_values(f->frame.narg);
+	cl_index n = f->frame.top - f->frame.bottom;
+	NVALUES = n;
+	VALUES(0) = Cnil;
+	while (n--) {
+		VALUES(n) = f->frame.bottom[n];
+	}
 	return VALUES(0);
 }
 
 cl_object
 ecl_stack_frame_elt(cl_object f, cl_index ndx)
 {
-	if (ndx >= f->frame.narg) {
+	if (ndx >= (f->frame.top - f->frame.bottom)) {
 		FEtype_error_index(f, ecl_make_unsigned_integer(ndx));
 	}
-	return cl_env.stack[f->frame.sp + ndx];
+	return f->frame.bottom[ndx];
 }
 
 void
 ecl_stack_frame_elt_set(cl_object f, cl_index ndx, cl_object o)
 {
-	if (ndx >= f->frame.narg) {
+	if (ndx >= (f->frame.top - f->frame.bottom)) {
 		FEtype_error_index(f, ecl_make_unsigned_integer(ndx));
 	}
-	cl_env.stack[f->frame.sp + ndx] = o;
+	f->frame.bottom[ndx] = o;
+}
+
+cl_object
+ecl_stack_frame_from_va_list(cl_object frame, cl_va_list args)
+{
+	cl_index nargs = args[0].narg;
+	ecl_stack_frame_open(frame, nargs);
+	while (nargs) {
+		*(frame->frame.top-nargs) = cl_va_arg(args);
+		nargs--;
+	}
+	return frame;
 }
 
 void
 ecl_stack_frame_close(cl_object f)
 {
-	if (f->frame.narg) cl_stack_set_index(f->frame.sp);
+	if (f->frame.stack) {
+		cl_stack_set_index(f->frame.bottom - f->frame.stack);
+	}
+}
+
+cl_object
+ecl_stack_frame_copy(cl_object dest, cl_object orig)
+{
+	cl_index size = orig->frame.top - orig->frame.bottom;
+	dest = ecl_stack_frame_open(dest, size);
+	memcpy(dest->frame.bottom, orig->frame.bottom, size * sizeof(cl_object));
+	return dest;
 }
 
 
 /* ------------------------------ LEXICAL ENV. ------------------------------ */
 
-#define bind_var(var, val) \
-	(cl_env.lex_env = CONS(CONS(var, val), cl_env.lex_env))
-#define bind_function(name, fun) \
-	(cl_env.lex_env = CONS(CONS(fun, name), cl_env.lex_env))
-#define bind_block(name, id) \
-	(cl_env.lex_env = CONS(CONS(id, name), cl_env.lex_env))
-#define bind_tagbody(id) \
-	(cl_env.lex_env = CONS(CONS(id, MAKE_FIXNUM(0)), cl_env.lex_env))
+#define bind_var(env, var, val)		CONS(CONS(var, val), (env))
+#define bind_function(env, name, fun) 	CONS(fun, (env))
+#define bind_frame(env, id, name)	CONS(CONS(id, name), (env))
 
 static cl_object
-ecl_lex_env_get_record(register int s) {
-	cl_object x;
-	for (x = cl_env.lex_env; s-- > 0; x = CDR(x));
-	if (Null(x))
-		FEerror("Internal error: local not found.", 0);
-	return CAR(x);
+ecl_lex_env_get_record(register cl_object env, register int s)
+{
+	do {
+		if (s-- == 0) return ECL_CONS_CAR(env);
+		env = ECL_CONS_CDR(env);
+	} while(1);
 }
 
-#define ecl_lex_env_get_var(x) CDR(ecl_lex_env_get_record(x))
-#define ecl_lex_env_set_var(x,v) (CDR(ecl_lex_env_get_record(x)) = (v))
-#define ecl_lex_env_get_fun(x) CAR(ecl_lex_env_get_record(x))
-#define ecl_lex_env_get_tag(x) CAR(ecl_lex_env_get_record(x))
+#define ecl_lex_env_get_var(env,x) ECL_CONS_CDR(ecl_lex_env_get_record(env,x))
+#define ecl_lex_env_set_var(env,x,v) ECL_RPLACD(ecl_lex_env_get_record(env,x),(v))
+#define ecl_lex_env_get_fun(env,x) ecl_lex_env_get_record(env,x)
+#define ecl_lex_env_get_tag(env,x) ECL_CONS_CAR(ecl_lex_env_get_record(env,x))
 
 /* -------------------- LAMBDA FUNCTIONS -------------------- */
 
-static void
-lambda_bind_var(cl_object var, cl_object val, cl_object specials)
+static cl_object
+lambda_bind_var(cl_object env, cl_object var, cl_object val, cl_object specials)
 {
 	if (!ecl_member_eq(var, specials))
-		bind_var(var, val);
+		env = bind_var(env, var, val);
 	else
 		bds_bind(var, val);
+	return env;
 }
 
-static void
-lambda_bind(cl_narg narg, cl_object lambda, cl_index sp)
+static cl_object
+lambda_bind(cl_object env, cl_narg narg, cl_object lambda, cl_object *sp)
 {
 	cl_object *data = lambda->bytecodes.data;
 	cl_object specials = lambda->bytecodes.specials;
@@ -298,144 +313,121 @@ lambda_bind(cl_narg narg, cl_object lambda, cl_index sp)
 	/* 1) REQUIRED ARGUMENTS:  N var1 ... varN */
 	n = fix(*(data++));
 	if (narg < n)
-	  FEwrong_num_arguments(lambda->bytecodes.name);
+		FEwrong_num_arguments(lambda->bytecodes.name);
 	for (; n; n--, narg--)
-	  lambda_bind_var(*(data++), cl_env.stack[sp++], specials);
+		env = lambda_bind_var(env, *(data++), *(sp++), specials);
 
 	/* 2) OPTIONAL ARGUMENTS:  N var1 value1 flag1 ... varN valueN flagN */
 	for (n = fix(*(data++)); n; n--, data+=3) {
-	  if (narg) {
-	    lambda_bind_var(data[0], cl_env.stack[sp], specials);
-	    sp++; narg--;
-	    if (!Null(data[2]))
-	      lambda_bind_var(data[2], Ct, specials);
-	  } else {
-	    cl_object defaults = data[1];
-	    if (FIXNUMP(defaults)) {
-	      ecl_interpret(lambda, (cl_opcode*)lambda->bytecodes.code + fix(defaults));
-	      defaults = VALUES(0);
-	    }
-	    lambda_bind_var(data[0], defaults, specials);
-	    if (!Null(data[2]))
-	      lambda_bind_var(data[2], Cnil, specials);
-	  }
+		if (narg) {
+			env = lambda_bind_var(env, data[0], *sp, specials);
+			sp++; narg--;
+			if (!Null(data[2])) {
+				env = lambda_bind_var(env, data[2], Ct, specials);
+			}
+		} else {
+			cl_object defaults = data[1];
+			if (FIXNUMP(defaults)) {
+				defaults = ecl_interpret(Cnil, env, lambda, fix(defaults));
+			}
+			env = lambda_bind_var(env, data[0], defaults, specials);
+			if (!Null(data[2])) {
+				env = lambda_bind_var(env, data[2], Cnil, specials);
+			}
+		}
 	}
-
+	
 	/* 3) REST ARGUMENT: {rest-var | NIL} */
 	if (!Null(data[0])) {
-	  cl_object rest = Cnil;
-	  check_remaining = FALSE;
-	  for (i=narg; i; )
-	    rest = CONS(cl_env.stack[sp+(--i)], rest);
-	  lambda_bind_var(data[0], rest, specials);
+		cl_object rest = Cnil;
+		check_remaining = FALSE;
+		for (i=narg; i; ) {
+			rest = CONS(sp[--i], rest);
+		}
+		env = lambda_bind_var(env, data[0], rest, specials);
 	}
 	data++;
 
 	/* 4) ALLOW-OTHER-KEYS: { T | NIL | 0} */
 	if (data[0] == MAKE_FIXNUM(0)) {
-	  data++;
-	  if (narg && check_remaining)
-	    FEprogram_error("LAMBDA: Too many arguments to function ~S.", 1,
-			    lambda->bytecodes.name);
+		data++;
+		if (narg && check_remaining) {
+			FEprogram_error("LAMBDA: Too many arguments to function ~S.", 1,
+					lambda->bytecodes.name);
+		}
 	} else {
-	  /*
-	   * Only when ALLOW-OTHER-KEYS /= 0, we process this:
-	   * 5) KEYWORDS: N key1 var1 value1 flag1 ... keyN varN valueN flagN
-	   */
-	  bool allow_other_keys = !Null(*(data++));
-	  bool allow_other_keys_found = allow_other_keys;
-	  int n = fix(*(data++));
-	  cl_object *keys;
+		/*
+		 * Only when ALLOW-OTHER-KEYS /= 0, we process this:
+		 * 5) KEYWORDS: N key1 var1 value1 flag1 ... keyN varN valueN flagN
+		 */
+		bool allow_other_keys = !Null(*(data++));
+		bool allow_other_keys_found = allow_other_keys;
+		int n = fix(*(data++));
+		cl_object *keys;
 #ifdef __GNUC__
-	  cl_object spp[n];
+		cl_object spp[n];
 #else
 #define SPP_MAX 64
-	  cl_object spp[SPP_MAX];
+		cl_object spp[SPP_MAX];
 #endif
-	  bool other_found = FALSE;
-	  void *unbound = spp; /* not a valid lisp object */
-	  if ((narg & 1) != 0)
-	    FEprogram_error("Function called with odd number of keyword arguments.", 0);
-	  for (i=0; i<n; i++)
+		bool other_found = FALSE;
+		void *unbound = spp; /* not a valid lisp object */
+		if ((narg & 1) != 0)
+			FEprogram_error("Function called with odd number of keyword arguments.", 0);
+		for (i=0; i<n; i++)
 #ifdef __GNUC__
-	    spp[i] = unbound;
+			spp[i] = unbound;
 #else
-	    if (i >= SPP_MAX)
-	      FEerror("lambda_bind: Too many keyword arguments, limited to ~A.", 1, MAKE_FIXNUM(SPP_MAX));
-	    else
-	    spp[i] = unbound;
+		if (i >= SPP_MAX)
+			FEerror("lambda_bind: Too many keyword arguments, limited to ~A.", 1, MAKE_FIXNUM(SPP_MAX));
+		else
+			spp[i] = unbound;
 #endif
-	  for (; narg; narg-=2) {
-	    cl_object key = cl_env.stack[sp++];
-	    cl_object value = cl_env.stack[sp++];
-	    if (!SYMBOLP(key))
-	      FEprogram_error("LAMBDA: Keyword expected, got ~S.", 1, key);
-	    keys = data;
-	    if (key == @':allow-other-keys') {
-	      if (!allow_other_keys_found) {
-		allow_other_keys_found = TRUE;
-		allow_other_keys = !Null(value);
-	      }
-	    }
-	    for (i = 0; i < n; i++, keys += 4) {
-	      if (key == keys[0]) {
-		if (spp[i] == unbound)
-		  spp[i] = value;
-		goto FOUND;
-	      }
-	    }
-	    if (key != @':allow-other-keys')
-	      other_found = TRUE;
-	  FOUND:
-	    (void)0;
-	  }
-	  if (other_found && !allow_other_keys)
-	    FEprogram_error("LAMBDA: Unknown keys found in function ~S.",
-			    1, lambda->bytecodes.name);
-	  for (i=0; i<n; i++, data+=4) {
-	    if (spp[i] != unbound)
-	      lambda_bind_var(data[1],spp[i],specials);
-	    else {
-	      cl_object defaults = data[2];
-	      if (FIXNUMP(defaults)) {
-		      ecl_interpret(lambda, (cl_opcode*)lambda->bytecodes.code + fix(defaults));
-		      defaults = VALUES(0);
-	      }
-	      lambda_bind_var(data[1],defaults,specials);
-	    }
-	    if (!Null(data[3]))
-	      lambda_bind_var(data[3],(spp[i] != unbound)? Ct : Cnil,specials);
-	  }
+		for (; narg; narg-=2) {
+			cl_object key = *(sp++);
+			cl_object value = *(sp++);
+			if (!SYMBOLP(key))
+				FEprogram_error("LAMBDA: Keyword expected, got ~S.", 1, key);
+			keys = data;
+			if (key == @':allow-other-keys') {
+				if (!allow_other_keys_found) {
+					allow_other_keys_found = TRUE;
+					allow_other_keys = !Null(value);
+				}
+			}
+			for (i = 0; i < n; i++, keys += 4) {
+				if (key == keys[0]) {
+					if (spp[i] == unbound)
+						spp[i] = value;
+					goto FOUND;
+				}
+			}
+			if (key != @':allow-other-keys')
+				other_found = TRUE;
+		FOUND:
+			(void)0;
+		}
+		if (other_found && !allow_other_keys) {
+			FEprogram_error("LAMBDA: Unknown keys found in function ~S.",
+					1, lambda->bytecodes.name);
+		}
+		for (i=0; i<n; i++, data+=4) {
+			if (spp[i] != unbound) {
+				env = lambda_bind_var(env, data[1],spp[i],specials);
+			} else {
+				cl_object defaults = data[2];
+				if (FIXNUMP(defaults)) {
+					defaults = ecl_interpret(Cnil, env, lambda, fix(defaults));
+				}
+				env = lambda_bind_var(env, data[1],defaults,specials);
+			}
+			if (!Null(data[3])) {
+				env = lambda_bind_var(env, data[3],(spp[i] != unbound)? Ct : Cnil,specials);
+			}
+		}
 	}
+	return env;
 }
-
-cl_object
-ecl_apply_lambda(cl_object frame, cl_object fun)
-{
-	cl_object name;
-	bds_ptr old_bds_top;
-	struct ihs_frame ihs;
-
-	if (type_of(fun) != t_bytecodes)
-		FEinvalid_function(fun);
-
-	/* Save the lexical environment and set up a new one */
-	ihs_push(&ihs, fun);
-	cl_env.lex_env = fun->bytecodes.lex;
-	old_bds_top = cl_env.bds_top;
-
-	/* Establish bindings */
-	lambda_bind(frame->frame.narg, fun, frame->frame.sp);
-
-	VALUES(0) = Cnil;
-	NVALUES = 0;
-	name = fun->bytecodes.name;
-	ecl_interpret(fun, fun->bytecodes.code);
-	bds_unwind(old_bds_top);
-	ihs_pop();
-	returnn(VALUES(0));
-}
-
 
 /* -------------------- AIDS TO THE INTERPRETER -------------------- */
 
@@ -447,252 +439,248 @@ search_global(register cl_object s) {
 	return x;
 }
 
-/*
- * INTERPRET-FUNCALL is one of the few ways to "exit" the interpreted
- * environment and get into the C/lisp world. Since almost all data from the
- * interpreter is kept in local variables, and frame stacks, binding stacks,
- * etc, are already handled by the C core, only the lexical environment
- * (cl_env.lex_env) needs to be saved.
- */
-static cl_object
-interpret_funcall(cl_narg narg, cl_object fun)
-{
-	cl_object lex_env = cl_env.lex_env;
-	struct ecl_stack_frame frame_aux;
-	cl_object frame = (cl_object)&frame_aux;
-	frame->frame.t = t_frame;
-	frame->frame.narg = narg;
-	frame->frame.sp = (cl_env.stack_top - cl_env.stack) - narg;
-	fun = ecl_apply_from_stack_frame(frame, fun);
-	cl_env.lex_env = lex_env;
-	ecl_stack_frame_close(frame);
-	return fun;
-}
-
-/* -------------------- THE INTERPRETER -------------------- */
-
 static cl_object
 close_around(cl_object fun, cl_object lex) {
-	cl_object v = cl_alloc_object(t_bytecodes);
-	v->bytecodes = fun->bytecodes;
-	v->bytecodes.lex = lex;
+	cl_object v = cl_alloc_object(t_bclosure);
+	v->bclosure.code = fun;
+	v->bclosure.lex = lex;
 	return v;
 }
 
-/* OP_FLET	nfun{arg}
-   fun1{object}
-   ...
-   funn{object}
-   ...
-   OP_UNBIND n
+#undef frs_pop
+#define frs_pop(the_env) { the_env->frs_top--; }
 
-	Executes the enclosed code in a lexical enviroment extended with
-	the functions "fun1" ... "funn".
-*/
-static cl_opcode *
-interpret_flet(cl_object bytecodes, cl_opcode *vector) {
-	cl_index nfun = GET_OPARG(vector);
+/*
+ * Manipulation of the interpreter stack. As shown here, we omit may
+ * security checks, assuming that the interpreted code is consistent.
+ * This is done for performance reasons, but could probably be undone
+ * using a configuration flag.
+ */
 
-	/* 1) Copy the environment so that functions get it without references
-	      to themselves. */
-	cl_object lex = cl_env.lex_env;
+#define STACK_PUSH(the_env,x) { \
+	cl_object __aux = (x); \
+	if (the_env->stack_top == the_env->stack_limit) { \
+		cl_stack_grow(); \
+	} \
+	*(the_env->stack_top++) = __aux; }
 
-	/* 3) Add new closures to environment */
-	while (nfun--) {
-		cl_object fun = GET_DATA(vector, bytecodes);
-		cl_object f = close_around(fun,lex);
-		bind_function(f->bytecodes.name, f);
-	}
-	return vector;
-}
+#define STACK_POP(the_env) *(--(the_env->stack_top))
 
-/* OP_LABELS	nfun{arg}
-   fun1{object}
-   ...
-   funn{object}
-   ...
-   OP_UNBIND n
+#define STACK_PUSH_N(the_env,n) { \
+	cl_index __aux = (n); \
+	while ((the_env->stack_limit - the_env->stack_top) <= __aux) { \
+		cl_stack_grow(); \
+	} \
+	the_env->stack_top += __aux; }
 
-	Executes the enclosed code in a lexical enviroment extended with
-	the functions "fun1" ... "funn".
-*/
-static cl_opcode *
-interpret_labels(cl_object bytecodes, cl_opcode *vector) {
-	cl_index i, nfun = GET_OPARG(vector);
-	cl_object l;
+#define STACK_POP_N(the_env,n) (the_env->stack_top -= n)
 
-	/* 1) Build up a new environment with all functions */
-	for (i=0; i<nfun; i++) {
-		cl_object f = GET_DATA(vector, bytecodes);
-		bind_function(f->bytecodes.name, f);
-	}
+#define STACK_REF(the_env,n) (the_env->stack_top[n])
 
-	/* 2) Update the closures so that all functions can call each other */
-	for (i=0, l=cl_env.lex_env; i<nfun; i++) {
-		cl_object record = CAR(l);
-		CAR(record) = close_around(CAR(record), cl_env.lex_env);
-		l = CDR(l);
-	}
-	return vector;
-}
+#define SETUP_ENV(the_env) { ihs.lex_env = lex_env; }
 
-/* OP_MSETQ	n{arg}
-   {fixnumn}
-   ...
-   {fixnum1}
+/*
+ * INTERPRET-FUNCALL is one of the few ways to "exit" the interpreted
+ * environment and get into the C/lisp world. Since almost all data
+ * from the interpreter is kept in local variables, and frame stacks,
+ * binding stacks, etc, are already handled by the C core, only the
+ * lexical environment needs to be saved.
+ */
 
-	Sets N variables to the N values in VALUES(), filling with
-	NIL when there are values missing. Local variables are denoted
-	with an integer which points a position in the lexical environment,
-	while special variables are denoted with a negative index X, which
-	denotes the value -1-X in the table of constants.
-*/
-static cl_opcode *
-interpret_msetq(cl_object bytecodes, cl_opcode *vector)
+#define INTERPRET_FUNCALL(reg0, the_env, frame, narg, fun) {	\
+	cl_index __n = narg; \
+	SETUP_ENV(the_env); \
+	frame.stack = the_env->stack; \
+	frame.top = the_env->stack_top; \
+	frame.bottom = frame.top - __n; \
+	reg0 = ecl_apply_from_stack_frame((cl_object)&frame, fun); \
+	the_env->stack_top -= __n; }
+
+/* -------------------- THE INTERPRETER -------------------- */
+
+cl_object
+ecl_interpret(cl_object frame, cl_object env, cl_object bytecodes, cl_index offset)
 {
-	cl_object value;
-	cl_index i, n = GET_OPARG(vector);
-	for (i=0; i<n; i++) {
-		cl_fixnum var = GET_OPARG(vector);
-		value = (i < NVALUES) ? VALUES(i) : Cnil;
-		if (var >= 0)
-			ecl_lex_env_set_var(var, value);
-		else {
-			cl_object name = bytecodes->bytecodes.data[-1-var];
-			if (name->symbol.stype == stp_constant)
-				FEassignment_to_constant(name);
-			else
-				ECL_SETQ(name, value);
-		}
-	}
-	if (NVALUES == 0) {
-		VALUES(0) = Cnil;
-	}
-	NVALUES = 1;
-	return vector;
-}
+	ECL_OFFSET_TABLE
+	typedef struct cl_env_struct *cl_env_ptr;
+	const cl_env_ptr the_env = &cl_env;
+	volatile bds_ptr old_bds_top = cl_env.bds_top;
+	cl_opcode *vector = (cl_opcode*)bytecodes->bytecodes.code + offset;
+	cl_object *data = bytecodes->bytecodes.data;
+	cl_object reg0, reg1, lex_env = env;
+	cl_index narg;
+	struct ecl_stack_frame frame_aux;
+	volatile struct ihs_frame ihs;
 
-/* OP_PROGV	bindings{list}
-   ...
-   OP_EXIT
-	Execute the code enclosed with the special variables in BINDINGS
-	set to the values in the list which was passed in VALUES(0).
-*/
-static cl_opcode *
-interpret_progv(cl_object bytecodes, cl_opcode *vector) {
-	cl_object values = VALUES(0);
-	cl_object vars = cl_stack_pop();
+	if (type_of(bytecodes) != t_bytecodes)
+		FEinvalid_function(bytecodes);
 
-	/* 1) Save current environment */
-	bds_ptr old_bds_top = cl_env.bds_top;
-	cl_object old_lex_env = cl_env.lex_env;
-
-	/* 2) Add new bindings */
-	while (!ecl_endp(vars)) {
-		if (values == Cnil)
-			bds_bind(CAR(vars), OBJNULL);
-		else {
-			bds_bind(CAR(vars), cl_car(values));
-			values = CDR(values);
-		}
-		vars = CDR(vars);
-	}
-	vector = ecl_interpret(bytecodes, vector);
-
-	/* 3) Restore environment */
-	cl_env.lex_env = old_lex_env;
-	bds_unwind(old_bds_top);
-	return vector;
-}
-
-void *
-ecl_interpret(cl_object bytecodes, void *pc) {
-	cl_opcode *vector = pc;
-	cl_object reg0 = VALUES(0), reg1;
-	static int i = 0;
-	i++;
+	ihs_push(&ihs, bytecodes, lex_env);
+	frame_aux.t = t_frame;
+	frame_aux.stack = frame_aux.top = frame_aux.bottom = 0;
+	reg0 = Cnil;
+	the_env->nvalues = 0;
  BEGIN:
-	switch (GET_OPCODE(vector)) {
+	BEGIN_SWITCH {
+	CASE(OP_NOP); {
+		reg0 = Cnil;
+		the_env->nvalues = 0;
+		THREAD_NEXT;
+	}
 	/* OP_QUOTE
 		Sets REG0 to an immediate value.
 	*/
-	case OP_QUOTE:
-		reg0 = GET_DATA(vector, bytecodes);
-		break;
-
+	CASE(OP_QUOTE); {
+		GET_DATA(reg0, vector, data);
+		THREAD_NEXT;
+	}
 	/* OP_VAR	n{arg}, var{symbol}
 		Sets REG0 to the value of the n-th local.
 		VAR is the name of the variable for readability purposes.
 	*/
-	case OP_VAR: {
-		int lex_env_index = GET_OPARG(vector);
-		reg0 = ecl_lex_env_get_var(lex_env_index);
-		break;
+	CASE(OP_VAR); {
+		int lex_env_index;
+		GET_OPARG(lex_env_index, vector);
+		reg0 = ecl_lex_env_get_var(lex_env, lex_env_index);
+		THREAD_NEXT;
 	}
 
 	/* OP_VARS	var{symbol}
 		Sets REG0 to the value of the symbol VAR.
 		VAR should be either a special variable or a constant.
 	*/
-	case OP_VARS: {
-		cl_object var_name = GET_DATA(vector, bytecodes);
+	CASE(OP_VARS); {
+		cl_object var_name;
+		GET_DATA(var_name, vector, data);
 		reg0 = search_global(var_name);
-		break;
+		THREAD_NEXT;
+	}
+
+	/* OP_CONS, OP_CAR, OP_CDR, etc
+		Inlined forms for some functions which act on reg0 and stack.
+	*/
+
+	CASE(OP_CONS); {
+		cl_object car = STACK_POP(the_env);
+		reg0 = CONS(car, reg0);
+		THREAD_NEXT;
+	}
+
+	CASE(OP_CAR); {
+		if (!LISTP(reg0)) FEtype_error_cons(reg0);
+		reg0 = CAR(reg0);
+		THREAD_NEXT;
+	}
+
+	CASE(OP_CDR); {
+		if (!LISTP(reg0)) FEtype_error_cons(reg0);
+		reg0 = CDR(reg0);
+		THREAD_NEXT;
+	}
+
+	CASE(OP_LIST);
+		reg0 = ecl_list1(reg0);
+
+	CASE(OP_LISTA);	{
+		cl_index n;
+		GET_OPARG(n, vector);
+		while (--n) {
+			reg0 = CONS(STACK_POP(the_env), reg0);
+		}
+		THREAD_NEXT;
+	}
+
+	CASE(OP_INT); {
+		cl_fixnum n;
+		GET_OPARG(n, vector);
+		reg0 = MAKE_FIXNUM(n);
+		THREAD_NEXT;
+	}
+
+	CASE(OP_PINT); {
+		cl_fixnum n;
+		GET_OPARG(n, vector);
+		STACK_PUSH(the_env, MAKE_FIXNUM(n));
+		THREAD_NEXT;
 	}
 
 	/* OP_PUSH
 		Pushes the object in VALUES(0).
 	*/
-	case OP_PUSH:
-		cl_stack_push(reg0);
-		break;
-
+	CASE(OP_PUSH); {
+		STACK_PUSH(the_env, reg0);
+		THREAD_NEXT;
+	}
 	/* OP_PUSHV	n{arg}
 		Pushes the value of the n-th local onto the stack.
 	*/
-	case OP_PUSHV: {
-		int lex_env_index = GET_OPARG(vector);
-		cl_stack_push(ecl_lex_env_get_var(lex_env_index));
-		break;
+	CASE(OP_PUSHV); {
+		int lex_env_index;
+		GET_OPARG(lex_env_index, vector);
+		STACK_PUSH(the_env, ecl_lex_env_get_var(lex_env, lex_env_index));
+		THREAD_NEXT;
 	}
 
 	/* OP_PUSHVS	var{symbol}
 		Pushes the value of the symbol VAR onto the stack.
 		VAR should be either a special variable or a constant.
 	*/
-	case OP_PUSHVS: {
-		cl_object var_name = GET_DATA(vector, bytecodes);
-		cl_stack_push(search_global(var_name));
-		break;
+	CASE(OP_PUSHVS); {
+		cl_object var_name;
+		GET_DATA(var_name, vector, data);
+		STACK_PUSH(the_env, search_global(var_name));
+		THREAD_NEXT;
 	}
 
 	/* OP_PUSHQ	value{object}
 		Pushes "value" onto the stack.
 	*/
-	case OP_PUSHQ:
-		cl_stack_push(GET_DATA(vector, bytecodes));
-		break;
+	CASE(OP_PUSHQ); {
+		cl_object aux;
+		GET_DATA(aux, vector, data);
+		STACK_PUSH(the_env, aux);
+		THREAD_NEXT;
+	}
+
+	CASE(OP_CALLG1); {
+		cl_object s;
+		cl_objectfn_fixed f;
+		GET_DATA(s, vector, data);
+		f = (cl_objectfn_fixed)SYM_FUN(s)->cfun.entry;
+		SETUP_ENV(the_env);
+		reg0 = f(reg0);
+		THREAD_NEXT;
+	}
+
+	CASE(OP_CALLG2); {
+		cl_object s;
+		cl_objectfn_fixed f;
+		GET_DATA(s, vector, data);
+		f = (cl_objectfn_fixed)SYM_FUN(s)->cfun.entry;
+		SETUP_ENV(the_env);
+		reg0 = f(STACK_POP(the_env), reg0);
+		THREAD_NEXT;
+	}
 
 	/* OP_CALL	n{arg}
 		Calls the function in REG0 with N arguments which
-		have been deposited in the stack. The output values
-		are left in VALUES(...)
+		have been deposited in the stack. The first output value
+		is pushed on the stack.
 	*/
-	case OP_CALL: {
-		cl_fixnum n = GET_OPARG(vector);
-		VALUES(0) = reg0 = interpret_funcall(n, reg0);
-		break;
+	CASE(OP_CALL); {
+		GET_OPARG(narg, vector);
+		goto DO_CALL;
 	}
 
 	/* OP_CALLG	n{arg}, name{arg}
 		Calls the function NAME with N arguments which have been
-		deposited in the stack. The output values are left in VALUES.
+		deposited in the stack. The first output value is pushed on
+		the stack.
 	*/
-	case OP_CALLG: {
-		cl_fixnum n = GET_OPARG(vector);
-		cl_object f = GET_DATA(vector, bytecodes);
-		VALUES(0) = reg0 = interpret_funcall(n, f);
-		break;
+	CASE(OP_CALLG); {
+		GET_OPARG(narg, vector);
+		GET_DATA(reg0, vector, data);
+		goto DO_CALL;
 	}
 
 	/* OP_FCALL	n{arg}
@@ -700,85 +688,172 @@ ecl_interpret(cl_object bytecodes, void *pc) {
 		have been also deposited in the stack. The output values
 		are left in VALUES(...)
 	*/
-	case OP_FCALL: {
-		cl_fixnum n = GET_OPARG(vector);
-		cl_object fun = cl_env.stack_top[-n-1];
-		VALUES(0) = reg0 = interpret_funcall(n, fun);
-		cl_stack_pop();
-		break;
+	CASE(OP_FCALL); {
+		GET_OPARG(narg, vector);
+		reg0 = STACK_REF(the_env,-narg-1);
+		goto DO_CALL;
 	}
 
 	/* OP_MCALL
 		Similar to FCALL, but gets the number of arguments from
 		the stack (They all have been deposited by OP_PUSHVALUES)
 	*/
-	case OP_MCALL: {
-		cl_fixnum n = fix(cl_stack_pop());
-		cl_object fun = cl_env.stack_top[-n-1];
-		VALUES(0) = reg0 = interpret_funcall(n, fun);
-		cl_stack_pop();
-		break;
+	CASE(OP_MCALL); {
+		narg = fix(STACK_POP(the_env));
+		reg0 = STACK_REF(the_env,-narg-1);
+		goto DO_CALL;
 	}
 
-	/* OP_PCALL	n{arg}
-		Calls the function in REG0 with N arguments which
-		have been deposited in the stack. The first output value
-		is pushed on the stack.
+	DO_CALL: {
+		cl_object x = reg0;
+		cl_object frame = (cl_object)&frame_aux;
+		frame_aux.top = the_env->stack_top;
+		frame_aux.bottom = the_env->stack_top - narg;
+	AGAIN:
+		if (reg0 == OBJNULL || reg0 == Cnil)
+			FEundefined_function(x);
+		switch (type_of(reg0)) {
+		case t_cfunfixed:
+			if (narg != (cl_index)reg0->cfun.narg)
+				FEwrong_num_arguments(reg0);
+			reg0 = APPLY_fixed(narg, (cl_objectfn_fixed)reg0->cfun.entry,
+					   frame_aux.bottom);
+			break;
+		case t_cfun:
+			reg0 = APPLY(narg, reg0->cfun.entry, frame_aux.bottom);
+			break;
+		case t_cclosure:
+			reg0 = APPLY_closure(narg, reg0->cclosure.entry,
+					     reg0->cclosure.env, frame_aux.bottom);
+			break;
+#ifdef CLOS
+		case t_instance:
+			switch (reg0->instance.isgf) {
+			case ECL_STANDARD_DISPATCH:
+				reg0 = _ecl_standard_dispatch(frame, reg0);
+				break;
+			case ECL_USER_DISPATCH:
+				reg0 = reg0->instance.slots[reg0->instance.length - 1];
+				goto AGAIN;
+			default:
+				FEinvalid_function(reg0);
+			}
+			break;
+#endif
+		case t_symbol:
+			if (reg0->symbol.stype & stp_macro)
+				FEundefined_function(x);
+			reg0 = SYM_FUN(reg0);
+			goto AGAIN;
+		case t_bytecodes:
+			reg0 = ecl_interpret(frame, Cnil, reg0, 0);
+			break;
+		case t_bclosure:
+			reg0 = ecl_interpret(frame, reg0->bclosure.lex, reg0->bclosure.code, 0);
+			break;
+		default:
+			FEinvalid_function(reg0);
+		}
+		the_env->stack_top -= narg;
+		THREAD_NEXT;
+	}
+
+	/* OP_POP
+		Pops a singe value pushed by a OP_PUSH* operator.
 	*/
-	case OP_PCALL: {
-		cl_fixnum n = GET_OPARG(vector);
-		cl_stack_push(interpret_funcall(n, reg0));
-		break;
+	CASE(OP_POP); {
+		reg0 = STACK_POP(the_env);
+		THREAD_NEXT;
 	}
-
-	/* OP_PCALLG	n{arg}, name{arg}
-		Calls the function NAME with N arguments which have been
-		deposited in the stack. The first output value is pushed on
-		the stack.
+	/* OP_POP1
+		Pops a singe value pushed by a OP_PUSH* operator, ignoring it.
 	*/
-	case OP_PCALLG: {
-		cl_fixnum n = GET_OPARG(vector);
-		cl_object f = GET_DATA(vector, bytecodes);
-		cl_stack_push(interpret_funcall(n, f));
-		break;
+	CASE(OP_POP1); {
+		STACK_POP(the_env);
+		THREAD_NEXT;
 	}
-
-	/* OP_PFCALL	n{arg}
-		Calls the function in the stack with N arguments which
-		have been also deposited in the stack. The first output value
-		is pushed on the stack.
+	/* OP_ENTRY
+		Binds all the arguments of a function using the given frame.
 	*/
-	case OP_PFCALL: {
-		cl_fixnum n = GET_OPARG(vector);
-		cl_object fun = cl_env.stack_top[-n-1];
-		cl_object reg0 = interpret_funcall(n, fun);
-		cl_env.stack_top[-1] = reg0;
-		break;
+	CASE(OP_ENTRY); {
+		if (frame == Cnil)
+			ecl_internal_error("Not enough arguments to bytecodes.");
+		lex_env = lambda_bind(lex_env, frame->frame.top - frame->frame.bottom,
+				      bytecodes, frame->frame.bottom);
+		THREAD_NEXT;
 	}
-
 	/* OP_EXIT
 		Marks the end of a high level construct (BLOCK, CATCH...)
 		or a function.
 	*/
-	case OP_EXIT:
-		return (char *)vector;
+	CASE(OP_EXIT); {
+		ihs_pop();
+		bds_unwind(old_bds_top);
+		return reg0;
+	}
+	/* OP_FLET	nfun{arg}, fun1{object}
+	   ...
+	   OP_UNBIND nfun
+	   
+	   Executes the enclosed code in a lexical enviroment extended with
+	   the functions "fun1" ... "funn". Note that we only record the
+	   index of the first function: the others are after this one.
+	*/
+	CASE(OP_FLET); {
+		cl_index nfun, first;
+		cl_object old_lex, *fun;
+		GET_OPARG(nfun, vector);
+		GET_OPARG(first, vector);
+		fun = data + first;
+		/* Copy the environment so that functions get it without references
+		   to themselves, and then add new closures to the environment. */
+		old_lex = lex_env;
+		while (nfun--) {
+			cl_object f = close_around(*(fun++), old_lex);
+			lex_env = bind_function(lex_env, f->bytecodes.name, f);
+		}
+		THREAD_NEXT;
+	}
+	/* OP_LABELS	nfun{arg}
+	   fun1{object}
+	   ...
+	   funn{object}
+	   ...
+	   OP_UNBIND n
 
-	case OP_FLET:
-		vector = interpret_flet(bytecodes, vector);
-		break;
-	case OP_LABELS:
-		vector = interpret_labels(bytecodes, vector);
-		break;
-
+	   Executes the enclosed code in a lexical enviroment extended with
+	   the functions "fun1" ... "funn".
+	*/
+	CASE(OP_LABELS); {
+		cl_index i, nfun, first;
+		cl_object *fun, l, new_lex;
+		GET_OPARG(nfun, vector);
+		GET_OPARG(first, vector);
+		fun = data + first;
+		/* Build up a new environment with all functions */
+		for (new_lex = lex_env, i = nfun; i; i--) {
+			cl_object f = *(fun++);
+			new_lex = bind_function(new_lex, f->bytecodes.name, f);
+		}
+		/* Update the closures so that all functions can call each other */
+		;
+		for (l = new_lex, i = nfun; i; i--) {
+			ECL_RPLACA(l, close_around(ECL_CONS_CAR(l), new_lex));
+			l = ECL_CONS_CDR(l);
+		}
+		lex_env = new_lex;
+		THREAD_NEXT;
+	}
 	/* OP_LFUNCTION	n{arg}, function-name{symbol}
 		Calls the local or global function with N arguments
 		which have been deposited in the stack.
 	*/
-	case OP_LFUNCTION: {
-		int lex_env_index = GET_OPARG(vector);
-		cl_object fun_record = ecl_lex_env_get_record(lex_env_index);
-		reg0 = CAR(fun_record);
-		break;
+	CASE(OP_LFUNCTION); {
+		int lex_env_index;
+		cl_object fun_record;
+		GET_OPARG(lex_env_index, vector);
+		reg0 = ecl_lex_env_get_fun(lex_env, lex_env_index);
+		THREAD_NEXT;
 	}
 
 	/* OP_FUNCTION	name{symbol}
@@ -786,53 +861,61 @@ ecl_interpret(cl_object bytecodes, void *pc) {
 		may be defined in the global environment or in the local
 		environment. This last value takes precedence.
 	*/
-	case OP_FUNCTION:
-		reg0 = ecl_fdefinition(GET_DATA(vector, bytecodes));
-		break;
+	CASE(OP_FUNCTION); {
+		GET_DATA(reg0, vector, data);
+		reg0 = ecl_fdefinition(reg0);
+		THREAD_NEXT;
+	}
 
 	/* OP_CLOSE	name{symbol}
 		Extracts the function associated to a symbol. The function
 		may be defined in the global environment or in the local
 		environment. This last value takes precedence.
 	*/
-	case OP_CLOSE: {
-		cl_object function_object = GET_DATA(vector, bytecodes);
-		reg0 = close_around(function_object, cl_env.lex_env);
-		break;
+	CASE(OP_CLOSE); {
+		GET_DATA(reg0, vector, data);
+		reg0 = close_around(reg0, lex_env);
+		THREAD_NEXT;
 	}
-	/* OP_GO	n{arg}
-	   OP_QUOTE	tag-name{symbol}
-		Jumps to the tag which is defined at the n-th position in
-		the lexical environment. TAG-NAME is kept for debugging
-		purposes.
+	/* OP_GO	n{arg}, tag-ndx{arg}
+		Jumps to the tag which is defined for the tagbody
+		frame registered at the n-th position in the lexical
+		environment. TAG-NDX is the number of tag in the list.
 	*/
-	case OP_GO: {
-		cl_object id = ecl_lex_env_get_tag(GET_OPARG(vector));
-		cl_object tag_name = GET_DATA(vector, bytecodes);
-		cl_go(id, tag_name);
-		break;
+	CASE(OP_GO); {
+		cl_index lex_env_index;
+		cl_fixnum tag_ndx;
+		GET_OPARG(lex_env_index, vector);
+		GET_OPARG(tag_ndx, vector);
+		cl_go(ecl_lex_env_get_tag(lex_env, lex_env_index),
+		      MAKE_FIXNUM(tag_ndx));
+		THREAD_NEXT;
 	}
 	/* OP_RETURN	n{arg}
 		Returns from the block whose record in the lexical environment
 		occuppies the n-th position.
 	*/
-	case OP_RETURN: {
-		int lex_env_index = GET_OPARG(vector);
-		cl_object block_record = ecl_lex_env_get_record(lex_env_index);
-		cl_object id = CAR(block_record);
-		cl_object block_name = CDR(block_record);
-		cl_return_from(id, block_name);
-		break;
+	CASE(OP_RETURN); {
+		int lex_env_index;
+		cl_object block_record, id, block_name;
+		GET_OPARG(lex_env_index, vector);
+		/* record = (id . name) */
+		block_record = ecl_lex_env_get_record(lex_env, lex_env_index);
+		the_env->values[0] = reg0;
+		cl_return_from(ECL_CONS_CAR(block_record),
+			       ECL_CONS_CDR(block_record));
+		THREAD_NEXT;
 	}
 	/* OP_THROW
 		Jumps to an enclosing CATCH form whose tag matches the one
 		of the THROW. The tag is taken from the stack, while the
 		output values are left in VALUES(...).
 	*/
-	case OP_THROW: {
-		cl_object tag_name = cl_stack_pop();
+	CASE(OP_THROW); {
+		cl_object tag_name = STACK_POP(the_env);
+		the_env->values[0] = reg0;
 		cl_throw(tag_name);
-		break;
+		THREAD_NEXT;
 	}
 	/* OP_JMP	label{arg}
 	   OP_JNIL	label{arg}
@@ -842,189 +925,223 @@ ecl_interpret(cl_object bytecodes, void *pc) {
 		Direct or conditional jumps. The conditional jumps are made
 		comparing with the value of REG0.
 	*/
-	case OP_JMP: {
-		cl_oparg jump = GET_OPARG(vector);
+	CASE(OP_JMP); {
+		cl_oparg jump;
+		GET_OPARG(jump, vector);
 		vector += jump - OPARG_SIZE;
-		break;
+		THREAD_NEXT;
 	}
-	case OP_JNIL: {
-		cl_oparg jump = GET_OPARG(vector);
-		NVALUES = 1;
-		if (Null(VALUES(0)))
+	CASE(OP_JNIL); {
+		cl_oparg jump;
+		GET_OPARG(jump, vector);
+		if (Null(reg0))
 			vector += jump - OPARG_SIZE;
-		break;
+		THREAD_NEXT;
 	}
-	case OP_JT: {
-		cl_oparg jump = GET_OPARG(vector);
-		NVALUES = 1;
-		if (!Null(VALUES(0)))
+	CASE(OP_JT); {
+		cl_oparg jump;
+		GET_OPARG(jump, vector);
+		if (!Null(reg0))
 			vector += jump - OPARG_SIZE;
-		break;
+		THREAD_NEXT;
 	}
-	case OP_JEQL: {
-		cl_oparg value = GET_OPARG(vector);
-		cl_oparg jump = GET_OPARG(vector);
-		if (ecl_eql(reg0, bytecodes->bytecodes.data[value]))
+	CASE(OP_JEQL); {
+		cl_oparg value, jump;
+		GET_OPARG(value, vector);
+		GET_OPARG(jump, vector);
+		if (ecl_eql(reg0, data[value]))
 			vector += jump - OPARG_SIZE;
-		break;
+		THREAD_NEXT;
 	}
-	case OP_JNEQL: {
-		cl_oparg value = GET_OPARG(vector);
-		cl_oparg jump = GET_OPARG(vector);
-		if (!ecl_eql(reg0, bytecodes->bytecodes.data[value]))
+	CASE(OP_JNEQL); {
+		cl_oparg value, jump;
+		GET_OPARG(value, vector);
+		GET_OPARG(jump, vector);
+		if (!ecl_eql(reg0, data[value]))
 			vector += jump - OPARG_SIZE;
-		break;
+		THREAD_NEXT;
 	}
-	case OP_NOT:
+
+	CASE(OP_ENDP);
+		if (!LISTP(reg0)) FEtype_error_list(reg0);
+
+	CASE(OP_NOT); {
 		reg0 = (reg0 == Cnil)? Ct : Cnil;
-		break;
+		THREAD_NEXT;
+	}
+
 	/* OP_UNBIND	n{arg}
 		Undo "n" local bindings.
 	*/
-	case OP_UNBIND: {
-		cl_index n = GET_OPARG(vector);
+	CASE(OP_UNBIND); {
+		cl_oparg n;
+		GET_OPARG(n, vector);
 		while (n--)
-			cl_env.lex_env = CDR(cl_env.lex_env);
-		break;
+			lex_env = ECL_CONS_CDR(lex_env);
+		THREAD_NEXT;
 	}
 	/* OP_UNBINDS	n{arg}
 		Undo "n" bindings of special variables.
 	*/
-	case OP_UNBINDS: {
-		cl_index n = GET_OPARG(vector);
+	CASE(OP_UNBINDS); {
+		cl_oparg n;
+		GET_OPARG(n, vector);
 		bds_unwind_n(n);
-		break;
+		THREAD_NEXT;
 	}
 	/* OP_BIND	name{symbol}
 	   OP_PBIND	name{symbol}
+	   OP_VBIND	nvalue{arg}, name{symbol}
 	   OP_BINDS	name{symbol}
 	   OP_PBINDS	name{symbol}
-		Binds a lexical or special variable to the either the
-		value of REG0 or the first value of the stack.
+	   OP_VBINDS	nvalue{arg}, name{symbol}
+		Binds a lexical or special variable to the the
+		value of REG0, the first value of the stack (PBIND) or
+		to a given value in the values array.
 	*/
-	case OP_BIND: {
-		cl_object var_name = GET_DATA(vector, bytecodes);
-		bind_var(var_name, reg0);
-		break;
+	CASE(OP_BIND); {
+		cl_object var_name;
+		GET_DATA(var_name, vector, data);
+		lex_env = bind_var(lex_env, var_name, reg0);
+		THREAD_NEXT;
 	}
-	case OP_PBIND: {
-		cl_object var_name = GET_DATA(vector, bytecodes);
-		cl_object value = cl_stack_pop();
-		bind_var(var_name, value);
-		break;
+	CASE(OP_PBIND); {
+		cl_object var_name, value;
+		GET_DATA(var_name, vector, data);
+		lex_env = bind_var(lex_env, var_name, STACK_POP(the_env));
+		THREAD_NEXT;
 	}
-	case OP_VBIND: {
-		cl_index n = GET_OPARG(vector);
-		cl_object var_name = GET_DATA(vector, bytecodes);
-		cl_object value = (n < NVALUES) ? VALUES(n) : Cnil;
-		bind_var(var_name, value);
-		break;
+	CASE(OP_VBIND); {
+		cl_index n;
+		cl_object var_name;
+		GET_OPARG(n, vector);
+		GET_DATA(var_name, vector, data);
+		lex_env = bind_var(lex_env, var_name,
+				   (n < the_env->nvalues) ? the_env->values[n] : Cnil);
+		THREAD_NEXT;
 	}
-	case OP_BINDS: {
-		cl_object var_name = GET_DATA(vector, bytecodes);
+	CASE(OP_BINDS); {
+		cl_object var_name;
+		GET_DATA(var_name, vector, data);
 		bds_bind(var_name, reg0);
-		break;
+		THREAD_NEXT;
 	}
-	case OP_PBINDS: {
-		cl_object var_name = GET_DATA(vector, bytecodes);
-		cl_object value = cl_stack_pop();
-		bds_bind(var_name, value);
-		break;
+	CASE(OP_PBINDS); {
+		cl_object var_name;
+		GET_DATA(var_name, vector, data);
+		bds_bind(var_name, STACK_POP(the_env));
+		THREAD_NEXT;
 	}
-	case OP_VBINDS: {
-		cl_index n = GET_OPARG(vector);
-		cl_object var_name = GET_DATA(vector, bytecodes);
-		cl_object value = (n < NVALUES) ? VALUES(n) : Cnil;
-		bds_bind(var_name, value);
-		break;
+	CASE(OP_VBINDS); {
+		cl_index n;
+		cl_object var_name;
+		GET_OPARG(n, vector);
+		GET_DATA(var_name, vector, data);
+		bds_bind(var_name, (n < the_env->nvalues) ? the_env->values[n] : Cnil);
+		THREAD_NEXT;
 	}
 	/* OP_SETQ	n{arg}
 	   OP_PSETQ	n{arg}
 	   OP_SETQS	var-name{symbol}
 	   OP_PSETQS	var-name{symbol}
+	   OP_VSETQ	n{arg}, nvalue{arg}
+	   OP_VSETQS	var-name{symbol}, nvalue{arg}
 		Sets either the n-th local or a special variable VAR-NAME,
 		to either the value in REG0 (OP_SETQ[S]) or to the 
-		first value on the stack (OP_PSETQ[S]).
+		first value on the stack (OP_PSETQ[S]), or to a given
+		value from the multiple values array (OP_VSETQ[S]). Note
+		that NVALUE > 0 strictly.
 	*/
-	case OP_SETQ: {
-		int lex_env_index = GET_OPARG(vector);
-		ecl_lex_env_set_var(lex_env_index, reg0);
-		break;
+	CASE(OP_SETQ); {
+		int lex_env_index;
+		GET_OPARG(lex_env_index, vector);
+		ecl_lex_env_set_var(lex_env, lex_env_index, reg0);
+		THREAD_NEXT;
 	}
-	case OP_SETQS: {
-		cl_object var = GET_DATA(vector, bytecodes);
-		if (var->symbol.stype == stp_constant)
+	CASE(OP_SETQS); {
+		cl_object var;
+		GET_DATA(var, vector, data);
+		/* INV: Not NIL, and of type t_symbol */
+		if (var->symbol.stype & stp_constant)
 			FEassignment_to_constant(var);
 		ECL_SETQ(var, reg0);
-		break;
+		THREAD_NEXT;
 	}
-	case OP_PSETQ: {
-		int lex_env_index = GET_OPARG(vector);
-		ecl_lex_env_set_var(lex_env_index, cl_stack_pop());
-		break;
+	CASE(OP_PSETQ); {
+		int lex_env_index;
+		GET_OPARG(lex_env_index, vector);
+		ecl_lex_env_set_var(lex_env, lex_env_index, STACK_POP(the_env));
+		THREAD_NEXT;
 	}
-	case OP_PSETQS: {
-		cl_object var = GET_DATA(vector, bytecodes);
-		if (var->symbol.stype == stp_constant)
-			FEassignment_to_constant(var);
-		ECL_SETQ(var, cl_stack_pop());
-		break;
+	CASE(OP_PSETQS); {
+		cl_object var;
+		GET_DATA(var, vector, data);
+		/* INV: Not NIL, and of type t_symbol */
+		ECL_SETQ(var, STACK_POP(the_env));
+		THREAD_NEXT;
 	}
+	CASE(OP_VSETQ); {
+		cl_index lex_env_index;
+		cl_oparg index;
+		GET_OPARG(lex_env_index, vector);
+		GET_OPARG(index, vector);
+		ecl_lex_env_set_var(lex_env, lex_env_index,
+				    (index >= the_env->nvalues)? Cnil : the_env->values[index]);
+		THREAD_NEXT;
+	}
+	CASE(OP_VSETQS); {
+		cl_object var, v;
+		cl_oparg index;
+		GET_DATA(var, vector, data);
+		GET_OPARG(index, vector);
+		v = (index >= the_env->nvalues)? Cnil : the_env->values[index];
+		ECL_SETQ(var, v);
+		THREAD_NEXT;
+	}
+			
+	/* OP_BLOCK	constant
+	   OP_DO
+	   OP_CATCH
 
-	/* OP_BLOCK	label{arg}
-	   ...
+	   OP_FRAME	label{arg}
+	      ...
 	   OP_EXIT_FRAME
 	 label:
+	 */
 
-	   Executes the enclosed code in a named block.
-	   LABEL points to the first instruction after OP_EXIT.
-	*/
-	case OP_BLOCK:
-		reg0 = GET_DATA(vector, bytecodes);
+	CASE(OP_BLOCK); {
+		GET_DATA(reg0, vector, data);
 		reg1 = new_frame_id();
-		goto DO_BLOCK;
-	/* OP_CATCH	label{arg}
-	   ...
-	   OP_EXIT_FRAME
-	   label:
-
-	   Sets a catch point using the tag in VALUES(0). LABEL points to the
-	   first instruction after the end (OP_EXIT) of the block
-	*/
-	case OP_CATCH:
-		reg1 = reg0;
-		goto DO_BLOCK;
-	/* OP_DO	label
-	     ...	; code executed within a NIL block
-	   OP_EXIT_FRAME
-	   label:
-
-	   High level construct for the DO and BLOCK forms.
-	*/
-	case OP_DO:
+		lex_env = bind_frame(lex_env, reg1, reg0);
+		THREAD_NEXT;
+	}
+	CASE(OP_DO); {
 		reg0 = Cnil;
 		reg1 = new_frame_id();
-	DO_BLOCK: {
+		lex_env = bind_frame(lex_env, reg1, reg0);
+		THREAD_NEXT;
+	}
+	CASE(OP_CATCH); {
+		reg1 = reg0;
+		lex_env = bind_frame(lex_env, reg1, reg0);
+		THREAD_NEXT;
+	}
+	CASE(OP_FRAME); {
 		cl_opcode *exit;
 		GET_LABEL(exit, vector);
-		cl_stack_push((cl_object)exit);
+		STACK_PUSH(the_env, lex_env);
+		STACK_PUSH(the_env, (cl_object)exit);
 		if (frs_push(reg1) == 0) {
-			cl_env.lex_env = CONS(CONS(reg1, reg0), cl_env.lex_env);
+			THREAD_NEXT;
 		} else {
-			reg0 = VALUES(0);
-			cl_env.lex_env = cl_env.frs_top->frs_lex;
-			frs_pop();
-			vector = (cl_opcode *)cl_stack_pop(); /* FIXME! */
+			reg0 = the_env->values[0];
+			vector = (cl_opcode *)STACK_REF(the_env,-1); /* FIXME! */
+			lex_env = STACK_REF(the_env,-2);
+			goto DO_EXIT_FRAME;
 		}
-		break;
-		}
-	case OP_EXIT_FRAME:
-		bds_unwind(cl_env.frs_top->frs_bds_top);
-		cl_env.lex_env = cl_env.frs_top->frs_lex;
-		frs_pop();
-		cl_stack_pop();
-		break;
-	/* OP_TAGBODY	n{arg}
+	}
+	/* OP_FRAMEID	0
+	   OP_TAGBODY	n{arg}
 	     label1
 	     ...
 	     labeln
@@ -1036,123 +1153,119 @@ ecl_interpret(cl_object bytecodes, void *pc) {
 
 	   High level construct for the TAGBODY form.
 	*/
-	case OP_TAGBODY: {
-		cl_object id = new_frame_id();
-		int n = GET_OPARG(vector);
-		/* Here we save the location of the jump table */
-		cl_stack_push((cl_object)vector); /* FIXME! */
-		bind_tagbody(id);
-		if (frs_push(id) == 0) {
-			/* The first time, we "name" the tagbody and
-			 * skip the jump table */
-			vector += n * OPARG_SIZE;
-		} else {
+	CASE(OP_TAGBODY); {
+		int n;
+		GET_OPARG(n, vector);
+		STACK_PUSH(the_env, lex_env);
+		STACK_PUSH(the_env, (cl_object)vector); /* FIXME! */
+		vector += n * OPARG_SIZE;
+		if (frs_push(reg1) != 0) {
 			/* Wait here for gotos. Each goto sets
 			   VALUES(0) to an integer which ranges from 0
 			   to ntags-1, depending on the tag. These
 			   numbers are indices into the jump table and
 			   are computed at compile time. */
-			cl_opcode *table = (cl_opcode *)cl_env.stack_top[-1];
-			table = table + fix(VALUES(0)) * OPARG_SIZE;
+			cl_opcode *table = (cl_opcode *)STACK_REF(the_env,-1);
+			lex_env = STACK_REF(the_env,-2);
+			table = table + fix(the_env->values[0]) * OPARG_SIZE;
 			vector = table + *(cl_oparg *)table;
-			cl_env.lex_env = cl_env.frs_top->frs_lex;
 		}
-		break;
+		THREAD_NEXT;
 	}
-	case OP_EXIT_TAGBODY:
-		cl_env.lex_env = CDR(cl_env.frs_top->frs_lex);
-		frs_pop();
-		cl_stack_pop();
-	case OP_NIL:
+	CASE(OP_EXIT_TAGBODY); {
 		reg0 = Cnil;
-		break;
-	case OP_PUSHNIL:
-		cl_stack_push(Cnil);
-		break;
-	case OP_VALUEREG0:
-		VALUES(0) = reg0;
-		NVALUES = 1;
-		break;
-	case OP_NOP:
-		VALUES(0) = reg0 = Cnil;
-		NVALUES = 0;
-		break;
-	case OP_MSETQ:
-		vector = interpret_msetq(bytecodes, vector);
-		reg0 = VALUES(0);
-		break;
-	case OP_PROGV:
-		vector = interpret_progv(bytecodes, vector);
-		reg0 = VALUES(0);
-		break;
+	}
+	CASE(OP_EXIT_FRAME); {
+	DO_EXIT_FRAME:
+		frs_pop(the_env);
+		STACK_POP_N(the_env, 2);
+		lex_env = ECL_CONS_CDR(lex_env);
+		THREAD_NEXT;
+	}
+	CASE(OP_NIL); {
+		reg0 = Cnil;
+		THREAD_NEXT;
+	}
+	CASE(OP_PUSHNIL); {
+		STACK_PUSH(the_env, Cnil);
+		THREAD_NEXT;
+	}
+	CASE(OP_VALUEREG0); {
+		the_env->nvalues = 1;
+		THREAD_NEXT;
+	}
+
 	/* OP_PUSHVALUES
 		Pushes the values output by the last form, plus the number
 		of values.
 	*/
 	PUSH_VALUES:
-	case OP_PUSHVALUES: {
-		cl_index i;
-		for (i=0; i<NVALUES; i++)
-			cl_stack_push(VALUES(i));
-		cl_stack_push(MAKE_FIXNUM(NVALUES));
-		break;
+	CASE(OP_PUSHVALUES); {
+		cl_index i = the_env->nvalues;
+		STACK_PUSH_N(the_env, i+1);
+		the_env->values[0] = reg0;
+		memcpy(&STACK_REF(the_env, -(i+1)), the_env->values, i * sizeof(cl_object));
+		STACK_REF(the_env, -1) = MAKE_FIXNUM(the_env->nvalues);
+		THREAD_NEXT;
 	}
 	/* OP_PUSHMOREVALUES
 		Adds more values to the ones pushed by OP_PUSHVALUES.
 	*/
-	case OP_PUSHMOREVALUES: {
-		cl_index i, n = fix(cl_stack_pop());
-		for (i=0; i<NVALUES; i++)
-			cl_stack_push(VALUES(i));
-		cl_stack_push(MAKE_FIXNUM(n + NVALUES));
-		break;
+	CASE(OP_PUSHMOREVALUES); {
+		cl_index n = fix(STACK_REF(the_env,-1));
+		cl_index i = the_env->nvalues;
+		STACK_PUSH_N(the_env, i);
+		the_env->values[0] = reg0;
+		memcpy(&STACK_REF(the_env, -(i+1)), the_env->values, i * sizeof(cl_object));
+		STACK_REF(the_env, -1) = MAKE_FIXNUM(n + i);
+		THREAD_NEXT;
 	}
-	/* OP_POP
-		Pops a singe value pushed by a OP_PUSH* operator.
-	*/
-	case OP_POP:
-		VALUES(0) = reg0 = cl_stack_pop();
-		NVALUES = 1;
-		break;
 	/* OP_POPVALUES
 		Pops all values pushed by a OP_PUSHVALUES operator.
 	*/
-	case OP_POPVALUES: {
-		int n = NVALUES = fix(cl_stack_pop());
+	CASE(OP_POPVALUES); {
+		cl_object *dest = the_env->values;
+		int n = the_env->nvalues = fix(STACK_POP(the_env));
 		if (n == 0) {
-			VALUES(0) = Cnil;
-		} else do {
-			VALUES(--n) = cl_stack_pop();
-		} while (n);
-		reg0 = VALUES(0);
-		break;
+			*dest = reg0 = Cnil;
+			THREAD_NEXT;
+		} else if (n == 1) {
+			*dest = reg0 = STACK_POP(the_env);
+			THREAD_NEXT;
+		} else {
+			STACK_POP_N(the_env,n);
+			memcpy(dest, &STACK_REF(the_env,0), n * sizeof(cl_object));
+			reg0 = *dest;
+			THREAD_NEXT;
+		}
 	}
 	/* OP_VALUES	n{arg}
 		Pop N values from the stack and store them in VALUES(...)
+		Note that N is strictly > 0.
 	*/
-	case OP_VALUES: {
-		cl_fixnum n = GET_OPARG(vector);
-		NVALUES = n;
-		while (--n)
-			VALUES(n) = cl_stack_pop();
-		VALUES(0) = reg0 = cl_stack_pop();
-		break;
+	CASE(OP_VALUES); {
+		cl_fixnum n;
+		GET_OPARG(n, vector);
+		the_env->nvalues = n;
+		STACK_POP_N(the_env, n);
+		memcpy(the_env->values, &STACK_REF(the_env, 0), n * sizeof(cl_object));
+		reg0 = the_env->values[0];
+		THREAD_NEXT;
 	}
 	/* OP_NTHVAL
 		Set VALUES(0) to the N-th value of the VALUES(...) list.
 		The index N-th is extracted from the top of the stack.
 	*/
-	case OP_NTHVAL: {
-		cl_fixnum n = fix(cl_stack_pop());
+	CASE(OP_NTHVAL); {
+		cl_fixnum n = fix(STACK_POP(the_env));
 		if (n < 0) {
 			FEerror("Wrong index passed to NTH-VAL", 1, MAKE_FIXNUM(n));
-		} else if ((cl_index)n >= NVALUES) {
-			VALUES(0) = reg0 = Cnil;
-		} else {
-			VALUES(0) = reg0 = VALUES(n);
+		} else if ((cl_index)n >= the_env->nvalues) {
+			reg0 = Cnil;
+		} else if (n) {
+			reg0 = the_env->values[n];
 		}
-		NVALUES = 1;
-		break;
+		THREAD_NEXT;
 	}
 	/* OP_PROTECT	label
 	     ...	; code to be protected and whose value is output
@@ -1167,47 +1280,83 @@ ecl_interpret(cl_object bytecodes, void *pc) {
 	  is always executed, even if a THROW, RETURN or GO happen within the
 	  first piece of code.
 	*/
-	case OP_PROTECT: {
+	CASE(OP_PROTECT); {
 		cl_opcode *exit;
 		GET_LABEL(exit, vector);
-		cl_stack_push((cl_object)exit);
+		STACK_PUSH(the_env, lex_env);
+		STACK_PUSH(the_env, (cl_object)exit);
 		if (frs_push(ECL_PROTECT_TAG) != 0) {
-			cl_env.lex_env = cl_env.frs_top->frs_lex;
-			frs_pop();
-			vector = (cl_opcode *)cl_stack_pop();
-			cl_stack_push(MAKE_FIXNUM(cl_env.nlj_fr - cl_env.frs_top));
+			frs_pop(the_env);
+			vector = (cl_opcode *)STACK_POP(the_env);
+			lex_env = STACK_POP(the_env);
+			reg0 = the_env->values[0];
+			STACK_PUSH(the_env, MAKE_FIXNUM(the_env->nlj_fr - the_env->frs_top));
 			goto PUSH_VALUES;
 		}
-		break;
+		THREAD_NEXT;
 	}
-	case OP_PROTECT_NORMAL:
-		bds_unwind(cl_env.frs_top->frs_bds_top);
-		cl_env.lex_env = cl_env.frs_top->frs_lex;
-		frs_pop();
-		cl_stack_pop();
-		cl_stack_push(MAKE_FIXNUM(1));
+	CASE(OP_PROTECT_NORMAL); {
+		bds_unwind(the_env->frs_top->frs_bds_top);
+		frs_pop(the_env);
+		STACK_POP(the_env);
+		lex_env = STACK_POP(the_env);
+		STACK_PUSH(the_env, MAKE_FIXNUM(1));
 		goto PUSH_VALUES;
-	case OP_PROTECT_EXIT: {
-		volatile cl_fixnum n = NVALUES = fix(cl_stack_pop());
-		while (n--)
-			VALUES(n) = cl_stack_pop();
-		reg0 = VALUES(0);
-		n = fix(cl_stack_pop());
-		if (n <= 0)
-			ecl_unwind(cl_env.frs_top + n);
-		break;
 	}
-	case OP_STEPIN: {
-		cl_object form = GET_DATA(vector, bytecodes);
+	CASE(OP_PROTECT_EXIT); {
+		volatile cl_fixnum n = the_env->nvalues = fix(STACK_POP(the_env));
+		while (n--)
+			the_env->values[n] = STACK_POP(the_env);
+		reg0 = the_env->values[0];
+		n = fix(STACK_POP(the_env));
+		if (n <= 0)
+			ecl_unwind(the_env->frs_top + n);
+		THREAD_NEXT;
+	}
+
+	/* OP_PROGV	bindings{list}
+	   ...
+	   OP_EXIT
+	   Execute the code enclosed with the special variables in BINDINGS
+	   set to the values in the list which was passed in VALUES(0).
+	*/
+	CASE(OP_PROGV); {
+		cl_object values = reg0;
+		cl_object vars = STACK_POP(the_env);
+		cl_index n;
+		for (n = 0; !ecl_endp(vars); n++, vars = ECL_CONS_CDR(vars)) {
+			cl_object var = ECL_CONS_CAR(vars);
+			if (values == Cnil) {
+				bds_bind(var, OBJNULL);
+			} else {
+				bds_bind(var, cl_car(values));
+				values = ECL_CONS_CDR(values);
+			}
+		}
+		STACK_PUSH(the_env, MAKE_FIXNUM(n));
+		THREAD_NEXT;
+	}
+	CASE(OP_EXIT_PROGV); {
+		cl_index n = fix(STACK_POP(the_env));
+		bds_unwind_n(n);
+		THREAD_NEXT;
+	}
+
+	CASE(OP_STEPIN); {
+		cl_object form;
 		cl_object a = SYM_VAL(@'si::*step-action*');
-		cl_index n = cl_stack_push_values();
+		cl_index n;
+		GET_DATA(form, vector, data);
+		SETUP_ENV(the_env);
+		the_env->values[0] = reg0;
+		n = cl_stack_push_values();
 		if (a == Ct) {
 			/* We are stepping in, but must first ask the user
 			 * what to do. */
 			ECL_SETQ(@'si::*step-level*',
 				 cl_1P(SYM_VAL(@'si::*step-level*')));
-			cl_stack_push(form);
-			interpret_funcall(1, @'si::stepper');
+			STACK_PUSH(the_env, form);
+			INTERPRET_FUNCALL(form, the_env, frame_aux, 1, @'si::stepper');
 		} else if (a != Cnil) {
 			/* The user told us to step over. *step-level* contains
 			 * an integer number that, when it becomes 0, means
@@ -1218,22 +1367,28 @@ ecl_interpret(cl_object bytecodes, void *pc) {
 			 * actually never happen. */
 		}
 		cl_stack_pop_values(n);
-		break;
+		reg0 = the_env->values[0];
+		THREAD_NEXT;
 	}
-	case OP_STEPCALL: {
+	CASE(OP_STEPCALL); {
 		/* We are going to call a function. However, we would
 		 * like to step _in_ the function. STEPPER takes care of
 		 * that. */
-		cl_fixnum n = GET_OPARG(vector);
+		cl_fixnum n;
+		GET_OPARG(n, vector);
+		SETUP_ENV(the_env);
 		if (SYM_VAL(@'si::*step-action*') == Ct) {
-			cl_stack_push(reg0);
-			reg0 = interpret_funcall(1, @'si::stepper');
+			STACK_PUSH(the_env, reg0);
+			INTERPRET_FUNCALL(reg0, the_env, frame_aux, 1, @'si::stepper');
 		}
-		reg0 = interpret_funcall(n, reg0);
+		INTERPRET_FUNCALL(reg0, the_env, frame_aux, n, reg0);
 	}
-	case OP_STEPOUT: {
+	CASE(OP_STEPOUT); {
 		cl_object a = SYM_VAL(@'si::*step-action*');
-		cl_index n = cl_stack_push_values();
+		cl_index n;
+		SETUP_ENV(the_env);
+		the_env->values[0] = reg0;
+		n = cl_stack_push_values();
 		if (a == Ct) {
 			/* We exit one stepping level */
 			ECL_SETQ(@'si::*step-level*',
@@ -1248,14 +1403,10 @@ ecl_interpret(cl_object bytecodes, void *pc) {
 			/* Not stepping, nothing to be done. */
 		}
 		cl_stack_pop_values(n);
-		break;
+		reg0 = the_env->values[0];
+		THREAD_NEXT;
 	}
-
-	default:
-		FEerror("Internal error: Unknown code ~S",
-			1, MAKE_FIXNUM(*(vector-1)));
 	}
-	goto BEGIN;
 }
 
 @(defun si::interpreter_stack ()

@@ -228,7 +228,8 @@ cl_functionp(cl_object x)
 	cl_object output;
 
 	t = type_of(x);
-	if (t == t_bytecodes || t == t_cfun || t == t_cclosure
+	if (t == t_bytecodes || t == t_bclosure || t == t_cfun
+	    || t == t_cfunfixed || t == t_cclosure
 #ifdef CLOS
 	    || (t == t_instance && x->instance.isgf)
 #endif
@@ -243,7 +244,8 @@ cl_object
 cl_compiled_function_p(cl_object x)
 {
 	cl_type t = type_of(x);
-	@(return ((t == t_bytecodes || t == t_cfun || t == t_cclosure) ? Ct : Cnil))
+	@(return ((t == t_bytecodes || t == t_bclosure || t == t_cfun
+		   || t == t_cfunfixed || t == t_cclosure) ? Ct : Cnil))
 }
 
 cl_object
@@ -306,7 +308,11 @@ BEGIN:
 	tx = type_of(x);
 	ty = type_of(y);
 	switch (tx) {
-	case t_cons:
+	case t_list:
+		if (Null(x) || Null(y)) {
+			/* If X is NIL, then X and Y must be EQ */
+			return FALSE;
+		}
 		if (tx != ty || !ecl_equal(CAR(x), CAR(y)))
 			return FALSE;
 		x = CDR(x);
@@ -452,7 +458,11 @@ BEGIN:
 	switch (tx) {
 	case t_character:
 		return ecl_char_equal(x, y);
-	case t_cons:
+	case t_list:
+		if (Null(x) || Null(y)) {
+			/* X is NIL but it is not EQ to Y */
+			return FALSE;
+		}
 		if (!ecl_equalp(CAR(x), CAR(y)))
 			return(FALSE);
 		x = CDR(x);

@@ -43,6 +43,16 @@
 # include <sys/ioctl.h>
 #endif
 
+#ifndef HAVE_FSEEKO
+#define ecl_off_t int
+#define ecl_fseeko fseek
+#define ecl_ftello ftell
+#else
+#define ecl_off_t off_t
+#define ecl_fseeko fseeko
+#define ecl_ftello ftello
+#endif
+
 #define MAKE_BIT_MASK(n) ((1<<(n))-1)
 
 static int flisten(FILE *fp);
@@ -55,7 +65,7 @@ static int flisten(FILE *fp);
 static void io_stream_begin_write(cl_object strm)
 {
 	if (strm->stream.last_op > 0) {
-		fseek((FILE*)strm->stream.file, 0, SEEK_CUR);
+		ecl_fseeko((FILE*)strm->stream.file, 0, SEEK_CUR);
 	}
 	strm->stream.last_op = -1;
 }
@@ -73,6 +83,68 @@ static void io_stream_begin_read(cl_object strm)
 	strm->stream.last_op = +1;
 }
 
+static cl_object
+ecl_off_t_to_integer(ecl_off_t offset)
+{
+	cl_object output;
+	if (sizeof(ecl_off_t) == sizeof(cl_fixnum)) {
+		output = ecl_make_integer(offset);
+	} else if (offset <= MOST_POSITIVE_FIXNUM) {
+		output = MAKE_FIXNUM((cl_fixnum)offset);
+	} else {
+		cl_object y = big_register0_get();
+#ifdef WITH_GMP
+		if (sizeof(y->big.big_limbs[0]) == sizeof(cl_index)) {
+			y->big.big_limbs[0] = (cl_index)offset;
+			offset >>= FIXNUM_BITS;
+			y->big.big_limbs[1] = offset;
+			y->big.big_size = offset? 2 : 1;
+		} else if (sizeof(y->big.big_limbs[0]) >= sizeof(ecl_off_t)) {
+			y->big.big_limbs[0] = offset;
+			y->big.big_size = 1;
+		}
+#else
+		y->big.big_num = offset;
+#endif
+		output = big_register_normalize(y);
+	}
+	return output;
+}
+
+static ecl_off_t
+ecl_integer_to_off_t(cl_object offset)
+{
+	ecl_off_t output = 0;
+	if (sizeof(ecl_off_t) == sizeof(cl_fixnum)) {
+		output = fixint(offset);
+	} else if (FIXNUMP(offset)) {
+		output = fixint(offset);
+	} else if (type_of(offset) == t_bignum) {
+#ifdef WITH_GMP
+		if (sizeof(offset->big.big_limbs[0]) == sizeof(cl_index)) {
+			if (offset->big.big_size > 2) {
+				goto ERR;
+			}
+			if (offset->big.big_size == 2) {
+			    output = offset->big.big_limbs[1];
+			    output <<= FIXNUM_BITS;
+			}
+			output += offset->big.big_limbs[0];
+		} else if (sizeof(offset->big.big_limbs[0]) >= sizeof(ecl_off_t)) {
+			if (offset->big.big_size > 1) {
+				goto ERR;
+			}
+			output = offset->big.big_limbs[0];
+		}
+#else
+		output = offset->big.big_num;
+#endif
+	} else {
+	ERR:	FEerror("Not a valid file offset: ~S", 1, offset);
+	}
+	return output;
+}
+
 /*----------------------------------------------------------------------
  *	ecl_input_stream_p(strm) answers
  *	if stream strm is an input stream or not.
@@ -86,8 +158,8 @@ ecl_input_stream_p(cl_object strm)
 {
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance)
-		return !Null(funcall(2, @'ext::stream-input-p', strm));
+	if (ECL_INSTANCEP(strm))
+		return !Null(funcall(2, @'gray::input-stream-p', strm));
 #endif
 	if (type_of(strm) != t_stream) 
 		FEtype_error_stream(strm);
@@ -134,8 +206,8 @@ ecl_output_stream_p(cl_object strm)
 {
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance)
-		return !Null(funcall(2, @'ext::stream-output-p', strm));
+	if (ECL_INSTANCEP(strm))
+		return !Null(funcall(2, @'gray::output-stream-p', strm));
 #endif
 	if (type_of(strm) != t_stream) 
 		FEtype_error_stream(strm);
@@ -184,8 +256,8 @@ cl_stream_element_type(cl_object strm)
 	cl_object output = @'base-char';
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance)
-		return funcall(2, @'ext::stream-elt-type', strm);
+	if (ECL_INSTANCEP(strm))
+		return funcall(2, @'gray::stream-element-type', strm);
 #endif
 	if (type_of(strm) != t_stream)
 		FEtype_error_stream(strm);
@@ -383,7 +455,7 @@ ecl_open_stream(cl_object fn, enum ecl_smmode smm, cl_object if_exists,
 					FEerror("~S has an invalid binary header ~S",
 					        2, fn, MAKE_FIXNUM(binary_header));
 			}
-			fseek(fp, 0, SEEK_SET);
+			ecl_fseeko(fp, 0, SEEK_SET);
 		}
 	} else if (smm == smm_output || smm == smm_io) {
 		if (if_exists == @':new_version' && if_does_not_exist == @':create')
@@ -399,7 +471,7 @@ ecl_open_stream(cl_object fn, enum ecl_smmode smm, cl_object if_exists,
 						FEerror("~S has an invalid binary header ~S",
 						        2, fn, MAKE_FIXNUM(binary_header));
 					if (binary_header != 0 && if_exists == @':append' &&
-					    fseek(fp, -1, SEEK_END) == 0) {
+					    ecl_fseeko(fp, -1, SEEK_END) == 0) {
 						/* Read the last byte */
 						bit_buffer = getc(fp) & 0xFF;
 						bits_left = binary_header;
@@ -436,7 +508,7 @@ ecl_open_stream(cl_object fn, enum ecl_smmode smm, cl_object if_exists,
 					FEcannot_open(fn);
 				}
 				if (if_exists == @':append') {
-					fseek(fp, 0, SEEK_END);
+					ecl_fseeko(fp, 0, SEEK_END);
 					appending = TRUE;
 				}
 			} else if (Null(if_exists)) {
@@ -497,9 +569,9 @@ ecl_open_stream(cl_object fn, enum ecl_smmode smm, cl_object if_exists,
 			/* Set file pointer to the correct position */
 			if (appending) {
 				if (bits_left != 0)
-					fseek(fp, -1, SEEK_END);
+					ecl_fseeko(fp, -1, SEEK_END);
 			} else {
-				fseek(fp, (use_header_p ? 1 : 0), SEEK_SET);
+				ecl_fseeko(fp, (use_header_p ? 1 : 0), SEEK_SET);
 			}
 		}
 	}
@@ -515,8 +587,8 @@ static void flush_output_stream_binary(cl_object strm);
 	FILE *fp;
 @
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		return funcall(2, @'ext::stream-close', strm);
+	if (ECL_INSTANCEP(strm)) {
+		return funcall(2, @'gray::close', strm);
 	}
 #endif
 	if (type_of(strm) != t_stream) 
@@ -542,7 +614,7 @@ static void flush_output_stream_binary(cl_object strm);
 			ecl_force_output(strm);
 			if (!strm->stream.char_stream_p && strm->stream.header != 0xFF) {
 				/* write header */
-				if (fseek(fp, 0, SEEK_SET) != 0)
+				if (ecl_fseeko(fp, 0, SEEK_SET) != 0)
 					io_error(strm);
 				ecl_write_byte8(strm->stream.header, strm);
 			}
@@ -550,7 +622,7 @@ static void flush_output_stream_binary(cl_object strm);
 		if (fclose(fp) != 0)
 			FElibc_error("Cannot close stream ~S.", 1, strm);
 #if !defined(GBC_BOEHM)
-		cl_dealloc(strm->stream.buffer, BUFSIZ);
+		cl_dealloc(strm->stream.buffer);
 		strm->stream.file = NULL;
 #endif
 		break;
@@ -561,7 +633,7 @@ static void flush_output_stream_binary(cl_object strm);
 		if ( closesocket( ( int )strm->stream.file ) != 0 )
 			wsock_error( "Cannot close Windows Socket ~S~%~A.", strm );
 #if !defined(GBC_BOEHM)
-		cl_dealloc(strm->stream.buffer, BUFSIZ);
+		cl_dealloc(strm->stream.buffer);
 		strm->stream.file = NULL;
 #endif
 		break;
@@ -674,8 +746,8 @@ ecl_write_byte(cl_object c, cl_object strm)
 	 */
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		funcall(3, @'ext::stream-write-byte', strm, c);
+	if (ECL_INSTANCEP(strm)) {
+		funcall(3, @'gray::stream-write-byte', strm, c);
 		return;
 	}
 #endif
@@ -734,12 +806,12 @@ BEGIN:
 		if (strm->stream.buffer_state == 1) {
 			/* buffer is prepared for reading: re-read (8-nb) bits and throw the rest */
 			int c0;
-			fseek((FILE*)strm->stream.file, -1, SEEK_CUR);
+			ecl_fseeko((FILE*)strm->stream.file, -1, SEEK_CUR);
 			c0 = ecl_read_byte8(strm);
 			if (c0 == EOF)
 				/* this should not happen !!! */
 				io_error(strm);
-			fseek((FILE*)strm->stream.file, -1, SEEK_CUR);
+			ecl_fseeko((FILE*)strm->stream.file, -1, SEEK_CUR);
 			b = (unsigned char)(c0 & MAKE_BIT_MASK(8-nb));
 			nb = (8-nb);
 		}
@@ -858,10 +930,10 @@ flush_output_stream_binary(cl_object strm)
 		FILE *fp = (FILE*)strm->stream.file;
 
 		/* do we need to merge with existing byte? */
-		long current_offset = ftell(fp), diff_offset;
-		if (fseek(fp, 0, SEEK_END) != 0)
+		ecl_off_t current_offset = ecl_ftello(fp), diff_offset;
+		if (ecl_fseeko(fp, 0, SEEK_END) != 0)
 			io_error(strm);
-		switch ((diff_offset = ftell(fp)-current_offset)) {
+		switch ((diff_offset = ecl_ftello(fp)-current_offset)) {
 			case 0: break;
 			case 1:
 				/* (EOF-1): merge only if less bits left than header tells us */
@@ -871,7 +943,7 @@ flush_output_stream_binary(cl_object strm)
 				do_merging = (diff_offset > 1);
 				break;
 		}
-		if (fseek(fp, current_offset, SEEK_SET) != 0)
+		if (ecl_fseeko(fp, current_offset, SEEK_SET) != 0)
 			io_error(strm);
 
 		/* do merging, if required */
@@ -882,21 +954,21 @@ flush_output_stream_binary(cl_object strm)
 				if (c != EOF)
 					b |= (unsigned char)(c & ~MAKE_BIT_MASK(nb));
 				/* rewind stream */
-				if (fseek(fp, -1, SEEK_CUR) != 0)
+				if (ecl_fseeko(fp, -1, SEEK_CUR) != 0)
 					io_error(strm);
 			} else {
 				/* write-only stream: need to reopen the file for reading *
 				 * the byte to merge, then reopen it back for writing     */
 				cl_object fn = si_coerce_to_filename(strm->stream.object1);
 				if (freopen(fn->base_string.self, OPEN_R, fp) == NULL ||
-				    fseek(fp, current_offset, SEEK_SET) != 0)
+				    ecl_fseeko(fp, current_offset, SEEK_SET) != 0)
 					io_error(strm);
 				/* cannot use ecl_read_byte8 here, because strm hasn't the right mode */
 				b |= (unsigned char)(getc(fp) & ~MAKE_BIT_MASK(nb));
 				/* need special trick to re-open the file for writing, avoiding truncation */
 				fclose(fp);
 				strm->stream.file = fdopen(open(fn->base_string.self, O_WRONLY), OPEN_W);
-				if (strm->stream.file == NULL || fseek(fp, current_offset, SEEK_SET) != 0)
+				if (strm->stream.file == NULL || ecl_fseeko(fp, current_offset, SEEK_SET) != 0)
 					io_error(strm);
 			}
 		} else {
@@ -906,7 +978,7 @@ flush_output_stream_binary(cl_object strm)
 
 		/* flush byte w/o changing file pointer */
 		ecl_write_byte8(b, strm);
-		fseek(fp, -1, SEEK_CUR);
+		ecl_fseeko(fp, -1, SEEK_CUR);
 	}
 }
 
@@ -921,8 +993,8 @@ ecl_read_byte(cl_object strm)
 	 */
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		return funcall(2, @'ext::stream-read-byte', strm);
+	if (ECL_INSTANCEP(strm)) {
+		return funcall(2, @'gray::stream-read-byte', strm);
 	}
 #endif
 	if (type_of(strm) != t_stream) 
@@ -1059,8 +1131,8 @@ ecl_read_char(cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		cl_object c = funcall(2, @'ext::stream-read-char', strm);
+	if (ECL_INSTANCEP(strm)) {
+		cl_object c = funcall(2, @'gray::stream-read-char', strm);
 		return CHARACTERP(c)? CHAR_CODE(c) : EOF;
 	}
 #endif
@@ -1175,8 +1247,8 @@ ecl_peek_char(cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		cl_object c = funcall(2, @'ext::stream-peek-char', strm);
+	if (ECL_INSTANCEP(strm)) {
+		cl_object c = funcall(2, @'gray::stream-peek-char', strm);
 		return CHARACTERP(c)? CHAR_CODE(c) : EOF;
 	}
 #endif
@@ -1284,8 +1356,8 @@ ecl_unread_char(int c, cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		funcall(3, @'ext::stream-unread-char', strm, CODE_CHAR(c));
+	if (ECL_INSTANCEP(strm)) {
+		funcall(3, @'gray::stream-unread-char', strm, CODE_CHAR(c));
 		return;
 	}
 #endif
@@ -1368,8 +1440,8 @@ ecl_write_char(int c, cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		funcall(3, @'ext::stream-write-char', strm, CODE_CHAR(c));
+	if (ECL_INSTANCEP(strm)) {
+		funcall(3, @'gray::stream-write-char', strm, CODE_CHAR(c));
 		return c;
 	}
 #endif
@@ -1494,7 +1566,7 @@ si_do_write_sequence(cl_object seq, cl_object stream, cl_object s, cl_object e)
 		goto OUTPUT;
 	}
 	t = type_of(seq);
-	if (t == t_cons || t == t_symbol) {
+	if (t == t_list) {
 		bool ischar = cl_stream_element_type(stream) == @'base-char';
 		cl_object s = ecl_nthcdr(start, seq);
 		loop_for_in(s) {
@@ -1570,7 +1642,7 @@ si_do_read_sequence(cl_object seq, cl_object stream, cl_object s, cl_object e)
 		goto OUTPUT;
 	}
 	t = type_of(seq);
-	if (t == t_cons || t == t_symbol) {
+	if (t == t_list) {
 		bool ischar = cl_stream_element_type(stream) == @'base-char';
 		seq = ecl_nthcdr(start, seq);
 		loop_for_in(seq) {
@@ -1586,7 +1658,7 @@ si_do_read_sequence(cl_object seq, cl_object stream, cl_object s, cl_object e)
 					c = ecl_read_byte(stream);
 					if (c == Cnil) goto OUTPUT;
 				}
-				CAR(seq) = c;
+				ECL_RPLACA(seq, c);
 				start++;
 			}
 		} end_loop_for_in;
@@ -1649,8 +1721,8 @@ ecl_force_output(cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		funcall(2, @'ext::stream-force-output', strm);
+	if (ECL_INSTANCEP(strm)) {
+		funcall(2, @'gray::stream-force-output', strm);
 		return;
 	}
 #endif
@@ -1716,8 +1788,8 @@ ecl_clear_input(cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		funcall(2, @'ext::stream-clear-input', strm);
+	if (ECL_INSTANCEP(strm)) {
+		funcall(2, @'gray::stream-clear-input', strm);
 		return;
 	}
 #endif
@@ -1790,8 +1862,8 @@ ecl_clear_output(cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		funcall(2, @'ext::stream-clear-output',strm);
+	if (ECL_INSTANCEP(strm)) {
+		funcall(2, @'gray::stream-clear-output',strm);
 		return;
 	}
 #endif
@@ -1805,7 +1877,7 @@ BEGIN:
 #if 0
 		if (fp == NULL)
 			wrong_file_handler(strm);
-		if (fseek(fp, 0L, 2) != 0)
+		if (ecl_fseeko(fp, 0L, 2) != 0)
 			io_error(strm);
 #endif
 		break;
@@ -1935,11 +2007,11 @@ flisten(FILE *fp)
 	   It will fail on noninteractive streams. */
 	{
 		/* regular file */
-		long old_pos = ftell(fp), end_pos;
-		if (fseek(fp, 0, SEEK_END) != 0)
+		ecl_off_t old_pos = ecl_ftello(fp), end_pos;
+		if (ecl_fseeko(fp, 0, SEEK_END) != 0)
 			FElibc_error("fseek() returned an error value", 0);
-		end_pos = ftell(fp);
-		if (fseek(fp, old_pos, SEEK_SET) != 0)
+		end_pos = ecl_ftello(fp);
+		if (ecl_fseeko(fp, old_pos, SEEK_SET) != 0)
 			FElibc_error("fseek() returned an error value", 0);
 		return (end_pos > old_pos ? ECL_LISTEN_AVAILABLE : ECL_LISTEN_EOF);
 	}
@@ -1953,8 +2025,8 @@ ecl_listen_stream(cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		cl_object flag = funcall(2, @'ext::stream-listen', strm);
+	if (ECL_INSTANCEP(strm)) {
+		cl_object flag = funcall(2, @'gray::stream-listen', strm);
 		return !(flag == Cnil);
 	}
 #endif
@@ -2043,7 +2115,7 @@ ecl_file_position(cl_object strm)
 	cl_object output;
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance)
+	if (ECL_INSTANCEP(strm))
 		FEerror("file-position not implemented for CLOS streams", 0);
 #endif
 	if (type_of(strm) != t_stream)
@@ -2057,14 +2129,18 @@ BEGIN:
 		ecl_force_output(strm);
 	case smm_input: {
 		/* FIXME! This does not handle large file sizes */
-		cl_fixnum small_offset;
+		ecl_off_t offset;
 		FILE *fp = (FILE*)strm->stream.file;
 		if (fp == NULL)
 			wrong_file_handler(strm);
-		small_offset = ftell(fp);
-		if (small_offset < 0)
+		offset = ecl_ftello(fp);
+		if (offset < 0)
 			io_error(strm);
-		output = ecl_make_integer(small_offset);
+		if (sizeof(ecl_off_t) == sizeof(long)) {
+			output = ecl_make_integer(offset);
+		} else {
+			output = ecl_off_t_to_integer(offset);
+		}
 		break;
 	}
 	case smm_string_output:
@@ -2126,10 +2202,11 @@ BEGIN:
 cl_object
 ecl_file_position_set(cl_object strm, cl_object large_disp)
 {
-	cl_index disp, extra = 0;
+	ecl_off_t disp;
+	int extra = 0;
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance)
+	if (ECL_INSTANCEP(strm))
 		FEerror("file-position not implemented for CLOS streams", 0);
 #endif
 	if (type_of(strm) != t_stream) 
@@ -2154,10 +2231,10 @@ BEGIN:
 			/* reset internal buffer: should be set again if extra != 0 */
 			strm->stream.bit_buffer = strm->stream.bits_left = strm->stream.buffer_state = 0;
 		}
-		disp = fixnnint(large_disp);
+		disp = ecl_integer_to_off_t(large_disp);
 		if (fp == NULL)
 			wrong_file_handler(strm);
-		if (fseek(fp, disp, 0) != 0)
+		if (ecl_fseeko(fp, disp, 0) != 0)
 			return Cnil;
 		if (extra != 0) {
 			if (ecl_input_stream_p(strm)) {
@@ -2234,7 +2311,7 @@ cl_file_length(cl_object strm)
 	cl_object output;
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance)
+	if (ECL_INSTANCEP(strm))
 		FEwrong_type_argument(c_string_to_object("(OR BROADCAST-STREAM SYNONYM-STREAM FILE-STREAM)"),
 				      strm);
 #endif
@@ -2309,8 +2386,8 @@ ecl_file_column(cl_object strm)
 
 BEGIN:
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		cl_object col = funcall(2, @'ext::stream-line-column', strm);
+	if (ECL_INSTANCEP(strm)) {
+		cl_object col = funcall(2, @'gray::stream-line-column', strm);
 		/* FIXME! The Gray streams specifies NIL is a valid
 		 * value but means "unknown". Should we make it
 		 * zero? */
@@ -2564,11 +2641,8 @@ cl_object
 cl_streamp(cl_object strm)
 {
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) == t_instance) {
-		cl_object this_class = CLASS_OF(strm);
-		cl_object stream_class = cl_find_class(1, @'stream');
-		cl_object test = funcall(3, @'si::subclassp', this_class, stream_class);
-		@(return (Null(test)? Cnil : Ct))
+	if (ECL_INSTANCEP(strm)) {
+		return funcall(2, @'gray::streamp', strm);
 	}
 #endif
 	@(return ((type_of(strm) == t_stream) ? Ct : Cnil))
@@ -2787,7 +2861,7 @@ cl_interactive_stream_p(cl_object strm)
 	t = type_of(strm);
 #ifdef ECL_CLOS_STREAMS
 	if (t == t_instance)
-		return funcall(2, @'ext::stream-interactive-p', strm);
+		return funcall(2, @'gray::stream-interactive-p', strm);
 #endif
 	if (t != t_stream)
 		FEtype_error_stream(strm);
@@ -2814,9 +2888,34 @@ cl_interactive_stream_p(cl_object strm)
 }
 
 cl_object
-ecl_make_stream_from_fd(cl_object fname, int fd, enum ecl_smmode smm)
+ecl_make_stream_from_FILE(cl_object fname, void *fp, enum ecl_smmode smm)
 {
 	cl_object stream;
+	stream = cl_alloc_object(t_stream);
+	stream->stream.mode = (short)smm;
+	stream->stream.closed = 0;
+	stream->stream.file = fp;
+#if defined (ECL_WSOCK)
+	if ( smm == smm_input_wsock || smm == smm_io_wsock )
+		stream->stream.object0 = Cnil;
+	else
+		stream->stream.object0 = @'base-char';
+#else
+	stream->stream.object0 = @'base-char';
+#endif
+	stream->stream.object1 = fname; /* not really used */
+	stream->stream.int0 = stream->stream.int1 = 0;
+	stream->stream.char_stream_p = 1;
+	stream->stream.byte_size = 8;
+	stream->stream.signed_bytes = 0;
+	stream->stream.last_op = 0;
+	si_set_finalizer(stream, Ct);
+	return(stream);
+}
+
+cl_object
+ecl_make_stream_from_fd(cl_object fname, int fd, enum ecl_smmode smm)
+{
 	char *mode;			/* file open mode */
 	FILE *fp;			/* file pointer */
 
@@ -2847,27 +2946,7 @@ ecl_make_stream_from_fd(cl_object fname, int fd, enum ecl_smmode smm)
 #else
 	fp = fdopen(fd, mode);
 #endif
-
-	stream = cl_alloc_object(t_stream);
-	stream->stream.mode = (short)smm;
-	stream->stream.closed = 0;
-	stream->stream.file = fp;
-#if defined (ECL_WSOCK)
-	if ( smm == smm_input_wsock || smm == smm_io_wsock )
-		stream->stream.object0 = Cnil;
-	else
-		stream->stream.object0 = @'base-char';
-#else
-	stream->stream.object0 = @'base-char';
-#endif
-	stream->stream.object1 = fname; /* not really used */
-	stream->stream.int0 = stream->stream.int1 = 0;
-	stream->stream.char_stream_p = 1;
-	stream->stream.byte_size = 8;
-	stream->stream.signed_bytes = 0;
-	stream->stream.last_op = 0;
-	si_set_finalizer(stream, Ct);
-	return(stream);
+	return ecl_make_stream_from_FILE(fname, fp, smm);
 }
 
 int

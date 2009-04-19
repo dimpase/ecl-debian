@@ -87,6 +87,8 @@ bds_unwind_n(int n)
 cl_object *
 ecl_symbol_slot(cl_object s)
 {
+	if (Null(s))
+		s = Cnil_symbol;
 	if (s->symbol.dynamic) {
 		struct ecl_hashtable_entry *h = ecl_search_hash(s, cl_env.bindings_hash);
 		if (h->key != OBJNULL)
@@ -173,6 +175,9 @@ ihs_function_name(cl_object x)
 	case t_symbol:
 		return(x);
 
+	case t_bclosure:
+		x = x->bclosure.code;
+
 	case t_bytecodes:
 		y = x->bytecodes.name;
 		if (Null(y))
@@ -181,6 +186,7 @@ ihs_function_name(cl_object x)
 			return y;
 
 	case t_cfun:
+	case t_cfunfixed:
 		return(x->cfun.name);
 
 	default:
@@ -232,7 +238,7 @@ si_ihs_fun(cl_object arg)
 cl_object
 si_ihs_env(cl_object arg)
 {
-	@(return get_ihs_ptr(fixnnint(si_ihs_next(arg)))->lex_env)
+	@(return get_ihs_ptr(fixnnint(arg))->lex_env)
 }
 
 /********************** FRAME STACK *************************/
@@ -260,7 +266,6 @@ _frs_push(register cl_object val)
 {
 	ecl_frame_ptr output = ++cl_env.frs_top;
 	if (output >= cl_env.frs_limit) frs_overflow();
-	output->frs_lex = cl_env.lex_env;
 	output->frs_bds_top = cl_env.bds_top;
 	output->frs_val = val;
 	output->frs_ihs = cl_env.ihs_top;
@@ -274,7 +279,6 @@ ecl_unwind(ecl_frame_ptr fr)
 	cl_env.nlj_fr = fr;
 	while (cl_env.frs_top != fr && cl_env.frs_top->frs_val != ECL_PROTECT_TAG)
 		--cl_env.frs_top;
-	cl_env.lex_env = cl_env.frs_top->frs_lex;
 	cl_env.ihs_top = cl_env.frs_top->frs_ihs;
 	bds_unwind(cl_env.frs_top->frs_bds_top);
 	cl_stack_set_index(cl_env.frs_top->frs_sp);

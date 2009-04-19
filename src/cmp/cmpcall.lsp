@@ -21,14 +21,17 @@
   (or (cmp-env-search-macro name)
       (macro-function name)))
 
+(defun unoptimized-long-call (fun arguments)
+  (let ((frame (gensym)))
+    (c1expr `(with-stack ,frame
+	       ,@(loop for i in arguments collect `(stack-push ,frame ,i))
+	       (si::apply-from-stack-frame ,frame ,fun)))))
+
 (defun unoptimized-funcall (fun arguments)
   (let ((l (length arguments)))
     (if (<= l si::c-arguments-limit)
 	(make-c1form* 'FUNCALL :args (c1expr fun) (c1args* arguments))
-	(let ((frame (gensym)))
-	  (c1expr `(with-stack ,frame
-		     ,@(loop for i in arguments collect `(stack-push ,i))
-		     (si::apply-from-stack-frame ,frame ,fim)))))))
+	(unoptimized-long-call fun arguments))))
 
 (defun c1funcall (args)
   (check-args-number 'FUNCALL args 1)
@@ -50,8 +53,7 @@
 	  ;; (FUNCALL macro-expression ...)
 	  ((let ((name (first fun)))
 	     (setq fd (and (symbolp name)
-			   (or (cmp-env-search-macro name)
-			       (macro-function name)))))
+			   (cmp-macro-function name))))
 	   (c1funcall (list* (cmp-expand-macro fd fun) arguments)))
 	  ;; (FUNCALL lisp-expression ...)
 	  ((not (eq (first fun) 'FUNCTION))
@@ -155,7 +157,8 @@
   (cond
     ;; Check whether it is a global function that we cannot call directly.
      ((and (or (null loc) (fun-global loc)) (not (inline-possible fname)))
-      (if (and *compile-to-linking-call* (<= *debug* 1))
+      (if (and *compile-to-linking-call*
+	       (<= (cmp-env-optimization 'debug) 1))
 	  (call-linking-loc fname narg args)
 	  (call-unknown-global-loc fname nil narg args)))
 
@@ -166,7 +169,7 @@
 
      ;; Call to a function defined in the same file. Direct calls are
      ;; only emitted for low or neutral values of DEBUG is >= 2.
-     ((and (<= *debug* 1)
+     ((and (<= (cmp-env-optimization 'debug) 1)
 	   (or (fun-p loc)
 	       (and (null loc)
 		    (setf loc (find fname *global-funs* :test #'same-fname-p
@@ -180,7 +183,7 @@
      ;; Call to a function whose C language function name is known,
      ;; either because it has been proclaimed so, or because it belongs
      ;; to the runtime.
-     ((and (<= *debug* 1)
+     ((and (<= (cmp-env-optimization 'debug) 1)
 	   (setf fd (get-sysprop fname 'Lfun))
 	   (multiple-value-setq (minarg maxarg) (get-proclaimed-narg fname)))
       (call-exported-function-loc fname narg args fd minarg maxarg
@@ -191,7 +194,7 @@
       (call-exported-function-loc fname narg args fd minarg maxarg t))
 
      ;; Linking calls can only be made to symbols
-     ((and *compile-to-linking-call* (<= *debug* 1))
+     ((and *compile-to-linking-call* (<= (cmp-env-optimization 'debug) 1))
       (call-linking-loc fname narg args))
 
      (t (call-unknown-global-loc fname loc narg args))))
@@ -255,7 +258,20 @@
 	      (progn
 		(cmpnote "Emiting FDEFINITION for ~S" fname)
 		(setq loc (list 'FDEFINITION fname))))))
-  `(CALL "funcall" (,(1+ (length args)) ,loc ,@(coerce-locs args)) ,fname))
+  (do ((i 0 (1+ i))
+       (l args (cdr l)))
+      ((endp l)
+       (progn
+	 (cond ((> i *max-stack*)
+		(setf *max-stack* i))
+	       ((zerop *max-stack*)
+		(setf *max-stack* 1)))
+	 (wt-nl +ecl-local-stack-frame-variable+ ".top = "
+		+ecl-local-stack-variable+ "+" i ";")
+	 `(CALL "ecl_apply_from_stack_frame" ((LOCAL-FRAME NIL) ,loc) ,fname)))
+    (wt-nl +ecl-local-stack-variable+ "[" i "]=")
+    (wt-coerce-loc :object (second (first l)))
+    (wt ";")))
 
 ;;; Functions that use MAYBE-SAVE-VALUE should rebind *temp*.
 (defun maybe-save-value (value &optional (other-forms nil other-forms-flag))

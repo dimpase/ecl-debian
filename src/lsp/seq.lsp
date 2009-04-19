@@ -31,17 +31,21 @@
 	 :expected-type type
 	 :datum object))
 
-(defun closest-vector-type (type)
+(defun closest-sequence-type (type)
   (let (elt-type length name args)
     (cond ((consp type)
 	   (setq name (first type) args (cdr type)))
 	  ((si::instancep type)
-	   (setf name (class-name type) args nil))
+	   (setf name (class-name (the class type)) args nil))
 	  (t
 	   (setq name type args nil)))
     (case name
+      ((LIST)
+       ;; This is the only descriptor that does not match a real
+       ;; array type.
+       (setq elt-type 'LIST length '*))
       ((VECTOR)
-       (setq elt-type (if (endp args) '* (first args))
+       (setq elt-type (if (endp args) 'T (first args))
 	     length (if (endp (rest args)) '* (second args))))
       ((SIMPLE-VECTOR)
        (setq elt-type 'T
@@ -76,6 +80,8 @@
        ;; type is *. Instead we just compare with some specialized
        ;; types and otherwise fail.
        (dolist (i '(
+		    (NIL . NIL)
+		    (LIST . LIST)
                     #-unicode
                     (SIMPLE-STRING . BASE-CHAR)
                     #-unicode
@@ -103,6 +109,9 @@
 		    (error-sequence-type type)))
 	  (when (subtypep type (car i))
 	    (setq elt-type (cdr i) length '*)
+	    ;; The (NIL . NIL) case above
+	    (unless elt-type
+	      (error-sequence-type type))
 	    (return)))))
     (values elt-type length)))
 
@@ -111,38 +120,36 @@
 Creates and returns a sequence of the given TYPE and LENGTH.  If INITIAL-
 ELEMENT is given, then it becomes the elements of the created sequence.  The
 default value of INITIAL-ELEMENT depends on TYPE."
-  (if (subtypep type 'LIST)
-      (progn
-	(when (subtypep type 'NIL)
-	  (error-sequence-type type))
-	(setq sequence (make-list size :initial-element initial-element))
-	(unless (subtypep 'LIST type)
-	  (when (or (and (subtypep type 'NULL) (plusp size))
-		    (and (subtypep type 'CONS) (zerop size)))
-	    (error-sequence-length (make-list size :initial-element initial-element) type 0))))
-      (multiple-value-bind (element-type length)
-	  (closest-vector-type type)
-	(setq sequence (sys:make-vector (if (eq element-type '*) T element-type)
-					size nil nil nil nil))
-	(when iesp
-	  (do ((i 0 (1+ i))
-	       (size size))
-	      ((>= i size))
-	    (declare (fixnum i size))
-	    (setf (elt sequence i) initial-element)))
-	(unless (or (eql length '*) (eql length size))
-	  (error-sequence-length sequence type size))))
-  sequence)
+  (multiple-value-bind (element-type length)
+      (closest-sequence-type type)
+    (cond ((eq element-type 'LIST)
+	   (setq sequence (make-list size :initial-element initial-element))
+	   (unless (subtypep 'LIST type)
+	     (when (or (and (subtypep type 'NULL) (plusp size))
+		       (and (subtypep type 'CONS) (zerop size)))
+	       (error-sequence-length (make-list size :initial-element initial-element) type 0))))
+	  (t
+	   (setq sequence (sys:make-vector (if (eq element-type '*) T element-type)
+					   size nil nil nil nil))
+	   (when iesp
+	     (do ((i 0 (1+ i))
+		  (size size))
+		 ((>= i size))
+	       (declare (fixnum i size))
+	       (setf (elt sequence i) initial-element)))
+	   (unless (or (eql length '*) (eql length size))
+	     (error-sequence-length sequence type size))))
+    sequence))
 
 (defun make-seq-iterator (sequence &optional (start 0))
   (cond ((null start)
 	 (setf start 0))
 	((not (integerp start))
 	 (error "Value ~A is not a valid index into sequence ~A" start sequence)))
-  (cond ((>= start (length sequence))
-	 nil)
-	((consp sequence)
+  (cond ((consp sequence)
 	 (nthcdr start sequence))
+	((>= start (length sequence))
+	 nil)
 	(t
 	 start)))
 
@@ -162,22 +169,45 @@ default value of INITIAL-ELEMENT depends on TYPE."
 	   iterator)
       (rest iterator)))
 
+(defun coerce-to-list (object)
+  (if (listp object)
+      object
+      (do ((it (make-seq-iterator object) (seq-iterator-next object it))
+	   (output nil))
+	  ((null it) (nreverse output))
+	(push (seq-iterator-ref object it) output))))
+
+(defun coerce-to-vector (object elt-type length)
+  (let ((output object))
+    (unless (and (vectorp object)
+		 (eq (array-element-type object) elt-type))
+      (let* ((final-length (if (eq length '*) (length object) length)))
+	(setf output (make-vector elt-type final-length nil nil nil 0))
+	(do ((i (make-seq-iterator object) (seq-iterator-next output i))
+	     (j 0 (1+ j)))
+	    ((= j final-length)
+	     (setf object output))
+	  (declare (index j))
+	  (setf (aref output j) (seq-iterator-ref object i)))))
+    (unless (eq length '*)
+      (unless (= length (length output))
+	(check-type output `(vector ,elt-type (,length)) "coerced object")))
+    output))
+
 (defun concatenate (result-type &rest sequences)
   "Args: (type &rest sequences)
 Returns a new sequence of the specified type, consisting of all elements of
 SEQUENCEs."
-  (do* ((x (make-sequence result-type
-			 (apply #'+ (mapcar #'length sequences))))
-        (s sequences (cdr s))
-        (ix (make-seq-iterator x)))
-      ((null s) x)
-    (declare (fixnum i))
-    (do ((js (make-seq-iterator (car s)) (seq-iterator-next (car s) js))
-         (n (length (car s))))
-        ((null js))
-      (declare (fixnum j n))
-      (seq-iterator-set x ix (seq-iterator-ref (car s) js))
-      (setq ix (seq-iterator-next x ix)))))
+  (do* ((length-list (mapcar #'length sequences) (rest length-list))
+	(output (make-sequence result-type (apply #'+ length-list)))
+        (sequences sequences (rest sequences))
+        (i (make-seq-iterator output)))
+      ((null sequences) output)
+    (do* ((s (first sequences))
+	  (j (make-seq-iterator s) (seq-iterator-next s j)))
+	 ((null j))
+      (seq-iterator-set output i (seq-iterator-ref s j))
+      (setq i (seq-iterator-next output i)))))
 
 
 (defun map (result-type function sequence &rest more-sequences)

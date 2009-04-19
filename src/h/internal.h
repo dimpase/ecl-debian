@@ -55,68 +55,29 @@ extern cl_object ecl_alloc_bytecodes(cl_index data_size, cl_index code_size);
 /* compiler.d */
 
 struct cl_compiler_env {
-	cl_object variables;
-	cl_object macros;
-	cl_fixnum lexical_level;
-	cl_object constants;
+	cl_object variables;		/* Variables, tags, functions, etc: the env. */
+	cl_object macros;		/* Macros and function bindings */
+	cl_fixnum lexical_level;	/* =0 if toplevel form */
+	cl_object constants;		/* Constants for this form */
+	cl_object lex_env;		/* Lexical env. for eval-when */
+	cl_index env_depth;
+	cl_index env_size;
 	bool coalesce;
 	bool stepping;
 };
+
+typedef struct cl_compiler_env *cl_compiler_env_ptr;
 
 /* interpreter.d */
 
 #define cl_stack_ref(n) cl_env.stack[n]
 #define cl_stack_index() (cl_env.stack_top-cl_env.stack)
 
-#define ECL_BUILD_STACK_FRAME(name) \
-	struct ecl_stack_frame name##_aux;\
-	cl_object name=(name##_aux.t=t_frame,name##_aux.narg=name##_aux.sp=0,(cl_object)&(name##_aux));
+#define ECL_BUILD_STACK_FRAME(name,frame)	\
+	struct ecl_stack_frame frame;\
+	cl_object name = ecl_stack_frame_open((cl_object)&frame, 0);
 
 /* ffi.d */
-
-#define ECL_FFICALL_LIMIT 256
-
-enum ecl_ffi_tag {
-	ECL_FFI_CHAR = 0,
-	ECL_FFI_UNSIGNED_CHAR,
-	ECL_FFI_BYTE,
-	ECL_FFI_UNSIGNED_BYTE,
-	ECL_FFI_SHORT,
-	ECL_FFI_UNSIGNED_SHORT,
-	ECL_FFI_INT,
-	ECL_FFI_UNSIGNED_INT,
-	ECL_FFI_LONG,
-	ECL_FFI_UNSIGNED_LONG,
-	ECL_FFI_POINTER_VOID,
-	ECL_FFI_CSTRING,
-	ECL_FFI_OBJECT,
-	ECL_FFI_FLOAT,
-	ECL_FFI_DOUBLE,
-	ECL_FFI_VOID
-};
-
-union ecl_ffi_values {
-	char c;
-	unsigned char uc;
-	int8_t b;
-	uint8_t ub;
-	int i;
-	unsigned int ui;
-	short s;
-	unsigned short us;
-	long l;
-	unsigned long ul;
-	void *pv;
-	char *pc;
-	cl_object o;
-	float f;
-	double d;
-};
-
-enum ecl_ffi_calling_convention {
-	ECL_FFI_CC_CDECL = 0,
-	ECL_FFI_CC_STDCALL
-};
 
 struct ecl_fficall {
 	char *buffer_sp;
@@ -128,20 +89,18 @@ struct ecl_fficall {
 	cl_object cstring;
 };
 
-enum ecl_ffi_tag ecl_foreign_type_code(cl_object type);
-enum ecl_ffi_calling_convention ecl_foreign_cc_code(cl_object cc_type);
-void ecl_fficall_prepare(cl_object return_type, cl_object arg_types, cl_object cc_type);
-void ecl_fficall_push_bytes(void *data, size_t bytes);
-void ecl_fficall_push_int(int word);
-void ecl_fficall_align(int data);
-cl_object ecl_foreign_data_ref_elt(void *p, enum ecl_ffi_tag type);
-void ecl_foreign_data_set_elt(void *p, enum ecl_ffi_tag type, cl_object value);
+extern enum ecl_ffi_tag ecl_foreign_type_code(cl_object type);
+extern enum ecl_ffi_calling_convention ecl_foreign_cc_code(cl_object cc_type);
+extern void ecl_fficall_prepare(cl_object return_type, cl_object arg_types, cl_object cc_type);
+extern void ecl_fficall_push_bytes(void *data, size_t bytes);
+extern void ecl_fficall_push_int(int word);
+extern void ecl_fficall_align(int data);
 
-struct ecl_fficall_reg *ecl_fficall_prepare_extra(struct ecl_fficall_reg *registers);
-void ecl_fficall_push_arg(union ecl_ffi_values *data, enum ecl_ffi_tag type);
-void ecl_fficall_execute(void *f_ptr, struct ecl_fficall *fficall, enum ecl_ffi_tag return_type);
-void ecl_dynamic_callback_call(cl_object callback_info, char* buffer);
-void* ecl_dynamic_callback_make(cl_object data, enum ecl_ffi_calling_convention cc_type);
+extern struct ecl_fficall_reg *ecl_fficall_prepare_extra(struct ecl_fficall_reg *registers);
+extern void ecl_fficall_push_arg(union ecl_ffi_values *data, enum ecl_ffi_tag type);
+extern void ecl_fficall_execute(void *f_ptr, struct ecl_fficall *fficall, enum ecl_ffi_tag return_type);
+extern void ecl_dynamic_callback_call(cl_object callback_info, char* buffer);
+extern void* ecl_dynamic_callback_make(cl_object data, enum ecl_ffi_calling_convention cc_type);
 
 /* file.d */
 
@@ -257,11 +216,10 @@ typedef int fenv_t;
 # define fesetenv(bits) _controlfp(*(bits), MCW_EM)
 #endif
 
-/* unixfsys.d */
-
-#if defined(_MSC_VER) || defined(mingw32)
-extern cl_object si_get_library_pathname(void);
-#endif
+#define ECL_PI_D 3.14159265358979323846264338327950288
+#define ECL_PI_L 3.14159265358979323846264338327950288l
+#define ECL_PI2_D 1.57079632679489661923132169163975144
+#define ECL_PI2_L 1.57079632679489661923132169163975144l
 
 /*
  * Fake several ISO C99 mathematical functions

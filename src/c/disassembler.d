@@ -69,8 +69,11 @@ disassemble_lambda(cl_object bytecodes) {
 
 	bds_bind(@'*print-pretty*', Cnil);
 
-	if (bytecodes->bytecodes.name == OBJNULL)
+	if (bytecodes->bytecodes.name == OBJNULL ||
+	    bytecodes->bytecodes.name == @'si::bytecodes') {
+		print_noarg("\nEvaluated form:");
 		goto NO_ARGS;
+	}
 
 	/* Name of LAMBDA */
 	print_arg("\nName:\t\t", bytecodes->bytecodes.name);
@@ -111,10 +114,7 @@ NO_ARGS:
 
 /* -------------------- DISASSEMBLER CORE -------------------- */
 
-/* OP_FLET	nfun{arg}
-   fun1{object}
-   ...
-   funn{object}
+/* OP_FLET	nfun{arg}, fun1{object}
    ...
 
 	Executes the enclosed code in a lexical enviroment extended with
@@ -122,19 +122,20 @@ NO_ARGS:
 */
 static cl_opcode *
 disassemble_flet(cl_object bytecodes, cl_opcode *vector) {
-	cl_index nfun = GET_OPARG(vector);
+	cl_index nfun, first;
+	cl_object *data;
+	GET_OPARG(nfun, vector);
+	GET_OPARG(first, vector);
+	data = bytecodes->bytecodes.data + first;
 	print_noarg("FLET");
 	while (nfun--) {
-		cl_object fun = GET_DATA(vector, bytecodes);
+		cl_object fun = *(data++);
 		print_arg("\n\tFLET\t", fun->bytecodes.name);
 	}
 	return vector;
 }
 
-/* OP_LABELS	nfun{arg}
-   fun1{object}
-   ...
-   funn{object}
+/* OP_LABELS	nfun{arg}, fun1{object}
    ...
 
 	Executes the enclosed code in a lexical enviroment extended with
@@ -142,52 +143,18 @@ disassemble_flet(cl_object bytecodes, cl_opcode *vector) {
 */
 static cl_opcode *
 disassemble_labels(cl_object bytecodes, cl_opcode *vector) {
-	cl_index nfun = GET_OPARG(vector);
+	cl_index nfun, first;
+	cl_object *data;
+	GET_OPARG(nfun, vector);
+	GET_OPARG(first, vector);
+	data = bytecodes->bytecodes.data + first;
 	print_noarg("LABELS");
 	while (nfun--) {
-		cl_object fun = GET_DATA(vector, bytecodes);
+		cl_object fun = *(data++);
 		print_arg("\n\tLABELS\t", fun->bytecodes.name);
 	}
 	return vector;
 }
-
-/* OP_MSETQ	n{arg}
-   {fixnumn}
-   ...
-   {fixnum1}
-
-	Sets N variables to the N values in VALUES(), filling with
-	NIL when there are values missing. Local variables are denoted
-	with an integer which points a position in the lexical environment,
-	while special variables are denoted with a negative index X, which
-	denotes the value -1-X in the table of constants.
-*/
-static cl_opcode *
-disassemble_msetq(cl_object bytecodes, cl_opcode *vector)
-{
-	int i, n = GET_OPARG(vector);
-	bool newline = FALSE;
-
-	for (i=0; i<n; i++) {
-		cl_fixnum var = GET_OPARG(vector);
-		if (newline) {
-			print_noarg("\n\t");
-		} else
-			newline = TRUE;
-		if (var >= 0) {
-			cl_format(4, Ct,
-				  make_constant_base_string("MSETQ\t~D,VALUES(~D)"),
-				  MAKE_FIXNUM(var), MAKE_FIXNUM(i));
-		} else {
-			cl_object name = bytecodes->bytecodes.data[-1-var];
-			cl_format(4, Ct,
-				  make_constant_base_string("MSETQS\t~A,VALUES(~D)"),
-				  name, MAKE_FIXNUM(i));
-		}
-	}
-	return vector;
-}
-
 
 /* OP_PROGV	bindings{list}
    ...
@@ -217,21 +184,20 @@ labeln:
 */
 static cl_opcode *
 disassemble_tagbody(cl_object bytecodes, cl_opcode *vector) {
-	cl_index i, ntags = GET_OPARG(vector);
-	cl_object lex_old = cl_env.lex_env;
+	cl_index i, ntags;
 	cl_opcode *destination;
-
+	GET_OPARG(ntags, vector);
 	print_noarg("TAGBODY");
 	for (i=0; i<ntags; i++) {
 		GET_LABEL(destination, vector);
-		cl_format(4, Ct,
-			  make_constant_base_string("\n\tTAG\t~D @@ ~D"),
-			  MAKE_FIXNUM(i), MAKE_FIXNUM(destination-base));
+		ecl_princ_str("\n\tTAG\t", Ct);
+		ecl_princ(MAKE_FIXNUM(i), Ct);
+		ecl_princ_str(" @@ ", Ct);
+		ecl_princ(MAKE_FIXNUM(destination - base), Ct);
 	}
 	vector = disassemble(bytecodes, vector);
 	print_noarg("\t\t; tagbody");
 
-	cl_env.lex_env = lex_old;
 	return vector;
 }
 
@@ -239,11 +205,28 @@ static cl_opcode *
 disassemble(cl_object bytecodes, cl_opcode *vector) {
 	const char *string;
 	cl_object o;
-	cl_fixnum n;
-	cl_object line_format = make_constant_base_string("~%~4d\t");
+	cl_fixnum n, m, env_index;
+	cl_object line_format;
+	cl_object *data = bytecodes->bytecodes.data;
+	cl_object line_no;
 
+	if (cl_fboundp(@'si::formatter-aux') != Cnil)
+		line_format = make_constant_base_string("~%~4d\t");
+	else
+		line_format = Cnil;
  BEGIN:
-	cl_format(3, Ct, line_format, MAKE_FIXNUM(vector-base));
+	if (1) {
+		line_no = MAKE_FIXNUM(vector-base);
+	} else {
+		line_no = @'*';
+	}
+	if (line_format != Cnil) {
+		cl_format(3, Ct, line_format, line_no);
+	} else {
+		ecl_princ_char('\n', Ct);
+		ecl_princ(line_no, Ct);
+		ecl_princ_char('\t', Ct);
+	}
 	switch (GET_OPCODE(vector)) {
 
 	/* OP_NOP
@@ -251,18 +234,26 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	*/
 	case OP_NOP:		string = "NOP";	goto NOARG;
 
+	case OP_INT:		string = "QUOTE\t";
+				GET_OPARG(n, vector);
+				goto OPARG;
+
+	case OP_PINT:		string = "PUSH\t";
+				GET_OPARG(n, vector);
+				goto OPARG;
+
 	/* OP_QUOTE
 		Sets VALUES(0) to an immediate value.
 	*/
 	case OP_QUOTE:		string = "QUOTE\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 
 	/* OP_VAR	n{arg}
 		Sets NVALUES=1 and VALUES(0) to the value of the n-th local.
 	*/
 	case OP_VAR:		string = "VAR\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 
 	/* OP_VARS	var{symbol}
@@ -270,7 +261,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		VAR should be either a special variable or a constant.
 	*/
 	case OP_VARS:		string = "VARS\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 
 	/* OP_PUSH
@@ -286,7 +277,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		Pushes the value of the n-th local onto the stack.
 	*/
 	case OP_PUSHV:		string = "PUSHV\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 
 	/* OP_PUSHVS	var{symbol}
@@ -294,14 +285,14 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		VAR should be either a special variable or a constant.
 	*/
 	case OP_PUSHVS:		string = "PUSHVS\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 
 	/* OP_PUSHQ	value{object}
 		Pushes "value" onto the stack.
 	*/
 	case OP_PUSHQ:		string = "PUSH\t'";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 
 	/* OP_PUSHVALUES
@@ -320,22 +311,27 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	*/
 	case OP_POP:		string = "POP";
 				goto NOARG;
+	/* OP_POP1
+		Pops a single value pushed by a OP_PUSH[V[S]] operator.
+	*/
+	case OP_POP1:		string = "POP1";
+				goto NOARG;
 	/* OP_POPVALUES
 		Pops all values pushed by a OP_PUSHVALUES operator.
 	*/
 	case OP_POPVALUES:	string = "POP\tVALUES";
 				goto NOARG;
 
-	/* OP_BLOCK	label{arg}, block-name{symbol}
-	     ...
-	   OP_EXIT
-	   label:
-
-	   Executes the enclosed code in a named block.  LABEL points
-	   to the first instruction after OP_EXIT.
-	*/
 	case OP_BLOCK:		string = "BLOCK\t";
-				goto JEQL;
+				GET_DATA(o, vector, data);
+				goto ARG;
+	case OP_CATCH:		string = "CATCH\tREG0";
+				goto NOARG;
+	case OP_DO:		string = "BLOCK\t";
+				o = Cnil;
+				goto ARG;
+	case OP_FRAME:		string = "FRAME\t";
+				goto JMP;
 
 	/* OP_CALL	n{arg}
 		Calls the function in VALUES(0) with N arguments which
@@ -343,7 +339,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		are left in VALUES(...)
 	*/
 	case OP_CALL:		string = "CALL\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 
 	/* OP_CALLG	n{arg}, name{arg}
@@ -351,8 +347,8 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		deposited in the stack. The output values are left in VALUES.
 	*/
 	case OP_CALLG:		string = "CALLG\t";
-				n = GET_OPARG(vector);
-				o = GET_DATA(vector, bytecodes);
+				GET_OPARG(n, vector);
+				GET_DATA(o, vector, data);
 				goto OPARG_ARG;
 
 	/* OP_FCALL	n{arg}
@@ -362,35 +358,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	*/
 	case OP_STEPCALL:
 	case OP_FCALL:		string = "FCALL\t";
-				n = GET_OPARG(vector);
-				goto OPARG;
-
-	/* OP_PCALL	n{arg}
-		Calls the function in VALUES(0) with N arguments which
-		have been deposited in the stack. The first output value
-		is pushed on the stack.
-	*/
-	case OP_PCALL:		string = "PCALL\t";
-				n = GET_OPARG(vector);
-				goto OPARG;
-
-	/* OP_PCALLG	n{arg}, name{arg}
-		Calls the function NAME with N arguments which have been
-		deposited in the stack. The first output value is pushed on
-		the stack.
-	*/
-	case OP_PCALLG:		string = "PCALLG\t";
-				n = GET_OPARG(vector);
-				o = GET_DATA(vector, bytecodes);
-				goto OPARG_ARG;
-
-	/* OP_PFCALL	n{arg}
-		Calls the function in the stack with N arguments which
-		have been deposited in the stack. The first output value
-		is pushed on the stack.
-	*/
-	case OP_PFCALL:		string = "PFCALL\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 
 	/* OP_MCALL
@@ -400,16 +368,11 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	case OP_MCALL:		string = "MCALL";
 				goto NOARG;
 
-	/* OP_CATCH	label{arg}
-	   ...
-	   OP_EXIT_FRAME
-	   label:
-
-	   Sets a catch point using the tag in VALUES(0). LABEL points to the
-	   first instruction after the end (OP_EXIT) of the block
+	/* OP_ENTRY
+		Marks the entry of a lambda form
 	*/
-	case OP_CATCH:		string = "CATCH\t";
-				goto JMP;
+	case OP_ENTRY:		string = "ENTRY";
+				goto NOARG;
 	/* OP_EXIT
 		Marks the end of a high level construct
 	*/
@@ -437,7 +400,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		environment. This last value takes precedence.
 	*/
 	case OP_LFUNCTION:	string = "LOCFUNC\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 
 	/* OP_FUNCTION	name{symbol}
@@ -446,7 +409,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		environment. This last value takes precedence.
 	*/
 	case OP_FUNCTION:	string = "SYMFUNC\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 
 	/* OP_CLOSE	name{arg}
@@ -455,7 +418,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		environment. This last value takes precedence.
 	*/
 	case OP_CLOSE:		string = "CLOSE\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 
 	/* OP_GO	n{arg}
@@ -465,8 +428,8 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		purposes.
 	*/
 	case OP_GO:		string = "GO\t";
-				n = GET_OPARG(vector);
-				o = GET_DATA(vector, bytecodes);
+				GET_OPARG(n, vector);
+				GET_DATA(o, vector, data);
 				goto OPARG_ARG;
 
 	/* OP_RETURN	n{arg}
@@ -474,7 +437,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		occuppies the n-th position.
 	*/
 	case OP_RETURN:		string = "RETFROM";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 
 	/* OP_THROW
@@ -498,17 +461,17 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	case OP_JNIL:		string = "JNIL\t";
 				goto JMP;
 	case OP_JT:		string = "JT\t";
-	JMP: {			cl_oparg jmp = GET_OPARG(vector);
-				n = vector + jmp - OPARG_SIZE - base;
+	JMP: {			GET_OPARG(m, vector);
+				n = vector + m - OPARG_SIZE - base;
 				goto OPARG;
 	}
 	case OP_JEQL:		string = "JEQL\t";
 				goto JEQL;
 	case OP_JNEQL:		string = "JNEQL\t";
 	JEQL: {			cl_oparg jmp;
-				o = GET_DATA(vector, bytecodes);
-				jmp = GET_OPARG(vector);
-				n = vector + jmp - OPARG_SIZE - base;
+				GET_DATA(o, vector, data);
+				GET_OPARG(m, vector);
+				n = vector + m - OPARG_SIZE - base;
 				goto OPARG_ARG;
 	}
 	case OP_NOT:		string = "NOT";
@@ -518,13 +481,13 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		Undo "n" bindings of lexical variables.
 	*/
 	case OP_UNBIND:		string = "UNBIND\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 	/* OP_UNBINDS	n{arg}
 		Undo "n" bindings of special variables.
 	*/
 	case OP_UNBINDS:	string = "UNBINDS\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 	/* OP_BIND	name{symbol}
 	   OP_PBIND	name{symbol}
@@ -535,24 +498,24 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		to the n-th value of VALUES(...).
 	*/
 	case OP_BIND:		string = "BIND\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 	case OP_PBIND:		string = "PBIND\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 	case OP_VBIND:		string = "VBIND\t";
-				n = GET_OPARG(vector);
-				o = GET_DATA(vector, bytecodes);
+				GET_OPARG(n, vector);
+				GET_DATA(o, vector, data);
 				goto OPARG_ARG;
 	case OP_BINDS:		string = "BINDS\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 	case OP_PBINDS:		string = "PBINDS\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 	case OP_VBINDS:		string = "VBINDS\t";
-				n = GET_OPARG(vector);
-				o = GET_DATA(vector, bytecodes);
+				GET_OPARG(n, vector);
+				GET_DATA(o, vector, data);
 				goto OPARG_ARG;
 	/* OP_SETQ	n{arg}
 	   OP_PSETQ	n{arg}
@@ -563,20 +526,27 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		first value on the stack (OP_PSETQ[S]).
 	*/
 	case OP_SETQ:		string = "SETQ\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 	case OP_PSETQ:		string = "PSETQ\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
+	case OP_VSETQ:		string = "VSETQ\t";
+				GET_OPARG(m, vector);
+				o = MAKE_FIXNUM(m);
+				GET_OPARG(n, vector);
+				goto OPARG_ARG;
 	case OP_SETQS:		string = "SETQS\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 	case OP_PSETQS:		string = "PSETQS\t";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
+	case OP_VSETQS:		string = "VSETQS\t";
+				GET_DATA(o, vector, data);
+				GET_OPARG(n, vector);
+				goto OPARG_ARG;
 
-	case OP_MSETQ:		vector = disassemble_msetq(bytecodes, vector);
-				break;
 	case OP_PROGV:		vector = disassemble_progv(bytecodes, vector);
 				break;
 
@@ -584,7 +554,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 		Pop N values from the stack and store them in VALUES(...)
 	*/
 	case OP_VALUES:		string = "VALUES\t";
-				n = GET_OPARG(vector);
+				GET_OPARG(n, vector);
 				goto OPARG;
 	/* OP_NTHVAL
 		Set VALUES(0) to the N-th value of the VALUES(...) list.
@@ -592,30 +562,8 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	*/
 	case OP_NTHVAL:		string = "NTHVAL\t";
 				goto NOARG;
-	/* OP_DO	label
-	     ...	; code executed within a NIL block
-	   OP_EXIT_FRAME
-	   label:
-
-	   High level construct for the DO and BLOCK forms.
-	*/
-	case OP_DO:		string = "DO\t";
-				goto JMP;
 	case OP_TAGBODY:	vector = disassemble_tagbody(bytecodes, vector);
 				break;
-	/* OP_PROTECT	label
-	     ...	; code to be protected and whose value is output
-	   OP_PROTECT_NORMAL
-	   label:
-	     ...	; code executed at exit
-	   OP_PROTECT_EXIT
-
-	  High level construct for UNWIND-PROTECT. The first piece of code is
-	  executed and its output value is saved. Then the second piece of code
-	  is executed and the output values restored. The second piece of code
-	  is always executed, even if a THROW, RETURN or GO happen within the
-	  first piece of code.
-	*/
 	case OP_PROTECT:	string = "PROTECT\t";
 				goto JMP;
 	case OP_PROTECT_NORMAL:	string = "PROTECT\tNORMAL";
@@ -627,10 +575,28 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	case OP_PUSHNIL:	string = "PUSH\t'NIL";
 		    		goto NOARG;
 	case OP_STEPIN:		string = "STEP\tIN,";
-				o = GET_DATA(vector, bytecodes);
+				GET_DATA(o, vector, data);
 				goto ARG;
 	case OP_STEPOUT:	string = "STEP\tOUT";
 				goto NOARG;
+
+	case OP_CONS:		string = "CONS"; goto NOARG;
+	case OP_ENDP:		string = "ENDP\tREG0"; goto NOARG;
+	case OP_CAR:		string = "CAR\tREG0"; goto NOARG;
+	case OP_CDR:		string = "CDR\tREG0"; goto NOARG;
+	case OP_LIST:		string = "LIST\t";
+				GET_OPARG(n, vector);
+				goto OPARG;
+	case OP_LISTA:		string = "LIST*\t";
+				GET_OPARG(n, vector);
+				goto OPARG;
+	case OP_CALLG1:		string = "CALLG1\t";
+				GET_DATA(o, vector, data);
+				goto ARG;
+	case OP_CALLG2:		string = "CALLG2\t";
+				GET_DATA(o, vector, data);
+				goto ARG;
+
 	default:
 		FEerror("Unknown code ~S", 1, MAKE_FIXNUM(*(vector-1)));
 		return vector;
@@ -650,6 +616,9 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 cl_object
 si_bc_disassemble(cl_object v)
 {
+	if (type_of(v) == t_bclosure) {
+		v = v->bclosure.code;
+	}
 	if (type_of(v) == t_bytecodes) {
 		disassemble_lambda(v);
 		@(return v)
@@ -662,12 +631,30 @@ si_bc_split(cl_object b)
 {
 	cl_object vector;
 	cl_object data;
+	cl_object lex = Cnil;
 
+	if (type_of(b) == t_bclosure) {
+		b = b->bclosure.code;
+		lex = b->bclosure.lex;
+	}
 	if (type_of(b) != t_bytecodes)
 		@(return Cnil Cnil)
 	vector = ecl_alloc_simple_vector(b->bytecodes.code_size, aet_b8);
 	vector->vector.self.b8 = (uint8_t*)b->bytecodes.code;
 	data = ecl_alloc_simple_vector(b->bytecodes.data_size, aet_object);
 	data->vector.self.t = b->bytecodes.data;
-	@(return b->bytecodes.lex vector data)
+	@(return lex vector data)
+}
+
+cl_object
+si_bc_file(cl_object b)
+{
+	if (type_of(b) == t_bclosure) {
+		b = b->bclosure.code;
+	}
+	if (type_of(b) != t_bytecodes) {
+		@(return Cnil Cnil);
+	} else {
+		@(return b->bytecodes.file b->bytecodes.file_position);
+	}
 }

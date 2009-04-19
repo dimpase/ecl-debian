@@ -101,6 +101,7 @@ char pool[POOLSIZE];
 char *poolp;
 
 char *function;
+int   function_code;
 char *function_symbol;
 char *function_c_name;
 
@@ -136,6 +137,7 @@ int naux;
 char *result[MAXRES];
 int nres;
 
+void
 put_lineno(void)
 {
 	static int flag = 0;
@@ -147,12 +149,14 @@ put_lineno(void)
 	}
 }
 
+void
 error(char *s)
 {
 	printf("Error in line %d: %s.\n", lineno, s);
 	exit(1);
 }
 
+void
 error_symbol(char *s)
 {
 	printf("Error in line %d: illegal symbol %s.\n", lineno, s);
@@ -245,24 +249,31 @@ search_keyword(const char *name)
 }
 
 char *
-search_symbol(char *name)
+search_symbol(char *name, int *symbol_code)
 {
 	int i;
 	for (i = 0; cl_symbols[i].name != NULL; i++) {
 		if (!strcasecmp(name, cl_symbols[i].name)) {
 			name = poolp;
-			pushstr("ECL_SYM(\"");
-			pushstr(cl_symbols[i].name);
-			pushstr("\",");
-			if (i >= 1000)
-				pushc((i / 1000) % 10 + '0');
-			if (i >= 100)
-				pushc((i / 100) % 10 + '0');
-			if (i >= 10)
-				pushc((i / 10) % 10 + '0');
-			pushc(i % 10 + '0');
-			pushstr(")");
-			pushc(0);
+			if (i == 0) {
+				pushstr("Cnil");
+				pushc(0);
+			} else {
+				pushstr("ECL_SYM(\"");
+				pushstr(cl_symbols[i].name);
+				pushstr("\",");
+				if (i >= 1000)
+					pushc((i / 1000) % 10 + '0');
+				if (i >= 100)
+					pushc((i / 100) % 10 + '0');
+				if (i >= 10)
+					pushc((i / 10) % 10 + '0');
+				pushc(i % 10 + '0');
+				pushstr(")");
+				pushc(0);
+			}
+			if (symbol_code)
+				*symbol_code = i;
 			return name;
 		}
 	}
@@ -273,7 +284,6 @@ char *
 read_symbol()
 {
 	char c, *name = poolp;
-	int i;
 
 	c = readc();
 	while (c != '\'') {
@@ -283,7 +293,7 @@ read_symbol()
 	}
 	pushc(0);
 
-	name = search_symbol(poolp = name);
+	name = search_symbol(poolp = name, 0);
 	if (name == NULL) {
 		name = poolp;
 		printf("\nUnknown symbol: %s\n", name);
@@ -312,7 +322,6 @@ char *
 read_function()
 {
 	char c, *name = poolp;
-	int i;
 
 	c = readc();
 	if (c == '"') {
@@ -436,7 +445,7 @@ void
 get_function(void)
 {
 	function = read_function();
-	function_symbol = search_symbol(function);
+	function_symbol = search_symbol(function, &function_code);
 	if (function_symbol == NULL) {
 		function_symbol = poolp;
 		pushstr("Cnil");
@@ -661,7 +670,7 @@ put_declaration(void)
   }
   if (nopt == 0 && !rest_flag && !key_flag) {
     put_lineno();
-    fprintf(out, "\tif (narg!=%d) FEwrong_num_arguments(%s);\n", nreq, function_symbol);
+    fprintf(out, "\tif (narg!=%d) FEwrong_num_arguments(MAKE_FIXNUM(%d));\n", nreq, function_code);
   } else {
     simple_varargs = !rest_flag && !key_flag && ((nreq + nopt) < 32);
     if (key_flag) {
@@ -686,10 +695,10 @@ put_declaration(void)
     if (nopt > 0 && !rest_flag && !key_flag) {
       fprintf(out, "|| narg > %d", nreq + nopt);
     }
-    fprintf(out, ") FEwrong_num_arguments(%s);\n", function_symbol);
+    fprintf(out, ") FEwrong_num_arguments(MAKE_FIXNUM(%d));\n", function_code);
     for (i = 0;  i < nopt;  i++) {
       put_lineno();
-      fprintf(out, "\tif (narg > %d) {\n", nreq+i, optional[i].o_var);
+      fprintf(out, "\tif (narg > %d) {\n", nreq+i);
       put_lineno();
       fprintf(out, simple_varargs?
 	      "\t\t%s = va_arg(%s,cl_object);\n":
@@ -850,9 +859,10 @@ LOOP:
 int
 main(int argc, char **argv)
 {
-	char *p, *q;
 	char outfile[BUFSIZ];
-
+#ifdef _MSC_VER
+	char *p;
+#endif
 	if (argc < 2 || !strcmp(argv[1],"-")) {
 	  in = stdin;
 	  strcpy(filename, "-");
