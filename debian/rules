@@ -96,7 +96,7 @@ clean: unpatch
 install: build-arch
 	dh_testdir -a
 	dh_testroot -a
-	dh_clean -k -a
+	dh_prep -a
 	dh_installdirs -a
 
 	# Add here commands to install the package into debian/ecl
