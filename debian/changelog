@@ -1,3 +1,9 @@
+ecl (0.9l-1) unstable; urgency=low
+
+  * New upstream with major changes.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Sun, 19 Apr 2009 17:14:22 +0200
+
 ecl (0.9j-20080306-5) unstable; urgency=low
 
   * debian/control:
