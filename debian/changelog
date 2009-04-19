@@ -2,8 +2,9 @@ ecl (0.9l-1) unstable; urgency=low
 
   * New upstream with major changes.
   * now using debhelper version 7
+  * updated standard version without any real changes
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Sun, 19 Apr 2009 17:15:26 +0200
+ -- Peter Van Eynde <pvaneynd@debian.org>  Sun, 19 Apr 2009 17:15:39 +0200
 
 ecl (0.9j-20080306-5) unstable; urgency=low
 
