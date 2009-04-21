@@ -4,8 +4,9 @@ ecl (0.9l-1) unstable; urgency=low
   * now using debhelper version 7
   * updated standard version without any real changes
   * use dh_prep instead of dh_clean -k
+  * use redirected sf.net url for watch file
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Sun, 19 Apr 2009 17:15:58 +0200
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 21 Apr 2009 05:30:58 +0200
 
 ecl (0.9j-20080306-5) unstable; urgency=low
 
