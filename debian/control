@@ -39,6 +39,7 @@ Description: Embeddable Common-Lisp: has an interpreter and can compile to C
 Package: ecl-doc
 Section: doc
 Architecture: all
+Depends: ${misc:Depends}
 Suggests: ecl
 Description: documentation for Embeddable Common-Lisp
  Contains the Info and HTML documentation.
