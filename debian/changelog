@@ -6,8 +6,9 @@ ecl (0.9l-1) unstable; urgency=low
   * use dh_prep instead of dh_clean -k
   * use redirected sf.net url for watch file
   * added  for ecl-doc
+  * remove redundant Section field for binary package
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 21 Apr 2009 05:33:39 +0200
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 21 Apr 2009 05:37:29 +0200
 
 ecl (0.9j-20080306-5) unstable; urgency=low
 
