@@ -8,8 +8,9 @@ ecl (0.9l-1) unstable; urgency=low
   * added ${misc:Depends} for ecl-doc
   * remove redundant Section field for binary package
   * remove empty usr/lib/ecl/h directory
+  * fixed gnu typo in control file
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Sun, 26 Apr 2009 21:46:21 +0200
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 28 Apr 2009 10:09:15 +0200
 
 ecl (0.9j-20080306-5) unstable; urgency=low
 
