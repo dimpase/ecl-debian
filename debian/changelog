@@ -1,4 +1,4 @@
-ecl (0.9l-1) unstable; urgency=low
+ecl (9.4.1-1) unstable; urgency=low
 
   * New upstream with major changes.
   * now using debhelper version 7
