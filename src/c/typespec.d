@@ -75,7 +75,7 @@ void
 FEcircular_list(cl_object x)
 {
 	/* FIXME: Is this the right way to rebind it? */
-	bds_bind(@'*print-circle*', Ct);
+	ecl_bds_bind(ecl_process_env(), @'*print-circle*', Ct);
 	cl_error(9, @'simple-type-error', @':format-control',
 		    make_constant_base_string("Circular list ~D"),
 		    @':format-arguments', cl_list(1, x),
@@ -424,7 +424,8 @@ cl_type_of(cl_object x)
 		t = x->pathname.logical? @'logical-pathname' : @'pathname';
 		break;
 	case t_list:
-		return Null(x) ? @'null' : @'cons';
+		t = Null(x) ? @'null' : @'cons';
+		break;
 	default:
 		t = ecl_type_to_symbol(tx);
 	}

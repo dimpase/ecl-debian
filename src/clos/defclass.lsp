@@ -24,36 +24,6 @@
 	   (member form '(t nil +initform-unsupplied+))
 	   (and (boundp form) (constantp form) (eq (symbol-value form) form)))))
 
-(defun make-function-initform (form)
-  ;; INITFORM is a form that is to be evaluated at runtime. If it is a
-  ;; constant value, we output simply a quoted form. If it is not,
-  ;; we output a function that can be invoked at runtime to retrieve
-  ;; the value.
-  ;;
-  ;; Output => (FUNCTION (LAMBDA () form))
-  ;;        => (QUOTE ...)
-  ;;
-  (flet ((enclose (form) `#'(lambda () ,form)))
-    (cond
-      ;; We generate function for non constant forms
-      ((not (constantp form))
-       (enclose form))
-      ;; Constants other than functions become quoted
-      ((and (not (functionp form))
-	    (self-evaluating-p form))
-       (list 'quote form))
-      ;; Quoted forms with arguments which are not functions are
-      ;; output as such. (the check for functions is weird, but we are
-      ;; paranoid anyway)
-      ((and (consp form)
-	    (eq (first form) 'quote)
-	    (not (functionp (second form))))
-       form)
-      ;; All other stuff, including symbols other than keywords, T and NIL
-      ;; gets in a function form
-      (t
-       (enclose form)))))
-
 (defun parse-default-initargs (default-initargs)
   (declare (si::c-local))
   (do* ((output-list nil)
@@ -94,16 +64,15 @@
 	((endp l)
 	 (setf slots
 	       (if (every #'constantp slots)
-		   (list 'quote (mapcar #'si::maybe-unquote slots))
+		   (ext:maybe-quote (mapcar #'ext:maybe-unquote slots))
 		   `(list ,@slots))))
       (let* ((slotd (first l))
-	     (initform (make-function-initform (getf slotd :initform nil))))
-	(if (eq (first initform) 'QUOTE)
-	    (setf (getf slotd :initform nil) (second initform)
-		  slotd (list 'quote slotd))
-	    (setf slotd (mapcar #'(lambda (x) `',x) slotd)
-		  (getf slotd :initform nil) initform
-		  slotd (list* 'list slotd)))
+	     (initfun (getf slotd :initfunction nil)))
+	(if initfun
+	    (progn
+	      (remf slotd :initfunction)
+	      (setf slotd (list* 'list :initfunction initfun (mapcar #'ext:maybe-quote slotd))))
+	    (setf slotd (ext:maybe-quote slotd)))
 	(setf (first l) slotd)))
     (dolist (option args)
       (let ((option-name (first option))
@@ -116,13 +85,13 @@
 	(setq option-value
 	      (case option-name
 		((:metaclass :documentation)
-		 (list 'quote (second option)))
+		 (ext:maybe-quote (second option)))
 		(:default-initargs
 		 (setf option-name :direct-default-initargs)
 		 (parse-default-initargs (rest option)))
 		(otherwise
-		 (list 'quote (rest option)))))
-	(setf options (list* `',option-name option-value options))))
+		 (ext:maybe-quote (rest option)))))
+	(setf options (list* (ext:maybe-quote option-name) option-value options))))
     `(eval-when (compile load eval)
        ,(ext:register-with-pde form
 			       `(ensure-class ',name :direct-superclasses
@@ -155,139 +124,119 @@
     (warn "Ignoring definition for class ~S" name)))
 
 ;;; ----------------------------------------------------------------------
-;;; support for standard-class
+;;; ORDERING OF CLASSES
+;;;
+;;; We have two implementations of the algorithm described in Sect. 4.3.5
+;;; of the Common Lisp Hyperspec. The first implementation is a literal
+;;; transcription of that algorithm. The second implementation does not
+;;; create the list of pairs for describing the order, it is not recursive
+;;; and conses less
+#+(or)
+(defun compute-clos-class-precedence-list (new-class superclasses)
+  (labels ((pair-list (l)
+	     (if (or (null l) (endp (cdr l)))
+		 nil
+		 (cons (cons (first l) (second l))
+		       (pair-list (rest l)))))
+	   (walk-supers (parent superclasses class-list precedence-alist)
+	     (let ((new-alist (pair-list (if parent
+					     (list* parent superclasses)
+					     superclasses))))
+	       (setf precedence-alist (nconc new-alist precedence-alist)
+		     class-list (union superclasses class-list)))
+	     (dolist (c superclasses)
+	       (multiple-value-setq (class-list precedence-alist)
+		 (walk-supers c (class-direct-superclasses c) class-list precedence-alist)))
+	     (values class-list precedence-alist))
+	   (cycle-error (new-class)
+	     (error "A cycle has been detected in the class precedence list for ~A."
+		    (class-name new-class)))
+	   (free-elements (class-list precedence-alist)
+	     (set-difference class-list
+			     (delete-duplicates (mapcar #'cdr precedence-alist))))
+	   (next-element (free-list cpl)
+	     (if (or (null cpl) (endp free-list) (endp (rest free-list)))
+		 (first free-list)
+		 (dolist (i cpl nil)
+		   (dolist (j (class-direct-superclasses i))
+		     (when (member j free-list)
+		       (return-from next-element j)))))))
+  (if (endp (rest superclasses))
+      (let ((class (first superclasses)))
+	(list* new-class (class-precedence-list class)))
+      (multiple-value-bind (class-list precedence-alist)
+	  (walk-supers nil superclasses nil nil)
+	  (do ((cpl (list new-class)))
+	      ((null class-list)
+	       (if precedence-alist (cycle-error new-class) (nreverse cpl)))
+	    (let* ((candidates (free-elements class-list precedence-alist))
+		   (next (next-element candidates cpl)))
+	      (unless next
+		(cycle-error new-class))
+	      (setf precedence-alist (delete next precedence-alist :key #'car)
+		    class-list (delete next class-list)
+		    cpl (cons next cpl))))))))
 
-(defun compute-clos-class-precedence-list (class-name superclasses)
-  ;; We start by computing two values.
-  ;;   CPL
-  ;;     The depth-first left-to-right up to joins walk of the supers tree.
-  ;;     This is equivalent to depth-first right-to-left walk of the
-  ;;     tree with all but the last occurence of a class removed from
-  ;;     the resulting list.  This is in fact how the walk is implemented.
-  ;;
-  ;;   PRECEDENCE-ALIST
-  ;;     An alist of the precedence relations. The car of each element
-  ;;     of the precedence-alist is a class C, the cdr is all the classes C'
-  ;;     which should precede C because either:
-  ;;       C is a local super of C'
-  ;;      or
-  ;;       C' appears before C in some class's local-supers.
-  ;;
-  ;;     Thus, the precedence-alist reflects the two constraints that:
-  ;;       1. A class must appear in the CPL before its local supers.
-  ;;       2. Order of local supers is preserved in the CPL.
-  ;;
-  (labels
-   ((must-move-p (element list precedence-alist &aux move)
-		 (dolist (must-precede (cdr (assoc element
-						   precedence-alist
-						   :test #'eq)))
-			 (when (setq move (member must-precede (cdr list)
-						  :test #'eq))
-			       (return move))))
-    (find-farthest-move
-     (element move precedence-alist)
-     (dolist (must-precede (transitive-closure element precedence-alist))
-	     (setq move (or (member must-precede move :test #'eq) move)))
-     move)
-    (transitive-closure
-     (class precedence-alist)
-     (let* ((closure ()))
-       (labels ((walk (element path)
-		      (when (member element path :test #'eq)
-			    (class-ordering-error
-			     class-name element path precedence-alist))
-		      (dolist (precede
-			       (cdr (assoc element
-					   precedence-alist :test #'eq)))
-			      (unless (member precede closure :test #'eq)
-				      (pushnew precede closure)
-				      (walk precede (cons element path))))))
-	       (walk class nil)
-	       closure))))
-
-   (multiple-value-bind
-    (cpl precedence-alist)
-    (walk-supers superclasses nil nil)
-    (let* ((tail cpl)
-	   (element nil)
-	   (move nil))
-      ;; For each class in the cpl, make sure that there are no classes after
-      ;; it which should be before it.  We do this by cdring down the list,
-      ;; making sure that for each element of the list, none of its
-      ;; must-precedes come after it in the list. If we find one, we use the
-      ;; transitive closure of the must-precedes (call find-farthest-move) to
-      ;; see where the class must really be moved. We use a hand-coded loop
-      ;; so that we can splice things in and out of the CPL as we go.
-      (loop (when (null tail) (return))
-	    (setq element (car tail)
-		  move (must-move-p element tail precedence-alist))
-	    (cond (move
-		   (setq move (find-farthest-move element move precedence-alist))
-		   (setf (cdr move) (cons element (cdr move)))
-		   (setf (car tail) (cadr tail))
-		   (setf (cdr tail) (cddr tail))
-		   )
-		  (t
-		   (setq tail (cdr tail)))))
-      cpl))))
-
-(defun walk-supers (supers cpl precedence-alist)
-  (declare (si::c-local))
-  (do* ((pre (reverse supers))
-	(sup)
-	(precedence))
-       ((null pre) (values cpl precedence-alist))
-    (setq sup (pop pre))
-    (when pre
-      (if (setq precedence (assoc sup precedence-alist :test #'eq))
-	  ;; don't use rplacd here:
-	  (setq precedence (cons (car precedence) (union pre precedence)))
-	  (push (cons sup pre) precedence-alist)))
-    (multiple-value-setq (cpl precedence-alist)
-      (walk-supers (class-direct-superclasses sup) cpl precedence-alist))
-    (setq cpl (adjoin sup cpl))))
-
-(defun class-ordering-error (root element path precedence-alist)
-  (declare (si::c-local))
-  (setq path (cons element (reverse (member element (reverse path) :test #'eq))))
-  (flet ((pretty (class)
-	   (declare (type class class)
-		    (optimize (safety 0)))
-	   (or (class-name class) class)))
-    (let ((explanations ()))
-      (do ((tail path (cdr tail)))
-	  ((null (cdr tail)))
-	(let* ((after (cadr tail))
-	       (before (car tail)))
-	  (if (member after (class-direct-superclasses before) :test #'eq)
-	      (push (format nil
-			    "~% ~A must precede ~A -- ~
-                              ~A is in the local supers of ~A."
-			    (pretty before) (pretty after)
-			    (pretty after) (pretty before))
-		    explanations)
-	      (dolist (common-precede
-			(intersection
-			  (cdr (assoc after precedence-alist :test #'eq))
-			  (cdr (assoc before precedence-alist :test #'eq))))
-		(when (member after (member before
-					    (class-direct-superclasses common-precede)
-					    :test #'eq)
-			      :test #'eq)
-		  (push (format nil
-				"~% ~A must precede ~A -- ~
-                                  ~A has local supers ~S."
-				(pretty before) (pretty after)
-				(pretty common-precede)
-				(mapcar #'pretty
-					(class-direct-superclasses common-precede)))
-			explanations))))))
-      (error "While computing the class-precedence-list for the class ~A:~%~
-              There is a circular constraint through the classes:~{ ~A~}.~%~
-              This arises because:~{~A~}"
-	     root
-	     (mapcar #'pretty path)
-	     (reverse explanations)))))
+(defun compute-clos-class-precedence-list (new-class superclasses)
+  (labels ((walk-supers (superclasses)
+	     ;; Creates two lists, one with all the superclasses of a class to be created,
+	     ;; and a second list with lists (c1 c2 c3 ... cn) that represent a partial
+	     ;; ordering of the classes (c1 > c2), (c2 > c3), etc."
+	     (let ((class-list '())
+		   (precedence-lists (list superclasses)))
+	       (loop (unless superclasses
+		       (return (values class-list precedence-lists)))
+		  (let ((next-class (pop superclasses)))
+		    (unless (member next-class class-list :test 'eql)
+		      (let ((more-classes (class-direct-superclasses next-class)))
+			(setf class-list (list* next-class class-list)
+			      precedence-lists (list* (list* next-class more-classes)
+						      precedence-lists)
+			      superclasses (append more-classes superclasses))))))))
+	   (cycle-error (class)
+	     (error "A cycle has been detected in the class precedence list for ~A."
+		    (class-name class)))
+	   (has-no-precedent (class precedence-lists)
+	     ;; Check if CLASS is not preceded by any other class in the partial order.
+	     (dolist (partial-order precedence-lists t)
+	       (when (member class (rest partial-order) :test 'eql)
+		 (return nil))))
+	   (free-elements (class-list precedence-lists)
+	     ;; Return classes that are not preceded by anyone
+	     (let ((output '()))
+	       (dolist (class class-list)
+		 (when (has-no-precedent class precedence-lists)
+		   (push class output)))
+	       output))
+	   (next-element (free-list cpl)
+	     ;; Compute the next element that we will add to the class precedence list.
+	     (if (or (null cpl) (endp free-list) (endp (rest free-list)))
+		 (first free-list)
+		 (dolist (i cpl nil)
+		   (dolist (j (class-direct-superclasses i))
+		     (when (member j free-list :test 'eql)
+		       (return-from next-element j))))))
+	   (delete-class (class precedence-lists)
+	     (do ((l precedence-lists (rest l)))
+		 ((null l)
+		  (delete nil precedence-lists))
+	       (let ((one-list (first l)))
+		 (when (eq class (first one-list))
+		   (setf (first l) (rest one-list)))))))
+    (if (endp (rest superclasses))
+	(let ((class (first superclasses)))
+	  (list* new-class (class-precedence-list class)))
+	(multiple-value-bind (class-list precedence-lists)
+	    (walk-supers superclasses)
+	  (do ((cpl (list new-class)))
+	      ((null class-list)
+	       (if precedence-lists (cycle-error new-class) (nreverse cpl)))
+	    (let* ((candidates (free-elements class-list precedence-lists))
+		   (next (next-element candidates cpl)))
+	      (unless next
+		(cycle-error new-class))
+	      (setf precedence-lists (delete-class next precedence-lists)
+		    class-list (delete next class-list)
+		    cpl (cons next cpl))))))))
 
 ;;; ----------------------------------------------------------------------

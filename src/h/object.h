@@ -137,6 +137,9 @@ typedef cl_object (*cl_objectfn_fixed)();
 #define	CODE_CHAR(c)		((cl_object)(((cl_fixnum)((c & 0xff) << 2)|CHARACTER_TAG)))
 #define	CHAR_CODE(obje)		((((cl_fixnum)(obje)) >> 2) & 0xff)
 #endif
+#define ECL_CHAR_CODE_RETURN	13
+#define ECL_CHAR_CODE_NEWLINE	10
+#define ECL_CHAR_CODE_LINEFEED	10
 
 #define ECL_NUMBER_TYPE_P(t)	(t >= t_fixnum && t <= t_complex)
 #define REAL_TYPE(t)		(t >= t_fixnum && t < t_complex)
@@ -184,11 +187,11 @@ struct ecl_bignum {
 
 #else  /* WITH_GMP */
 
-# ifdef HAVE_LONG_LONG
+# ifdef ecl_long_long_t
      typedef long long int big_num_t;
-# else  /* HAVE_LONG_LONG */
+# else
      typedef long int big_num_t; /* would it work? */
-# endif /* HAVE_LONG_LONG */
+# endif /* ecl_long_long_t */
 
 struct ecl_bignum {
 	HEADER;
@@ -356,6 +359,15 @@ typedef enum {			/*  array element type  */
 	/* Below here, list types accepted by streams (i.e. OPEN) */
 	aet_b8,			/*  byte8	     */
 	aet_i8,			/*  integer8	     */
+#ifdef ecl_uint16_t
+        aet_b16, aet_i16,
+#endif
+#ifdef ecl_uint32_t
+        aet_b32, aet_i32,
+#endif
+#ifdef ecl_uint64_t
+        aet_b64, aet_i64,
+#endif
 #ifdef ECL_UNICODE
 	aet_ch,			/*  character        */
 #endif
@@ -363,11 +375,33 @@ typedef enum {			/*  array element type  */
 	aet_last_type = aet_bc
 } cl_elttype;
 
+typedef unsigned char ecl_base_char;
+#ifdef ECL_UNICODE
+typedef int32_t ecl_character;
+#else
+typedef int ecl_character;
+#endif
+
 union ecl_array_data {
 	cl_object     *t;
-        unsigned char *ch;
+        ecl_base_char *bc;
+#ifdef ECL_UNICODE
+        ecl_character *c;
+#endif
 	uint8_t       *b8;
 	int8_t        *i8;
+#ifdef ecl_uint16_t
+        ecl_uint16_t  *b16;
+        ecl_int16_t   *i16;
+#endif
+#ifdef ecl_uint32_t
+        ecl_uint32_t  *b32;
+        ecl_int32_t   *i32;
+#endif
+#ifdef ecl_uint64_t
+        ecl_uint64_t  *b64;
+        ecl_int64_t   *i64;
+#endif
 	float         *sf;
 	double        *df;
 	cl_fixnum     *fix;
@@ -375,7 +409,7 @@ union ecl_array_data {
 	byte          *bit;
 };
 
-struct ecl_array {			/*  array header  */
+struct ecl_array {		/*  array header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
 	HEADER2(adjustable,rank);
@@ -387,7 +421,7 @@ struct ecl_array {			/*  array header  */
 	byte	offset;		/*  bitvector offset  */
 };
 
-struct ecl_vector {			/*  vector header  */
+struct ecl_vector {		/*  vector header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
 	HEADER2(adjustable,hasfillp);
@@ -411,7 +445,7 @@ struct ecl_base_string {	/*  string header  */
 	cl_index fillp;		/*  fill pointer  */
 				/*  For simple strings,  */
 				/*  st_fillp is equal to st_dim-1.  */
-	unsigned char *self;	/*  pointer to the string  */
+	ecl_base_char *self;	/*  pointer to the string  */
 };
 
 #ifdef ECL_UNICODE
@@ -425,7 +459,7 @@ struct ecl_string {		/*  string header  */
 	cl_index fillp;		/*  fill pointer  */
 				/*  For simple strings,  */
 				/*  st_fillp is equal to st_dim-1.  */
-	cl_object *self;	/*  pointer to the string  */
+	ecl_character *self;	/*  pointer to the string  */
 };
 #endif
 
@@ -454,8 +488,11 @@ struct ecl_structure {		/*  structure header  */
 
 enum ecl_smmode {		/*  stream mode  */
 	smm_input,		/*  input  */
+	smm_input_file,		/*  input  */
 	smm_output,		/*  output  */
+	smm_output_file,	/*  output  */
 	smm_io,			/*  input-output  */
+	smm_io_file,		/*  input-output  */
 	smm_synonym,		/*  synonym  */
 	smm_broadcast,		/*  broadcast  */
 	smm_concatenated,	/*  concatenated  */
@@ -472,22 +509,94 @@ enum ecl_smmode {		/*  stream mode  */
 #endif
 };
 
+struct ecl_file_ops {
+	cl_index (*write_byte8)(cl_object strm, unsigned char *c, cl_index n);
+	cl_index (*read_byte8)(cl_object strm, unsigned char *c, cl_index n);
+
+	void (*write_byte)(cl_object c, cl_object strm);
+	cl_object (*read_byte)(cl_object strm);
+
+	int (*read_char)(cl_object strm);
+	int (*write_char)(cl_object strm, int c);
+	void (*unread_char)(cl_object strm, int c);
+	int (*peek_char)(cl_object strm);
+
+	cl_index (*read_vector)(cl_object strm, cl_object data, cl_index start, cl_index end);
+	cl_index (*write_vector)(cl_object strm, cl_object data, cl_index start, cl_index end);
+
+	int (*listen)(cl_object strm);
+	void (*clear_input)(cl_object strm);
+	void (*clear_output)(cl_object strm);
+	void (*finish_output)(cl_object strm);
+	void (*force_output)(cl_object strm);
+
+	int (*input_p)(cl_object strm);
+	int (*output_p)(cl_object strm);
+	int (*interactive_p)(cl_object strm);
+	cl_object (*element_type)(cl_object strm);
+
+	cl_object (*length)(cl_object strm);
+	cl_object (*get_position)(cl_object strm);
+	cl_object (*set_position)(cl_object strm, cl_object pos);
+	int (*column)(cl_object strm);
+
+	cl_object (*close)(cl_object strm);
+};
+
+enum {
+	ECL_STREAM_BINARY = 0,
+	ECL_STREAM_FORMAT = 0xF,
+#ifndef ECL_UNICODE
+	ECL_STREAM_DEFAULT_FORMAT = 1,
+#else
+	ECL_STREAM_DEFAULT_FORMAT = 2,
+	ECL_STREAM_ISO_8859_1 = 1,
+	ECL_STREAM_LATIN_1 = 1,
+	ECL_STREAM_UTF_8 = 2,
+	ECL_STREAM_UCS_2 = 3,
+	ECL_STREAM_UCS_2LE = 5 + 128,
+	ECL_STREAM_UCS_2BE = 5,
+	ECL_STREAM_UCS_4 = 6,
+	ECL_STREAM_UCS_4LE = 7 + 128,
+	ECL_STREAM_UCS_4BE = 7,
+	ECL_STREAM_USER_FORMAT = 8,
+	ECL_STREAM_US_ASCII = 10,
+#endif
+	ECL_STREAM_CR = 16,
+	ECL_STREAM_LF = 32,
+	ECL_STREAM_SIGNED_BYTES = 64,
+	ECL_STREAM_LITTLE_ENDIAN = 128,
+	ECL_STREAM_C_STREAM = 256,
+	ECL_STREAM_MIGHT_SEEK = 512
+};
+
+typedef int (*cl_eformat_encoder)(cl_object stream, unsigned char *buffer, int c);
+typedef cl_index (*cl_eformat_read_byte8)(cl_object object, unsigned char *buffer, cl_index n);
+typedef int (*cl_eformat_decoder)(cl_object stream, cl_eformat_read_byte8 read_byte8, cl_object source);
+
 struct ecl_stream {
-	HEADER4(mode,closed,char_stream_p,signed_bytes);
-				/*  stream mode of enum smmode  */
-				/*  stream element type  */
-	void	*file;		/*  file pointer  */
+	HEADER2(mode,closed);	/*  stream mode of enum smmode  */
+				/*  closed stream?  */
+	struct ecl_file_ops *ops; /*  dispatch table  */
+        union {
+                FILE *stream;		/* ANSI C streams */
+                cl_fixnum descriptor;	/* POSIX files */
+        } file;
 	cl_object object0;	/*  some object  */
 	cl_object object1;	/*  some object */
+	cl_object byte_stack;	/*  buffer for unread bytes  */
+	cl_fixnum last_char;	/*  last character read  */
+	cl_fixnum last_code[2];	/*  actual composition of last character  */
 	cl_fixnum int0;		/*  some int  */
 	cl_fixnum int1;		/*  some int  */
-	char	*buffer;	/*  file buffer  */
 	cl_index byte_size;	/*  size of byte in binary streams  */
-	unsigned char bit_buffer;
-	uint8_t bits_left;
-	int8_t buffer_state;	/* 0: unknown, 1: reading, -1: writing */
-	uint8_t header;		/* number of significant bits in the last byte */
-	int8_t last_op;		/* 0: unknown, 1: reading, -1: writing */
+	cl_index last_op;	/*  0: unknown, 1: reading, -1: writing */
+	char *buffer;		/*  buffer for FILE  */
+	cl_object format;	/*  external format  */
+	cl_eformat_encoder encoder;
+	cl_eformat_decoder decoder;
+	cl_object format_table;
+	int flags;		/*  character table, flags, etc  */
 };
 
 struct ecl_random {
@@ -506,13 +615,7 @@ enum ecl_chattrib {		/*  character attribute  */
 
 struct ecl_readtable_entry {		/*  read table entry  */
 	enum ecl_chattrib syntax_type;	/*  character attribute  */
-	cl_object macro;		/*  macro function  */
-	cl_object *dispatch_table;	/*  pointer to the  */
-					/*  dispatch table  */
-					/*  NULL for  */
-					/*  non-dispatching  */
-					/*  macro character, or  */
-					/*  non-macro character  */
+	cl_object dispatch;		/*  a macro, a hash or NIL  */
 };
 
 enum ecl_readtable_case {
@@ -522,10 +625,13 @@ enum ecl_readtable_case {
 	ecl_case_preserve,
 };
 
-struct ecl_readtable {			/*  read table  */
+struct ecl_readtable {		/*  read table  */
 	HEADER;
 	enum ecl_readtable_case read_case; /*  readtable-case  */
 	struct ecl_readtable_entry *table; /*  read table itself  */
+#ifdef ECL_UNICODE
+	cl_object hash;		/* hash for values outside base-char range */
+#endif
 };
 
 struct ecl_pathname {
@@ -552,39 +658,50 @@ struct ecl_codeblock {
 	cl_object next;			/*  next codeblock within same library */
 	cl_object name;
 	cl_object links;		/*  list of symbols with linking calls  */
+	cl_index cfuns_size;		/*  number of functions defined  */
+	const struct ecl_cfun *cfuns;
 };
 
 struct ecl_bytecodes {
 	HEADER;
 	cl_object name;		/*  function name  */
-	cl_object specials;	/*  list of special variables  */
+	cl_objectfn entry;	/*  entry address  */
 	cl_object definition;	/*  function definition in list form  */
 	cl_index code_size;	/*  number of bytecodes  */
 	cl_index data_size;	/*  number of constants  */
 	char *code;		/*  the intermediate language  */
 	cl_object *data;	/*  non-inmediate constants used in the code  */
 	cl_object file;		/*  file where it was defined...  */
-	cl_index file_position;	/*  and where it was created  */
+	cl_object file_position;/*  and where it was created  */
 };
 
 struct ecl_bclosure {
 	HEADER;
 	cl_object code;
 	cl_object lex;
+	cl_objectfn entry;	/*  entry address  */
 };
 
 struct ecl_cfun {		/*  compiled function header  */
 	HEADER1(narg);
 	cl_object name;		/*  compiled function name  */
-	cl_objectfn entry;	/*  entry address  */
 	cl_object block;	/*  descriptor of C code block for GC  */
+	cl_objectfn entry;	/*  entry address  */
+};
+
+struct ecl_cfunfixed {		/*  compiled function header  */
+	HEADER1(narg);
+	cl_object name;		/*  compiled function name  */
+	cl_object block;	/*  descriptor of C code block for GC  */
+	cl_objectfn entry;	/*  entry address  */
+	cl_objectfn_fixed entry_fixed;	/*  entry address  */
 };
 
 struct ecl_cclosure {		/*  compiled closure header  */
 	HEADER;
 	cl_object env;		/*  environment  */
-	cl_objectfn entry;	/*  entry address  */
 	cl_object block;	/*  descriptor of C code block for GC  */
+	cl_objectfn entry;	/*  entry address  */
 };
 
 #define ECL_FFICALL_LIMIT 256
@@ -600,6 +717,22 @@ enum ecl_ffi_tag {
 	ECL_FFI_UNSIGNED_INT,
 	ECL_FFI_LONG,
 	ECL_FFI_UNSIGNED_LONG,
+#ifdef ecl_uint16_t
+        ECL_FFI_INT16_T,
+        ECL_FFI_UINT16_T,
+#endif
+#ifdef ecl_uint32_t
+        ECL_FFI_INT32_T,
+        ECL_FFI_UINT32_T,
+#endif
+#ifdef ecl_uint64_t
+        ECL_FFI_INT64_T,
+        ECL_FFI_UINT64_T,
+#endif
+#ifdef ecl_long_long_t
+        ECL_FFI_LONG_LONG,
+        ECL_FFI_UNSIGNED_LONG_LONG,
+#endif
 	ECL_FFI_POINTER_VOID,
 	ECL_FFI_CSTRING,
 	ECL_FFI_OBJECT,
@@ -619,6 +752,23 @@ union ecl_ffi_values {
 	unsigned short us;
 	long l;
 	unsigned long ul;
+#ifdef ecl_uint16_t
+        ecl_int16_t i16;
+        ecl_uint16_t u16;
+#endif
+#ifdef ecl_uint32_t
+        ecl_int32_t i32;
+        ecl_uint32_t u32;
+#endif
+#ifdef ecl_uint64_t
+        ecl_int64_t i64;
+        ecl_uint64_t u64;
+#endif
+#ifdef ecl_long_long_t
+        ecl_long_long_t ll;
+        ecl_ulong_long_t ull;
+        unsigned long l2[2];
+#endif
 	void *pv;
 	char *pc;
 	cl_object o;
@@ -640,9 +790,10 @@ struct ecl_foreign {		/*  user defined datatype  */
 
 struct ecl_stack_frame {
 	HEADER;
-	cl_object *bottom;	/*  Bottom part  */
-	cl_object *top;		/*  Top part  */
 	cl_object *stack;	/*  Is this relative to the lisp stack?  */
+	cl_object *base;	/*  Start of frame  */
+        cl_index size;		/*  Number of arguments  */
+	struct cl_env_struct *env;
 };
 
 /*
@@ -661,6 +812,10 @@ struct ecl_process {
 	pthread_t thread;
 	struct cl_env_struct *env;
 	cl_object interrupt;
+	/*void *stack;*/
+	/*cl_index stack_size;*/
+	void *altstack;
+	cl_index altstack_size;
 };
 
 struct ecl_lock {
@@ -694,6 +849,7 @@ struct ecl_instance {		/*  instance header  */
 	HEADER1(isgf);
 	cl_index length;	/*  instance length  */
 	cl_object clas;		/*  instance class  */
+	cl_objectfn entry;	/*  entry address  */
 	cl_object sig;		/*  generation signature  */
 	cl_object *slots;	/*  instance slots  */
 };
@@ -730,6 +886,7 @@ union cl_lispunion {
 	struct ecl_bytecodes	bytecodes; 	/*  bytecompiled function / code */
 	struct ecl_bclosure	bclosure; 	/*  bytecompiled closure */
 	struct ecl_cfun		cfun;		/*  compiled function  */
+	struct ecl_cfunfixed	cfunfixed;	/*  compiled function  */
 	struct ecl_cclosure	cclosure; 	/*  compiled closure  */
 
 	struct ecl_dummy	d;		/*  dummy  */

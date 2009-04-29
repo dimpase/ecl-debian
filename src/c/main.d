@@ -19,8 +19,10 @@
 
 #include <ecl/ecl.h>
 #include <limits.h>
-#ifdef _MSC_VER
-#define MAXPATHLEN 512
+#if defined(_MSC_VER) || defined(mingw32)
+# include <windows.h>
+# include <shellapi.h>
+# define MAXPATHLEN 512
 #endif
 #ifndef MAXPATHLEN
 # ifdef PATH_MAX
@@ -30,6 +32,12 @@
 #   include <unistd.h>
 # endif
 #endif
+#ifdef ECL_USE_MPROTECT
+# include <sys/mman.h>
+# ifndef MAP_FAILED
+#  define MAP_FAILED -1
+# endif
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <ecl/internal.h>
@@ -37,27 +45,149 @@ extern int GC_dont_gc;
 
 /******************************* EXPORTS ******************************/
 
-bool ecl_booted = 0;
 #if !defined(ECL_THREADS)
-struct cl_env_struct cl_env;
+cl_env_ptr cl_env_p = NULL;
 #elif defined(WITH___THREAD)
-__thread struct cl_env_struct * cl_env_p;
+__thread cl_env_ptr cl_env_p = NULL;
 #endif
 struct cl_core_struct cl_core;
 const char *ecl_self;
 
 /************************ GLOBAL INITIALIZATION ***********************/
 
-static int	ARGC;
-static char	**ARGV;
+static int ARGC;
+static char **ARGV;
+static cl_fixnum option_values[ECL_OPT_LIMIT+1] = {
+#ifdef GBC_BOEHM_GENGC
+	1,	/* ECL_OPT_INCREMENTAL_GC */
+#else
+	0,	/* ECL_OPT_INCREMENTAL_GC */
+#endif
+	1,	/* ECL_OPT_TRAP_SIGSEGV */
+	1,	/* ECL_OPT_TRAP_SIGFPE */
+	1,	/* ECL_OPT_TRAP_SIGINT */
+	1,	/* ECL_OPT_TRAP_SIGILL */
+	1,	/* ECL_OPT_TRAP_SIGBUS */
+	0,	/* ECL_OPT_BOOTED */
+	8192,	/* ECL_OPT_BIND_STACK_SIZE */
+	128,	/* ECL_OPT_BIND_STACK_SAFETY_AREA */
+	2048,	/* ECL_OPT_FRAME_STACK_SIZE */
+	128,	/* ECL_OPT_FRAME_STACK_SAFETY_AREA */
+	32768,	/* ECL_OPT_LISP_STACK_SIZE */
+	128,	/* ECL_OPT_LISP_STACK_SAFETY_AREA */
+	131072,	/* ECL_OPT_C_STACK_SIZE */
+	4192,	/* ECL_OPT_C_STACK_SAFETY_AREA */
+	1,	/* ECL_OPT_SIGALTSTACK_SIZE */
+	128*1024*1024, /* ECL_OPT_HEAP_SIZE */
+	1024*1024, /* ECL_OPT_HEAP_SAFETY_AREA */
+	0};
 
 #if !defined(GBC_BOEHM)
 static char stdin_buf[BUFSIZ];
 static char stdout_buf[BUFSIZ];
 #endif
 
+static const char *feature_names[] = {
+        "ECL", "COMMON", ECL_ARCHITECTURE, "FFI", "PREFIXED-API",
+        "IEEE-FLOATING-POINT",
+#ifdef WITH_GMP
+        "COMMON-LISP",
+        "ANSI-CL",
+#endif /* WITH_GMP */
+#if defined(GBC_BOEHM)
+	"BOEHM-GC",
+#endif
+#ifdef ECL_THREADS
+	"THREADS",
+#endif
+#ifdef CLOS
+	"CLOS",
+#endif
+#ifdef ENABLE_DLOPEN
+	"DLOPEN",
+#endif
+#ifdef ECL_OLD_LOOP
+	"OLD-LOOP",
+#endif
+	"ECL-PDE",
+#ifdef unix
+	"UNIX",
+#endif
+#ifdef BSD
+	"BSD",
+#endif
+#ifdef SYSV
+	"SYSTEM-V",
+#endif
+#ifdef MSDOS
+	"MS-DOS",
+#endif
+#ifdef mingw32
+	"MINGW32",
+#endif
+#ifdef _MSC_VER
+	"MSVC",
+#endif
+#ifdef ECL_CMU_FORMAT
+	"CMU-FORMAT",
+#endif
+#ifdef ECL_CLOS_STREAMS
+	"CLOS-STREAMS",
+#endif
+#ifdef ECL_DYNAMIC_FFI
+	"DFFI",
+#endif
+#ifdef ECL_UNICODE
+	"UNICODE",
+#endif
+#ifdef ECL_LONG_FLOAT
+	"LONG-FLOAT",
+#endif
+#ifdef ECL_SHORT_FLOAT
+	"SHORT-FLOAT",
+#endif
+#ifdef ECL_RELATIVE_PACKAGE_NAMES
+	"RELATIVE-PACKAGE-NAMES",
+#endif
+#ifdef ecl_uint16_t
+        "UINT16-T",
+#endif
+#ifdef ecl_uint32_t
+        "UINT32-T",
+#endif
+#ifdef ecl_uint64_t
+        "UINT64-T",
+#endif
+        0
+};
+
+cl_fixnum
+ecl_get_option(int option)
+{
+	if (option >= ECL_OPT_LIMIT || option < 0) {
+		FEerror("Invalid boot option ~D", 1, MAKE_FIXNUM(option));
+	} else {
+		return option_values[option];
+	}
+}
+
 void
-ecl_init_env(struct cl_env_struct *env)
+ecl_set_option(int option, cl_fixnum value)
+{
+	if (option > ECL_OPT_LIMIT || option < 0) {
+		FEerror("Invalid boot option ~D", 1, MAKE_FIXNUM(option));
+	} else {
+		if (option < ECL_OPT_BOOTED &&
+		    option_values[ECL_OPT_BOOTED]) {
+			FEerror("Cannot change option ~D while ECL is running",
+				1, MAKE_FIXNUM(option));
+		}
+		option_values[option] = value;
+	}
+}
+
+void
+ecl_init_env(cl_env_ptr env)
 {
 	int i;
 
@@ -69,13 +199,13 @@ ecl_init_env(struct cl_env_struct *env)
 	env->stack_top = NULL;
 	env->stack_limit = NULL;
 	env->stack_size = 0;
-	cl_stack_set_size(16*LISP_PAGESIZE);
+	ecl_stack_set_size(env, ecl_get_option(ECL_OPT_LISP_STACK_SIZE));
 
 #if !defined(ECL_CMU_FORMAT)
 	env->print_pretty = FALSE;
-	env->queue = cl_alloc_atomic(ECL_PPRINT_QUEUE_SIZE * sizeof(short));
-	env->indent_stack = cl_alloc_atomic(ECL_PPRINT_INDENTATION_STACK_SIZE * sizeof(short));
-	env->fmt_aux_stream = ecl_make_string_output_stream(64);
+	env->queue = ecl_alloc_atomic(ECL_PPRINT_QUEUE_SIZE * sizeof(short));
+	env->indent_stack = ecl_alloc_atomic(ECL_PPRINT_INDENTATION_STACK_SIZE * sizeof(short));
+	env->fmt_aux_stream = ecl_make_string_output_stream(64, 1);
 #endif
 #if !defined(GBC_BOEHM)
 # if defined(THREADS)
@@ -89,7 +219,7 @@ ecl_init_env(struct cl_env_struct *env)
 #endif /* !GBC_BOEHM */
 
 #ifdef ECL_DYNAMIC_FFI
-	env->fficall = cl_alloc(sizeof(struct ecl_fficall));
+	env->fficall = ecl_alloc(sizeof(struct ecl_fficall));
 	((struct ecl_fficall*)env->fficall)->registers = 0;
 #endif
 
@@ -102,8 +232,7 @@ ecl_init_env(struct cl_env_struct *env)
 	env->method_hash_clear_list = Cnil;
 #endif
 #endif
-
-	init_stacks(&i);
+	init_stacks(env, &i);
 }
 
 static const struct {
@@ -149,11 +278,45 @@ static const struct {
 	{NULL, -1}
 };
 
+cl_env_ptr
+_ecl_alloc_env()
+{
+	/*
+	 * Allocates the lisp environment for a thread. Depending on which
+	 * mechanism we use for detecting delayed signals, we may allocate
+	 * the environment using mmap or the garbage collector.
+	 */
+	cl_env_ptr output;
+#if defined(ECL_USE_MPROTECT)
+	output = mmap(0, sizeof(*output), PROT_READ | PROT_WRITE,
+			MAP_ANON | MAP_PRIVATE, -1, 0);
+	if (output == MAP_FAILED)
+		ecl_internal_error("Unable to allocate environment structure.");
+#else
+	static struct cl_env_struct first_env;
+	if (!ecl_get_option(ECL_OPT_BOOTED)) {
+		/* We have not set up any environment. Hence, we cannot call ecl_alloc()
+		 * because it will need to stop interrupts and currently we rely on
+		 * the environment for that */
+		output = &first_env;
+	} else {
+		output = ecl_alloc(sizeof(*output));
+	}
+#endif
+	/*
+	 * An uninitialized environment _always_ disables interrupts. They
+	 * are activated later on by the thread entry point or init_unixint().
+	 */
+	output->disable_interrupts = 1;
+	return output;
+}
+
 int
 cl_shutdown(void)
 {
-	if (ecl_booted > 0) {
-		cl_object l = SYM_VAL(@'si::*exit-hooks*');
+	const cl_env_ptr env = ecl_process_env();
+	if (ecl_get_option(ECL_OPT_BOOTED) > 0) {
+		cl_object l = ecl_symbol_value(@'si::*exit-hooks*');
 		cl_object form = cl_list(2, @'funcall', Cnil);
 		while (CONSP(l)) {
 			ecl_elt_set(form, 1, ECL_CONS_CAR(l));
@@ -168,9 +331,47 @@ cl_shutdown(void)
 		ecl_tcp_close_all();
 #endif
 	}
-	ecl_booted = -1;
+	ecl_set_option(ECL_OPT_BOOTED, -1);
 	return 1;
 }
+
+#ifdef ECL_UNICODE
+static cl_object
+read_char_database()
+{
+	cl_object s = si_base_string_concatenate(2,
+						 si_get_library_pathname(),
+						 make_constant_base_string("ucd.dat"));
+	cl_object output = Cnil;
+	FILE *f = fopen(s->base_string.self, "r");
+	if (f) {
+		cl_index size;
+		if (!fseek(f, 0, SEEK_END)) {
+			size = ftell(f);
+			fseek(f, 0, SEEK_SET);
+			output = si_make_vector(@'ext::byte8', MAKE_FIXNUM(size),
+						Cnil, Cnil, Cnil, Cnil);
+			if (fread(output->vector.self.b8, 1, size, f) < size) {
+				output = Cnil;
+			} else {
+				uint8_t *p = output->vector.self.b8;
+				cl_core.unicode_database = output;
+				cl_core.ucd_misc = p + 2;
+				cl_core.ucd_pages = cl_core.ucd_misc + (p[0] + (p[1]<<8));
+				cl_core.ucd_data = cl_core.ucd_pages + (0x110000 / 256);
+			}
+		}
+		fclose(f);
+	}
+	if (output == Cnil) {
+		printf("Unable to read Unicode database: %s\n", s->base_string.self);
+		abort();
+	}
+	ECL_SET(@'si::+unicode-database+', output);
+}
+#else
+#define read_char_database() (void)0
+#endif
 
 int
 cl_boot(int argc, char **argv)
@@ -178,11 +379,13 @@ cl_boot(int argc, char **argv)
 	cl_object aux;
 	cl_object features;
 	int i;
+	cl_env_ptr env;
 
-	if (ecl_booted) {
-		if (ecl_booted < 0) {
+	i = ecl_get_option(ECL_OPT_BOOTED);
+	if (i) {
+		if (i < 0) {
 			/* We have called cl_shutdown and want to use ECL again. */
-			ecl_booted = 1;
+			ecl_set_option(ECL_OPT_BOOTED, 1);
 		}
 		return 1;
 	}
@@ -196,14 +399,14 @@ cl_boot(int argc, char **argv)
 	ARGV = argv;
 	ecl_self = argv[0];
 
+	init_unixint(0);
 	init_alloc();
 	GC_disable();
-#ifdef ECL_THREADS
-	init_threads();
-#endif
-
-#if !defined(MSDOS) && !defined(cygwin)
-	ecl_self = ecl_expand_pathname(ecl_self);
+	env = _ecl_alloc_env();
+#if !defined(ECL_THREADS) || defined(WITH__THREAD)
+	cl_env_p = env;
+#else
+	init_threads(env);
 #endif
 
 	/*
@@ -289,6 +492,7 @@ cl_boot(int argc, char **argv)
 
 	/* These must come _after_ the packages and NIL/T have been created */
 	init_all_symbols();
+	read_char_database();
 
 	/*
 	 * 2) Initialize constants (strings, numbers and time).
@@ -312,9 +516,7 @@ cl_boot(int argc, char **argv)
 	/* LIBRARIES is an adjustable vector of objects. It behaves as
 	   a vector of weak pointers thanks to the magic in
 	   gbc.d/alloc_2.d */
-	cl_core.libraries = si_make_vector(@'t', MAKE_FIXNUM(0),
-					   @'t', MAKE_FIXNUM(0),
-					   @'nil', @'nil');
+	cl_core.libraries = Cnil;
 #if 0
 	/* FINALIZERS and FINALIZABLE_OBJECTS are also like LIBRARIES */
 	cl_core.finalizable_objects = si_make_vector(@'t', MAKE_FIXNUM(512),
@@ -331,7 +533,7 @@ cl_boot(int argc, char **argv)
 
 	cl_core.null_string = make_constant_base_string("");
 
-	cl_core.null_stream = @make_broadcast_stream(0);
+	cl_core.null_stream = Cnil; /* Filled in file.d */
 
 	cl_core.system_properties =
 	    cl__make_hash_table(@'equal', MAKE_FIXNUM(1024), /* size */
@@ -358,7 +560,7 @@ cl_boot(int argc, char **argv)
 	 *    This cannot come later, because some routines need the
 	 *    frame stack immediately (for instance SI:PATHNAME-TRANSLATIONS).
 	 */
-	ecl_init_env(&cl_env);
+	ecl_init_env(env);
 #if !defined(GBC_BOEHM)
 	/* We need this because a lot of stuff is to be created */
 	init_GC();
@@ -366,11 +568,11 @@ cl_boot(int argc, char **argv)
 	GC_enable();
 
 #ifdef ECL_THREADS
-	cl_env.bindings_hash = cl__make_hash_table(@'eq', MAKE_FIXNUM(1024),
+	env->bindings_hash = cl__make_hash_table(@'eq', MAKE_FIXNUM(1024),
 						   ecl_make_singlefloat(1.5f),
 						   ecl_make_singlefloat(0.75f),
 						   Cnil); /* no locking */
-	ECL_SET(@'mp::*current-process*', cl_env.own_process);
+	ECL_SET(@'mp::*current-process*', env->own_process);
 #endif
 
 	/*
@@ -383,8 +585,8 @@ cl_boot(int argc, char **argv)
 	ECL_SET(@'*print-case*', @':upcase');
 
 	cl_core.pathname_translations = Cnil;
-#if 0
-	ECL_SET(@'*default-pathname-defaults*', si_getcwd());
+#if 1
+	ECL_SET(@'*default-pathname-defaults*', si_getcwd(0));
 #else
 	ECL_SET(@'*default-pathname-defaults*',
 		ecl_make_pathname(Cnil, Cnil, Cnil, Cnil, Cnil, Cnil));
@@ -403,15 +605,17 @@ cl_boot(int argc, char **argv)
 #endif
 	aux = cl_list(
 #ifdef ENABLE_DLOPEN
-		7,CONS(make_constant_base_string("fas"), @'si::load-binary'),
+		9,CONS(make_constant_base_string("fas"), @'si::load-binary'),
 		CONS(make_constant_base_string("fasl"), @'si::load-binary'),
 #else
-		5,
+		7,
 #endif
 		CONS(make_constant_base_string("lsp"), @'si::load-source'),
 		CONS(make_constant_base_string("lisp"), @'si::load-source'),
 		CONS(make_constant_base_string("LSP"), @'si::load-source'),
 		CONS(make_constant_base_string("LISP"), @'si::load-source'),
+		CONS(make_constant_base_string("fasb"), @'si::load-source'),
+		CONS(make_constant_base_string("FASB"), @'si::load-source'),
 		CONS(Cnil, @'si::load-source'));
 	ECL_SET(@'si::*load-hooks*', aux);
 	init_error();
@@ -436,78 +640,9 @@ cl_boot(int argc, char **argv)
 		cl_list(8, @'&optional', @'&rest', @'&key', @'&allow-other-keys',
 			@'&aux', @'&whole', @'&environment', @'&body'));
 
-	features = cl_list(5,
-			   ecl_make_keyword("ECL"),
-			   ecl_make_keyword("COMMON"),
-			   ecl_make_keyword(ECL_ARCHITECTURE),
-			   ecl_make_keyword("FFI"),
-			   ecl_make_keyword("PREFIXED-API"));
-
-#define ADD_FEATURE(name) features = CONS(ecl_make_keyword(name),features)
-
-#ifdef WITH_GMP
-        ADD_FEATURE("COMMON-LISP");
-        ADD_FEATURE("ANSI-CL");
-#endif /* WITH_GMP */
-
-#if defined(GBC_BOEHM)
-	ADD_FEATURE("BOEHM-GC");
-#endif
-#ifdef ECL_THREADS
-	ADD_FEATURE("THREADS");
-#endif
-#ifdef CLOS
-	ADD_FEATURE("CLOS");
-#endif
-#ifdef ENABLE_DLOPEN
-	ADD_FEATURE("DLOPEN");
-#endif
-#ifdef ECL_OLD_LOOP
-	ADD_FEATURE("OLD-LOOP");
-#endif
-	ADD_FEATURE("ECL-PDE");
-#ifdef unix
-	ADD_FEATURE("UNIX");
-#endif
-#ifdef BSD
-	ADD_FEATURE("BSD");
-#endif
-#ifdef SYSV
-	ADD_FEATURE("SYSTEM-V");
-#endif
-#ifdef MSDOS
-	ADD_FEATURE("MS-DOS");
-#endif
-#ifdef mingw32
-	ADD_FEATURE("MINGW32");
-#endif
-#ifdef _MSC_VER
-	ADD_FEATURE("MSVC");
-#endif
-#ifdef ECL_CMU_FORMAT
-	ADD_FEATURE("CMU-FORMAT");
-#endif
-#ifdef ECL_CLOS_STREAMS
-	ADD_FEATURE("CLOS-STREAMS");
-#endif
-#ifdef ECL_DYNAMIC_FFI
-	ADD_FEATURE("DFFI");
-#endif
-#ifdef ECL_UNICODE
-	ADD_FEATURE("UNICODE");
-#endif
-#ifdef ECL_LONG_FLOAT
-	ADD_FEATURE("LONG-FLOAT");
-#endif
-#ifdef ECL_SHORT_FLOAT
-	ADD_FEATURE("SHORT-FLOAT");
-#endif
-#ifdef ECL_RELATIVE_PACKAGE_NAMES
-	ADD_FEATURE("RELATIVE-PACKAGE-NAMES");
-	ECL_SET(@'SI::*RELATIVE-PACKAGE-NAMES*', Ct);
-#endif
-	/* This is assumed in all systems */
-	ADD_FEATURE("IEEE-FLOATING-POINT");
+        for (i = 0, features = Cnil; feature_names[i]; i++) {
+                features = CONS(ecl_make_keyword(feature_names[i]),features);
+        }
 
 	ECL_SET(@'*features*', features);
 
@@ -515,14 +650,13 @@ cl_boot(int argc, char **argv)
 
 	/* This has to come before init_LSP/CLOS, because we need
 	 * ecl_clear_compiler_properties() to work in init_CLOS(). */
-	ecl_booted = 1;
+	ecl_set_option(ECL_OPT_BOOTED, 1);
 
 	read_VV(OBJNULL,init_lib_LSP);
 
 	/* Jump to top level */
 	ECL_SET(@'*package*', cl_core.user_package);
-	init_unixint();
-	si_catch_bad_signals();
+	init_unixint(1);
 	return 1;
 }
 
@@ -559,8 +693,8 @@ si_getenv(cl_object var)
 {
 	const char *value;
 
-	var = ecl_check_cl_type(@'si::getenv', var, t_base_string);
-	value = getenv(var->base_string.self);
+	var = ecl_check_cl_type(@'ext::getenv', var, t_base_string);
+	value = getenv((char*)var->base_string.self);
 	@(return ((value == NULL)? Cnil : make_base_string_copy(value)))
 }
 
@@ -568,53 +702,52 @@ si_getenv(cl_object var)
 cl_object
 si_setenv(cl_object var, cl_object value)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_fixnum ret_val;
 
-	var = ecl_check_cl_type(@'si::setenv', var, t_base_string);
+	/* Strings have to be null terminated base strings */
+	var = si_copy_to_simple_base_string(var);
 	if (value == Cnil) {
 #ifdef HAVE_SETENV
 		/* Remove the variable when setting to nil, so that
 		 * (si:setenv "foo" nil), then (si:getenv "foo) returns
 		 * the right thing. */
-		unsetenv(var->base_string.self);
+		unsetenv((char*)var->base_string.self);
 #else
 #if defined(_MSC_VER) || defined(mingw32)
 		si_setenv(var, make_simple_base_string(""));
 #else
-		putenv(var->base_string.self);
+		putenv((char*)var->base_string.self);
 #endif
 #endif
 		ret_val = 0;
 	} else {
 #ifdef HAVE_SETENV
-		value = ecl_check_cl_type(@'intern', value, t_base_string);
-		ret_val = setenv(var->base_string.self, value->base_string.self, 1);
+		value = si_copy_to_simple_base_string(value);
+		ret_val = setenv((char*)var->base_string.self,
+				 (char*)value->base_string.self, 1);
 #else
-		cl_object temp =
-		  cl_format(4, Cnil, make_constant_base_string("~A=~A"), var,
-			    value);
-		if (temp->base_string.hasfillp && temp->base_string.fillp < temp->base_string.dim)
-		  temp->base_string.self[temp->base_string.fillp] = '\0';
-		putenv(temp->base_string.self);
+		value = cl_format(4, Cnil, make_constant_base_string("~A=~A"), var,
+				  value);
+		value = si_copy_to_simple_base_string(value);
+		putenv((char*)value->base_string.self);
 #endif
 	}
 	if (ret_val == -1)
 		CEerror(Ct, "SI:SETENV failed: insufficient space in environment.",
 			1, Cnil);
-	@(return (value))
+	@(return value)
 }
 #endif
 
 cl_object
 si_pointer(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	@(return ecl_make_unsigned_integer((cl_index)x))
 }
 
 #if defined(_MSC_VER) || defined(mingw32)
-#if !defined(ECL_THREADS)
-#include <windows.h>
-#endif
 void
 ecl_get_commandline_args(int* argc, char*** argv) {
 	LPWSTR *wArgs;

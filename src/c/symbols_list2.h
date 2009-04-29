@@ -9,6 +9,11 @@
 #else
 # define ECL_NAME(x) NULL
 #endif
+#ifdef ECL_RELATIVE_PACKAGE_NAMES
+# define RELATIVE_PACKAGES_P Ct
+#else
+# define RELATIVE_PACKAGES_P Cnil
+#endif
 #ifdef DPP
 #define CLOS_ "CLOS::"
 #define EXT_ "EXT::"
@@ -1077,7 +1082,7 @@ cl_symbols[] = {
 {SYS_ "BIT-ARRAY-OP","si_bit_array_op"},
 {SYS_ "C-ARGUMENTS-LIMIT",NULL},
 {SYS_ "CHAR-SET","si_char_set"},
-{SYS_ "CHDIR","si_chdir"},
+{EXT_ "CHDIR","si_chdir"},
 {SYS_ "CLEAR-COMPILER-PROPERTIES","cl_identity"},
 {SYS_ "COERCE-TO-BASE-STRING","si_coerce_to_base_string"},
 {SYS_ "COERCE-TO-EXTENDED-STRING","si_coerce_to_extended_string"},
@@ -1109,12 +1114,10 @@ cl_symbols[] = {
 {SYS_ "FRS-TOP","si_frs_top"},
 {SYS_ "FSET","si_fset"},
 {SYS_ "FUNCTION-BLOCK-NAME","si_function_block_name"},
-#if defined(_MSC_VER) || defined(mingw32)
 {SYS_ "GET-LIBRARY-PATHNAME","si_get_library_pathname"},
-#endif
 {SYS_ "GET-SYSPROP","si_get_sysprop"},
-{SYS_ "GETENV","si_getenv"},
-{SYS_ "GETCWD","si_getcwd"},
+{EXT_ "GETENV","si_getenv"},
+{EXT_ "GETCWD","si_getcwd"},
 {SYS_ "GETPID","si_getpid"},
 {SYS_ "HASH-SET","si_hash_set"},
 {SYS_ "HASH-TABLE-ITERATOR","si_hash_table_iterator"},
@@ -1140,7 +1143,7 @@ cl_symbols[] = {
 {SYS_ "MKDIR","si_mkdir"},
 {SYS_ "MKSTEMP","si_mkstemp"},
 {SYS_ "RMDIR","si_rmdir"},
-{SYS_ "MAKE-PIPE","si_make_pipe"},
+{EXT_ "MAKE-PIPE","si_make_pipe"},
 {SYS_ "PACKAGE-LOCK","si_package_lock"},
 {SYS_ "PACKAGE-HASH-TABLES","si_package_hash_tables"},
 {SYS_ "PATHNAME-TRANSLATIONS","si_pathname_translations"},
@@ -1159,7 +1162,6 @@ cl_symbols[] = {
 {SYS_ "REM-F","si_rem_f"},
 {SYS_ "REM-SYSPROP","si_rem_sysprop"},
 {SYS_ "REPLACE-ARRAY","si_replace_array"},
-{SYS_ "RESET-STACK-LIMITS","si_reset_stack_limits"},
 {SYS_ "ROW-MAJOR-ASET","si_row_major_aset"},
 {EXT_ "RUN-PROGRAM","si_run_program"},
 {SYS_ "SAFE-EVAL","si_safe_eval"},
@@ -1170,7 +1172,7 @@ cl_symbols[] = {
 {SYS_ "SELECT-PACKAGE","si_select_package"},
 {SYS_ "SET-SYMBOL-PLIST","si_set_symbol_plist"},
 #if defined(HAVE_PUTENV) || defined(HAVE_SETENV)
-{SYS_ "SETENV","si_setenv"},
+{EXT_ "SETENV","si_setenv"},
 #endif
 {SYS_ "SETF-LAMBDA",NULL},
 {SYS_ "SETF-METHOD",NULL},
@@ -1197,7 +1199,6 @@ cl_symbols[] = {
 {SYS_ "TERMINAL-INTERRUPT",NULL},
 {SYS_ "TOP-LEVEL",NULL},
 {SYS_ "UNIVERSAL-ERROR-HANDLER",NULL},
-{SYS_ "UNLINK-SYMBOL","si_unlink_symbol"},
 {SYS_ "VALID-FUNCTION-NAME-P","si_valid_function_name_p"},
 {SYS_ "WRITE-OBJECT","si_write_object"},
 {SYS_ "WRITE-UGLY-OBJECT","si_write_ugly_object"},
@@ -1205,7 +1206,6 @@ cl_symbols[] = {
 #ifndef CLOS
 {SYS_ "STRUCTURE-INCLUDE",NULL},
 #else
-{SYS_ "CHANGE-INSTANCE",NULL},
 {SYS_ "COPY-INSTANCE","si_copy_instance"},
 {SYS_ "GENERIC-FUNCTION-P","si_generic_function_p"},
 {SYS_ "INSTANCE-REF-SAFE","si_instance_ref_safe"},
@@ -1244,8 +1244,7 @@ cl_symbols[] = {
 {SYS_ "LOOKUP-HOST-ENTRY","si_lookup_host_entry"},
 #endif
 
-{SYS_ "CATCH-BAD-SIGNALS","si_catch_bad_signals"},
-{SYS_ "UNCATCH-BAD-SIGNALS","si_uncatch_bad_signals"},
+{SYS_ "CATCH-SIGNAL","si_catch_signal"},
 
 /* KEYWORD PACKAGE */
 {KEY_ "ADJUSTABLE",NULL},
@@ -1372,15 +1371,22 @@ cl_symbols[] = {
 {KEY_ "UP",NULL},
 {KEY_ "UPCASE",NULL},
 {KEY_ "USE",NULL},
-{KEY_ "USE-HEADER-P",NULL},
+{KEY_ "CSTREAM",NULL},
 {KEY_ "VERBOSE",NULL},
 {KEY_ "VERSION",NULL},
 {KEY_ "WILD",NULL},
 {KEY_ "WILD-INFERIORS",NULL},
+{KEY_ "WAIT",NULL},
 
 {EXT_ "BYTE8",NULL},
+{EXT_ "BYTE16",NULL},
+{EXT_ "BYTE32",NULL},
+{EXT_ "BYTE64",NULL},
 {EXT_ "COMPILER-LET",NULL},
 {EXT_ "INTEGER8",NULL},
+{EXT_ "INTEGER16",NULL},
+{EXT_ "INTEGER32",NULL},
+{EXT_ "INTEGER64",NULL},
 {EXT_ "LAMBDA-BLOCK",NULL},
 {EXT_ "QUIT","si_quit"},
 #ifdef CLOS
@@ -1411,17 +1417,27 @@ cl_symbols[] = {
 {KEY_ "FIXNUM",NULL},
 {KEY_ "FLOAT",NULL},
 {KEY_ "INT",NULL},
+{KEY_ "INT8-T",NULL},
+{KEY_ "INT16-T",NULL},
+{KEY_ "INT32-T",NULL},
+{KEY_ "INT64-T",NULL},
 {KEY_ "LONG",NULL},
+{KEY_ "LONG-LONG",NULL},
 {KEY_ "POINTER-SELF",NULL},
 {KEY_ "POINTER-VOID",NULL},
 {KEY_ "SHORT",NULL},
 {KEY_ "STRUCT",NULL},
 {KEY_ "UNION",NULL},
 {KEY_ "VOID",NULL},
+{KEY_ "UINT8-T",NULL},
+{KEY_ "UINT16-T",NULL},
+{KEY_ "UINT32-T",NULL},
+{KEY_ "UINT64-T",NULL},
 {KEY_ "UNSIGNED-BYTE",NULL},
 {KEY_ "UNSIGNED-CHAR",NULL},
 {KEY_ "UNSIGNED-INT",NULL},
 {KEY_ "UNSIGNED-LONG",NULL},
+{KEY_ "UNSIGNED-LONG-LONG",NULL},
 {KEY_ "UNSIGNED-SHORT",NULL},
 {SYS_ "C-CHAR-BIT",NULL},
 {SYS_ "C-CHAR-MAX",NULL},
@@ -1436,7 +1452,7 @@ cl_symbols[] = {
 {SYS_ "C-UINT-MAX",NULL}, /* See main.d */
 {SYS_ "C-USHORT-MAX",NULL},
 {SYS_ "C-ULONG-MAX",NULL}, /* See main.d */
-
+{SYS_ "C-ULONG-LONG-MAX",NULL}, /* See main.d */
 #ifdef GBC_BOEHM
 {SYS_ "GC","si_gc"},
 {SYS_ "GC-DUMP","si_gc_dump"},
@@ -1491,7 +1507,6 @@ cl_symbols[] = {
 {MP_ "+LOAD-COMPILE-LOCK+",NULL},
 {MP_ "WITH-LOCK",NULL},
 {MP_ "WITHOUT-INTERRUPTS",NULL},
-{MP_ "CHECK-PENDING-INTERRUPTS","si_check_pending_interrupts"},
 #endif
 
 {SYS_ "WHILE",NULL},
@@ -1657,6 +1672,7 @@ cl_symbols[] = {
 {GRAY_ "STREAM-CLEAR-INPUT",NULL},
 {GRAY_ "STREAM-CLEAR-OUTPUT",NULL},
 {GRAY_ "STREAM-ELEMENT-TYPE",NULL},
+{GRAY_ "STREAM-FILE-POSITION",NULL},
 {GRAY_ "STREAM-FINISH-OUTPUT",NULL},
 {GRAY_ "STREAM-FORCE-OUTPUT",NULL},
 {GRAY_ "STREAM-FRESH-LINE",NULL},
@@ -1700,6 +1716,64 @@ cl_symbols[] = {
 {SYS_ "HASH-EQUALP","si_hash_equalp"},
 
 {EXT_ "INTERACTIVE-INTERRUPT",NULL},
+
+{EXT_ "STACK-OVERFLOW",NULL},
+{EXT_ "STACK-OVERFLOW-SIZE",NULL},
+{EXT_ "STACK-OVERFLOW-TYPE",NULL},
+{EXT_ "BINDING-STACK",NULL},
+{EXT_ "FRAME-STACK",NULL},
+{EXT_ "LISP-STACK",NULL},
+{EXT_ "C-STACK",NULL},
+{EXT_ "SET-LIMIT","si_set_limit"},
+{EXT_ "GET-LIMIT","si_get_limit"},
+{EXT_ "SEGMENTATION-VIOLATION",NULL},
+
+{EXT_ "EXTENDED-STRING",NULL},
+
+{SYS_ "CHECK-PENDING-INTERRUPTS","si_check_pending_interrupts"},
+
+{KEY_ "LATIN-1",NULL},
+{KEY_ "ISO-8859-1",NULL},
+{KEY_ "UTF-8",NULL},
+{KEY_ "UCS-2",NULL},
+{KEY_ "UCS-4",NULL},
+
+{EXT_ "STORAGE-EXHAUSTED",NULL},
+
+{EXT_ "CONSTANTLY-T",NULL},
+{EXT_ "CONSTANTLY-NIL",NULL},
+
+{EXT_ "MAYBE-QUOTE",NULL},
+{EXT_ "MAYBE-UNQUOTE",NULL},
+
+{KEY_ "CR",NULL},
+{KEY_ "LF",NULL},
+{KEY_ "CRLF",NULL},
+{KEY_ "UCS-2BE",NULL},
+{KEY_ "UCS-4BE",NULL},
+{KEY_ "UCS-2LE",NULL},
+{KEY_ "UCS-4LE",NULL},
+
+{EXT_ "LOAD-ENCODING",NULL},
+{EXT_ "MAKE-ENCODING",NULL},
+
+{KEY_ "US-ASCII",NULL},
+{KEY_ "LITTLE-ENDIAN",NULL},
+{KEY_ "BIG-ENDIAN",NULL},
+
+{SYS_ "+UNICODE-DATABASE+",NULL},
+
+{SYS_ "COPY-FILE","si_copy_file"},
+
+#ifdef GBC_BOEHM
+{EXT_ "HEAP-SIZE","si_heap_size"},
+#endif
+
+{EXT_ "FILL-ARRAY-WITH-ELT","si_fill_array_with_elt"},
+
+{EXT_ "+ECL-VERSION-NUMBER+",NULL},
+
+{EXT_ "*BYTECODES-COMPILER*",NULL},
 
 /* Tag for end of list */
 {NULL,NULL}};

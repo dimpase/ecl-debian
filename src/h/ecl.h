@@ -18,16 +18,24 @@
 #define ECL_H
 
 #include <sys/types.h>		/* size_t, pthread_t, pthread_mutex_t */
+#ifdef __OpenBSD__		/* same, but for OpenBSD (bug in OpenBSD!) */
+# include <pthread.h>
+#endif
 #include <stddef.h>		/* NULL, ptrdiff_t */
 #include <stdarg.h> 		/* va_list */
 #include <setjmp.h> 		/* setjmp and buffers */
+#include <stdio.h>		/* FILE */
 #if !defined(_MSC_VER) && !defined(__sun)
 #include <stdint.h> 		/* int8_t and friends */
+#define ecl_int8_t int8_t
+#define ecl_uint8_t uint8_t
 #else
-typedef char int8_t;
-typedef short int16_t;
-typedef unsigned char uint8_t;
-typedef unsigned short uint16_t;
+#define ecl_uint8_t unsigned char
+#define ecl_int8_t char
+#define ecl_uint16_t unsigned short
+#define ecl_int16_t short
+#define ecl_uint32_t unsigned int
+#define ecl_int32_t int
 #endif
 /* Microsoft VC++ does not have va_copy() */
 #if defined(_MSC_VER) || !defined(va_copy)
@@ -57,6 +65,7 @@ typedef unsigned short uint16_t;
 
 #ifdef ECL_THREADS
 # if defined(_MSC_VER) || defined(mingw32)
+#  define WIN32_LEAN_AND_MEAN 1 /* Do not include winsock.h */
 #  include <windows.h>
    typedef HANDLE pthread_t;
    typedef HANDLE pthread_mutex_t;
@@ -66,11 +75,6 @@ typedef unsigned short uint16_t;
 #   define CreateThread GC_CreateThread
 #  endif
 # endif
-# define start_critical_section()
-# define end_critical_section()
-#else
-# define start_critical_section()
-# define end_critical_section()
 #endif
 
 #include <ecl/object.h>

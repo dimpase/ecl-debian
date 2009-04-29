@@ -1,4 +1,4 @@
-%define _specver        $Id: ecl.spec,v 1.4 2004/06/19 11:26:29 jjgarcia Exp $
+%define _specver        $Id$
 %define _name           ecl
 %define _pkg            %{_name}
 %define _ver            ECL_VERSION

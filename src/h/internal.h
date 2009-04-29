@@ -25,8 +25,8 @@ extern "C" {
 extern void init_all_symbols(void);
 extern void init_alloc(void);
 extern void init_backq(void);
-extern void init_big(void);
-extern void init_big_registers(void);
+extern void init_big(cl_env_ptr);
+extern void init_big_registers(cl_env_ptr);
 #ifdef CLOS
 extern void init_clos(void);
 #endif
@@ -39,17 +39,23 @@ extern void init_GC(void);
 extern void init_macros(void);
 extern void init_number(void);
 extern void init_read(void);
-extern void init_stacks(int *);
-extern void init_unixint(void);
+extern void init_stacks(cl_env_ptr, int *);
+extern void init_unixint(int pass);
 extern void init_unixtime(void);
 #ifdef mingw32
 extern void init_compiler(void);
 #endif
-extern void ecl_init_env(struct cl_env_struct *);
+#ifdef ECL_THREADS
+extern void init_threads(cl_env_ptr);
+#endif
+extern void ecl_init_env(cl_env_ptr);
 extern void init_lib_LSP(cl_object);
+
+extern cl_env_ptr _ecl_alloc_env(void);
 
 /* alloc.d/alloc_2.d */
 
+extern void _ecl_set_max_heap_size(cl_index new_size);
 extern cl_object ecl_alloc_bytecodes(cl_index data_size, cl_index code_size);
 
 /* compiler.d */
@@ -62,20 +68,101 @@ struct cl_compiler_env {
 	cl_object lex_env;		/* Lexical env. for eval-when */
 	cl_index env_depth;
 	cl_index env_size;
+        int mode;
 	bool coalesce;
 	bool stepping;
 };
 
 typedef struct cl_compiler_env *cl_compiler_env_ptr;
 
+/* character.d */
+
+#ifdef ECL_UNICODE
+#define ECL_UCS_NONCHARACTER(c) \
+	(((c) >= 0xFDD0 && (c) <= 0xFDEF) || \
+	 (((c) & 0xFFFF) >= 0xFFFE && (((c) & 0xFFFF) <= 0xFFFF)))
+#define ECL_UCS_PRIVATE(c) \
+	(((c) >= 0xE000 && (c) <= 0xF8FF) || \
+	 ((c) >= 0xF0000 && (c) <= 0xFFFD) || \
+	 ((c) >= 0x100000 && (c) <= 0x10FFFD))
+#define ECL_UCS_HIGH_SURROGATE(c) ((c) >= 0xD800 && (c) <= 0xDBFF)
+#define ECL_UCS_LOW_SURROGATE(c) ((c) >= 0xDC00 && (c) <= 0xDFFF)
+#endif
+
+
 /* interpreter.d */
 
-#define cl_stack_ref(n) cl_env.stack[n]
-#define cl_stack_index() (cl_env.stack_top-cl_env.stack)
-
-#define ECL_BUILD_STACK_FRAME(name,frame)	\
+#define ECL_BUILD_STACK_FRAME(env,name,frame)	\
 	struct ecl_stack_frame frame;\
-	cl_object name = ecl_stack_frame_open((cl_object)&frame, 0);
+	cl_object name = ecl_stack_frame_open(env, (cl_object)&frame, 0);
+
+#ifdef ECL_USE_VARARG_AS_POINTER
+#define ECL_STACK_FRAME_FROM_VA_LIST(e,f,va) do {                  \
+                const cl_object __frame = (f);                     \
+                __frame->frame.t = t_frame;                        \
+                __frame->frame.stack = 0;                          \
+                __frame->frame.env = (e);                          \
+                __frame->frame.size = va[0].narg;                  \
+                __frame->frame.base = va[0].sp? va[0].sp :         \
+                        (cl_object*)va[0].args;                    \
+        } while(0)
+#else
+#define ECL_STACK_FRAME_FROM_VA_LIST(e,f,va) do {                       \
+                const cl_object __frame = (f);                          \
+                cl_index i, __nargs = va[0].narg;                       \
+                ecl_stack_frame_open((e), __frame, __nargs);            \
+                for (i = 0; i < __nargs; i++) {                         \
+                        __frame->frame.base[i] = cl_va_arg(va);         \
+                }                                                       \
+        } while (0)
+#endif
+
+#ifdef ECL_USE_VARARG_AS_POINTER
+#define ECL_STACK_FRAME_VARARGS_BEGIN(narg,lastarg,frame)               \
+        struct ecl_frame __ecl_frame;                                   \
+        const cl_object frame = (cl_object)&__ecl_frame;                \
+        const cl_env_ptr env = ecl_process_env();                       \
+        frame->frame.t = t_frame;                                       \
+        frame->frame.stack = 0;                                         \
+        frame->frame.env = env;                                         \
+        frame->frame.size = narg;                                       \
+        if (narg < C_ARGUMENTS_LIMIT) {                                 \
+                va_list args;                                           \
+                va_start(args, lastarg);                                \
+                frame->frame.base = (void*)args;                        \
+        } else {                                                        \
+                frame->frame.base = env->stack_top - narg;              \
+        }
+#define ECL_STACK_FRAME_VARARGS_END(frame)      \
+        /* No stack consumed, no need to close frame */
+#else
+#define ECL_STACK_FRAME_VARARGS_BEGIN(narg,lastarg,frame)               \
+        struct ecl_frame __ecl_frame;                                   \
+        const cl_object frame = (cl_object)&__ecl_frame;                \
+        const cl_env_ptr env = ecl_process_env();                       \
+        frame->frame.t = t_frame;                                       \
+        frame->frame.env = env;                                         \
+        frame->frame.size = narg;                                       \
+        if (narg < C_ARGUMENTS_LIMIT) {                                 \
+                cl_index i;                                             \
+                cl_object *p = frame->frame.base = env->values;         \
+                va_list args;                                           \
+                va_start(args, lastarg);                                \
+                while (narg--) {                                        \
+                        *p = va_arg(args, cl_object);                   \
+                        ++p;                                            \
+                }                                                       \
+                frame->frame.stack = (void*)0x1;                        \
+        } else {                                                        \
+                frame->frame.base = env->stack_top - narg;              \
+                frame->frame.stack = 0;                                 \
+        }
+#define ECL_STACK_FRAME_VARARGS_END(frame)      \
+        /* No stack consumed, no need to close frame */
+#endif
+
+extern cl_object _ecl_bytecodes_dispatch_vararg(cl_narg narg, ...);
+extern cl_object _ecl_bclosure_dispatch_vararg(cl_narg narg, ...);
 
 /* ffi.d */
 
@@ -113,9 +200,32 @@ extern void* ecl_dynamic_callback_make(cl_object data, enum ecl_ffi_calling_conv
  */
 #define OPEN_R	"rb"
 #define OPEN_W	"wb"
-#define OPEN_RW	"w+b"
+#define OPEN_RW	"r+b"
 #define OPEN_A	"ab"
 #define OPEN_RA	"a+b"
+
+#define ECL_FILE_STREAMP(strm) (type_of(strm) == t_stream && (strm)->stream.mode < smm_synonym)
+#define STRING_OUTPUT_STRING(strm) (strm)->stream.object0
+#define STRING_OUTPUT_COLUMN(strm) (strm)->stream.int1
+#define STRING_INPUT_STRING(strm) (strm)->stream.object0
+#define STRING_INPUT_POSITION(strm) (strm)->stream.int0
+#define STRING_INPUT_LIMIT(strm) (strm)->stream.int1
+#define TWO_WAY_STREAM_INPUT(strm) (strm)->stream.object0
+#define TWO_WAY_STREAM_OUTPUT(strm) (strm)->stream.object1
+#define SYNONYM_STREAM_SYMBOL(strm) (strm)->stream.object0
+#define SYNONYM_STREAM_STREAM(strm) ecl_symbol_value((strm)->stream.object0)
+#define BROADCAST_STREAM_LIST(strm) (strm)->stream.object0
+#define ECHO_STREAM_INPUT(strm) (strm)->stream.object0
+#define ECHO_STREAM_OUTPUT(strm) (strm)->stream.object1
+#define CONCATENATED_STREAM_LIST(strm) (strm)->stream.object0
+#define IO_STREAM_FILE(strm) ((strm)->stream.file.stream)
+#define IO_STREAM_COLUMN(strm) (strm)->stream.int1
+#define IO_STREAM_ELT_TYPE(strm) (strm)->stream.object0
+#define IO_STREAM_FILENAME(strm) (strm)->stream.object1
+#define IO_FILE_DESCRIPTOR(strm) (strm)->stream.file.descriptor
+#define IO_FILE_COLUMN(strm) (strm)->stream.int1
+#define IO_FILE_ELT_TYPE(strm) (strm)->stream.object0
+#define IO_FILE_FILENAME(strm) (strm)->stream.object1
 
 /* format.d */
 
@@ -131,6 +241,8 @@ extern void ecl_extend_hashtable(cl_object hashtable);
 #define GFUN_NAME(x) ((x)->instance.slots[0])
 #define GFUN_SPEC(x) ((x)->instance.slots[1])
 #define GFUN_COMB(x) ((x)->instance.slots[2])
+
+extern cl_object FEnot_funcallable_vararg(cl_narg narg, ...);
 
 /* package.d */
 
@@ -193,8 +305,6 @@ extern cl_fixnum ecl_runtime(void);
 
 /* unixint.d */
 
-extern bool ecl_interrupt_enable;
-
 #if defined(_MSC_VER) || defined(mingw32)
 # include <float.h>
 # if defined(_MSC_VER)
@@ -226,30 +336,57 @@ typedef int fenv_t;
  */
 
 #ifndef HAVE_EXPF
+# ifdef expf
+#  undef expf
+# endif
 # define expf(x) exp((float)x)
 #endif
 #ifndef HAVE_LOGF
+# ifdef logf
+#  undef logf
+# endif
 # define logf(x) log((float)x)
 #endif
 #ifndef HAVE_SQRTF
+# ifdef sqrtf
+#  undef sqrtf
+# endif
 # define sqrtf(x) sqrt((float)x)
 #endif
 #ifndef HAVE_SINF
+# ifdef sinf
+#  undef sinf
+# endif
 # define sinf(x) sin((float)x)
 #endif
 #ifndef HAVE_COSF
+# ifdef cosf
+#  undef cosf
+# endif
 # define cosf(x) cos((float)x)
 #endif
 #ifndef HAVE_TANF
+# ifdef tanf
+#  undef tanf
+# endif
 # define tanf(x) tan((float)x)
 #endif
 #ifndef HAVE_SINHF
+# ifdef sinhf
+#  undef sinhf
+# endif
 # define sinhf(x) sinh((float)x)
 #endif
 #ifndef HAVE_COSHF
+# ifdef coshf
+#  undef coshf
+# endif
 # define coshf(x) cosh((float)x)
 #endif
 #ifndef HAVE_TANHF
+# ifdef tanhf
+#  undef tanhf
+# endif
 # define tanhf(x) tanh((float)x)
 #endif
 

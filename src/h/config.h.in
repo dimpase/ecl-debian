@@ -24,7 +24,8 @@
 #if defined(mingw32) || defined(_MSC_VER) || defined(cygwin)
 # define ECL_DLLEXPORT __declspec(dllexport)
 # ifdef ECL_API
-#  undef ECL_API
+#  undef \
+   ECL_API /* Avoid autoconf removing this */
 #  define ECL_API __declspec(dllexport)
 # else
 #  define ECL_API __declspec(dllimport)
@@ -32,10 +33,14 @@
 #else
 # define ECL_DLLEXPORT
 # ifdef ECL_API
-#  undef ECL_API
+#  undef \
+   ECL_API /* Avoid autoconf removing this */
 # endif
 # define ECL_API
 #endif
+
+/* Decimal number made with the formula yymmvv */
+#define ECL_VERSION_NUMBER @ECL_VERSION_NUMBER@
 
 /*
  * FEATURES LINKED IN
@@ -63,7 +68,9 @@
 #endif
 
 /* __thread thread-local variables?                                     */
+#ifndef openbsd
 #undef WITH___THREAD
+#endif
 
 /* Network streams							*/
 #undef TCP
@@ -76,6 +83,22 @@
 
 /* Support for Unicode strings */
 #undef ECL_UNICODE
+
+/* Stack grows downwards						*/
+#undef ECL_DOWN_STACK
+
+/* Use mprotect for fast interrupt dispatch				*/
+#undef ECL_USE_MPROTECT
+
+/* Integer types                        				*/
+#undef ecl_uint16_t
+#undef ecl_int16_t
+#undef ecl_uint32_t
+#undef ecl_int32_t
+#undef ecl_uint64_t
+#undef ecl_int64_t
+#undef ecl_long_long_t
+#undef ecl_ulong_long_t
 
 /*
  * C TYPES AND SYSTEM LIMITS
@@ -212,8 +235,6 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
  * SYSTEM FEATURES:
  */
 
-/* Stack grows downwards						*/
-#undef DOWN_STACK
 /* Argument list can be access as an array				*/
 #undef ECL_USE_VARARG_AS_POINTER
 /* Most significant byte first						*/
@@ -258,12 +279,14 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #undef HAVE_SIGPROCMASK
 /* isatty() checks whether a file is connected to a			*/
 #undef HAVE_ISATTY
-/* compiler understands long long                                       */
-#undef HAVE_LONG_LONG
 /* can manipulate floating point environment				*/
 #undef HAVE_FENV_H
 /* can activate individual traps in floating point environment		*/
 #undef HAVE_FEENABLEEXCEPT
+/* do we want to deactivate all support for floating point exceptions   */
+#undef ECL_AVOID_FPE_H
+/* do we want to have signed zeros					*/
+#undef ECL_SIGNED_ZERO
 /* has support for large files						*/
 #undef HAVE_FSEEKO
 /* the tzset() function gets the current time zone			*/
@@ -292,6 +315,10 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #undef HAVE_SCHED_YIELD
 /* uname() for system identification					*/
 #undef HAVE_UNAME
+#undef HAVE_UNISTD_H
+#undef HAVE_SYS_WAIT_H
+/* size of long long            					*/
+#undef ECL_LONG_LONG_BITS
 
 /*
  * we do not manage to get proper signal handling of floating point
@@ -320,21 +347,6 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #define	LISP_PAGESIZE	2048	/* Page size in bytes			*/
 #define MAXPAGE	65536		/* Maximum Memory Size			*/
 
-/*
- * The lisp environment has several stacks. These are their limits:
- */
-#define BDSSIZE	2048		/* Size of Binding Stack		*/
-#define	BDSGETA	16		/* Safety zone of BDS			*/
-#define FRSSIZE	1024		/* Size of Frame Stack			*/
-#define	FRSGETA	16		/* Safety zone of FRS			*/
-#ifdef THREADS
-#define	CSSIZE	7500		/* Size of C Stack of each thread	*/
-#define	CSGETA	500
-#else
-#define	CSSIZE	20000		/* Size of C Stack			*/
-#define	CSGETA	4000
-#endif
-
 /* We reserve these many bytes for computation with bignums registers	*/
 #define BIGNUM_REGISTER_SIZE 16
 
@@ -362,26 +374,26 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #  define FILE_CNT(fp)	((fp)->_cnt)
 #endif
 
-#if defined(MSDOS) || defined(cygwin) || defined(mingw32)
+#if defined(cygwin) || defined(mingw32) || defined(_MSC_VER)
 #  define IS_DIR_SEPARATOR(x) ((x=='/')||(x=='\\'))
-#  ifdef MSDOS
-#    define DIR_SEPARATOR	'\\'
-#  else
-#    define DIR_SEPARATOR	'/'
-#  endif
+#  define DIR_SEPARATOR		'/'
 #  define PATH_SEPARATOR	';'
 #else
 #  define IS_DIR_SEPARATOR(x) (x=='/')
 #  define DIR_SEPARATOR	'/'
 #  define PATH_SEPARATOR	':'
-#endif /* MSDOS */
+#endif
 
 #define ECL_ARCHITECTURE "@ARCHITECTURE@"
 
-#include "@ECL_FPE_CODE@"
+#ifdef ECL_AVOID_FPE_H
+# define ecl_detect_fpe()
+#else
+# include "@ECL_FPE_CODE@"
+#endif
 
 #if defined(ECL_THREADS)
-# if defined(darwin) || defined(freebsd) || defined(gnu)
+# if defined(darwin) || defined(freebsd) || defined(gnu) || defined(openbsd) || defined(netbsd)
 #  define PTHREAD_MUTEX_ERRORCHECK_NP PTHREAD_MUTEX_ERRORCHECK
 #  define PTHREAD_MUTEX_RECURSIVE_NP PTHREAD_MUTEX_RECURSIVE
 #  define PTHREAD_MUTEX_NORMAL_NP PTHREAD_MUTEX_NORMAL
@@ -395,7 +407,7 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 # endif
 #endif
 
-#if defined(mingw32) || defined(_MSC_VER) || defined(cygwin)
+#if defined(mingw32) || defined(_MSC_VER) || defined(cygwin) || defined(sparc)
 # include <math.h>
 # ifndef isfinite
 #  define isfinite(x) (finite(x))

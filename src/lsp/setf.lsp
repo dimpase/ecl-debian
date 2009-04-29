@@ -110,8 +110,10 @@ Does not check if the third gang is a single-element list."
 	       (push item names))
 	     (push item all-args))
 	   (values (gensym) (nreverse names) (nreverse values) (nreverse all-args))))
+    ;; Note that macroexpansion of SETF arguments can only be done via
+    ;; MACROEXPAND-1 [ANSI 5.1.2.7]
     (cond ((symbolp form)
-	   (if (and (setq f (macroexpand form env)) (not (equal f form)))
+	   (if (and (setq f (macroexpand-1 form env)) (not (equal f form)))
 	       (get-setf-expansion f env)
 	       (let ((store (gensym)))
 		 (values nil nil (list store) `(setq ,form ,store) form))))
@@ -130,7 +132,7 @@ Does not check if the third gang is a single-element list."
 			    (setf-structure-access (car all) (car f) (cdr f) store))
 			   ((setq f (get-sysprop (car form) 'SETF-LAMBDA))
 			    (apply f store all))
-			   ((and (setq f (macroexpand form env)) (not (equal f form)))
+			   ((and (setq f (macroexpand-1 form env)) (not (equal f form)))
 			    (return-from get-setf-expansion
 			      (get-setf-expansion f env)))
 			   (t
@@ -314,8 +316,11 @@ Does not check if the third gang is a single-element list."
 
 (defun setf-structure-access (struct type index newvalue)
   (declare (si::c-local))
-  (case type
-    ((LIST VECTOR) `(sys:elt-set ,struct ,index ,newvalue))
+  (cond
+    ((or (eq type 'list) (eq type 'vector))
+     `(sys:elt-set ,struct ,index ,newvalue))
+    ((consp type)
+     `(si::aset ,newvalue (the ,type ,struct) ,index))
     (t `(sys::structure-set ,struct ',type ,index ,newvalue))))
 
 (defun setf-expand (l env)

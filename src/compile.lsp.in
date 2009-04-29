@@ -53,6 +53,7 @@
       "@SHARED_LDFLAGS@ @LDFLAGS@ @SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@ @FASL_LIBS@"
       c::*ld-bundle-flags*
       "@BUNDLE_LDFLAGS@ @LDFLAGS@ @SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@ @FASL_LIBS@")
+;;; FIXME: The nonstop platform does not support soname
 #+(and :wants-dlopen nonstop)
 (setf c::*ld-flags*
       "@LDFLAGS@ -Wld=-l@SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@"
@@ -102,13 +103,10 @@
 ;;;
 ;;; We do not need the -rpath flag for the library, nor -lecl.
 ;;;
-(let* ((c::*ld-shared-flags* #-msvc "@SHARED_LDFLAGS@ @LDFLAGS@ @CORE_LIBS@ @LIBS@ @FASL_LIBS@"
+(let* ((c::*ld-shared-flags* #-msvc "@SHARED_LDFLAGS@ @LDFLAGS@ @SONAME_LDFLAGS@ @CORE_LIBS@ @LIBS@ @FASL_LIBS@"
 			     #+msvc "@SHARED_LDFLAGS@ @LDFLAGS@ @STATICLIBS@ @CLIBS@")
        (c::*cc-flags* (concatenate 'string "-DECL_API -I@true_builddir@/c " c::*cc-flags*))
        (extra-args nil))
-  #+darwin
-  (push "-Wl,-install_name,@libdir\@/@SHAREDPREFIX@ecl.@SHAREDEXT@"
-	extra-args)
   #+(or mingw32 cygwin)
   (progn
     ;; We need these two to force dllwrap to export the symbols
@@ -136,12 +134,25 @@
 
 #+WANTS-CMP
 (build-module "cmp" +cmp-module-files+ 
-              :dir "build:cmp;" :prefix "CMP" :additional-files '("sysfun.lsp"))
+              :dir "build:cmp;" :prefix "CMP" :additional-files '("sysfun.lsp")
+              :builtin #+:BUILTIN-CMP t #-:BUILTIN-CMP nil)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; EXTENSIONS
 ;;;
+
+;;;
+;;; * BYTECMP
+;;;
+#+WANTS-BYTECMP
+(build-module "bytecmp"
+              '("ext:bytecmp;bytecmp.lsp")
+              :dir "build:ext;"
+              :prefix "EXT"
+              :builtin
+	      #+:BUILTIN-BYTECMP t
+	      #-:BUILTIN-BYTECMP nil)
 
 ;;;
 ;;; * DEFSYSTEM
@@ -150,7 +161,8 @@
 (build-module "defsystem"
               '("ext:defsystem;defsystem.lisp")
               :dir "build:ext;"
-              :prefix "EXT")
+              :prefix "EXT"
+              :builtin #+:BUILTIN-DEFSYSTEM t #-:BUILTIN-DEFSYSTEM nil)
 
 ;;;
 ;;; * ASDF
@@ -160,7 +172,8 @@
               '("ext:asdf;asdf.lisp"
 		"ext:asdf;asdf-ecl.lisp")
               :dir "build:ext;"
-              :prefix "EXT")
+              :prefix "EXT"
+              :builtin #+:BUILTIN-ASDF t #-:BUILTIN-ASDF nil)
 
 ;;;
 ;;; * PROFILE
@@ -169,7 +182,10 @@
 (build-module "profile"
               '("ext:profile;profile.lisp")
               :dir "build:ext;"
-              :prefix "EXT")
+              :prefix "EXT"
+              :builtin
+	      #+(or (NOT :WANTS-DLOPEN) :BUILTIN-PROFILE) t
+	      #-(or (NOT :WANTS-DLOPEN) :BUILTIN-PROFILE) nil)
 
 ;;;
 ;;; * Sockets library.
@@ -177,15 +193,22 @@
 
 #+WANTS-SOCKETS
 (build-module "sockets"
-	      '("ext:sockets;sockets.lisp")
+	      '("ext:sockets;package.lisp"
+		"ext:sockets;sockets.lisp")
 	      :dir "build:ext;"
-	      :prefix "EXT")
+	      :prefix "EXT"
+              :builtin
+	      #+(or (NOT :WANTS-DLOPEN) :BUILTIN-SOCKETS) t
+	      #-(or (NOT :WANTS-DLOPEN) :BUILTIN-SOCKETS) nil)
 
 #+WANTS-SERVE-EVENT
 (build-module "serve-event"
 	      '("ext:serve-event;serve-event.lisp")
 	      :dir "build:ext;"
-	      :prefix "EXT")
+	      :prefix "EXT"
+              :builtin
+	      #+(or (NOT :WANTS-DLOPEN) :BUILTIN-SERVE-EVENT) t
+	      #-(or (NOT :WANTS-DLOPEN) :BUILTIN-SERVE-EVENT) nil)
 
 ;;;
 ;;; * Test suite
@@ -194,38 +217,56 @@
 (build-module "rt"
 	      '("ext:rt;rt.lisp")
 	      :dir "build:ext;"
-	      :prefix "EXT")
+	      :prefix "EXT"
+              :builtin #+:BUILTIN-RT t #-:BUILTIN-RT nil)
+
+;;;
+;;; * External formats
+;;;
+#+UNICODE
+(load "ext:encodings;generate.lisp")
 
 ;;;
 ;;; * Compile the portable CLX library.
 ;;;
 
 #+WANTS-CLX
-(let ((+clx-src-files+ '("src:clx;package.lisp"
-			 "src:clx;depdefs.lisp"
-			 "src:clx;clx.lisp"
-			 "src:clx;dependent.lisp"
-			 "src:clx;macros.lisp"
-			 "src:clx;bufmac.lisp"
-			 "src:clx;buffer.lisp"
-			 "src:clx;display.lisp"
-			 "src:clx;gcontext.lisp"
-			 "src:clx;input.lisp"
-			 "src:clx;requests.lisp"
-			 "src:clx;fonts.lisp"
-			 "src:clx;graphics.lisp"
-			 "src:clx;text.lisp"
-			 "src:clx;attributes.lisp"
-			 "src:clx;translate.lisp"
-			 "src:clx;keysyms.lisp"
-			 "src:clx;manager.lisp"
-			 "src:clx;image.lisp"
-			 "src:clx;resource.lisp"))
-      #+:msvc
-      (c::*cc-flags* (concatenate 'string c::*cc-flags* " -Zm150")))
-  (pushnew :clx-ansi-common-lisp *features*)
+(let* ((*features* (cons :clx-ansi-common-lisp *features*))
+       (+clx-src-files+ '("src:clx;package.lisp"
+                          "src:clx;depdefs.lisp"
+                          "src:clx;clx.lisp"
+                          "src:clx;dependent.lisp"
+                          "src:clx;macros.lisp"
+                          "src:clx;bufmac.lisp"
+                          "src:clx;buffer.lisp"
+                          "src:clx;display.lisp"
+                          "src:clx;gcontext.lisp"
+                          "src:clx;input.lisp"
+                          "src:clx;requests.lisp"
+                          "src:clx;fonts.lisp"
+                          "src:clx;graphics.lisp"
+                          "src:clx;text.lisp"
+                          "src:clx;attributes.lisp"
+                          "src:clx;translate.lisp"
+                          "src:clx;keysyms.lisp"
+                          "src:clx;manager.lisp"
+                          "src:clx;image.lisp"
+                          "src:clx;resource.lisp"
+			  "build:clx;module.lisp"))
+       #+:msvc
+       (c::*cc-flags* (concatenate 'string c::*cc-flags* " -Zm150")))
+  (let ((filename "build:clx;module.lisp"))
+    (ensure-directories-exist filename)
+    (with-open-file (s filename :direction :output :if-exists :overwrite
+		       :if-does-not-exist :create)
+     (print '(provide :clx) s)))
+  (unless (find-package "SB-BSD-SOCKETS")
+    (load "ext:sockets;package.lisp"))
   (mapcar #'load +clx-src-files+)
-  (build-module "clx" +clx-src-files+ :dir "build:clx;" :prefix "CLX"))
+  (build-module "clx" +clx-src-files+ :dir "build:clx;" :prefix "CLX"
+		:builtin
+		#+(OR (NOT :WANTS-DLOPEN) :BUILTIN-CLX) t
+		#-(OR (NOT :WANTS-DLOPEN) :BUILTIN-CLX) nil))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;

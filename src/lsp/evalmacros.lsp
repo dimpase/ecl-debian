@@ -12,7 +12,13 @@
 
 (in-package "SYSTEM")
 
-(defmacro defun (name vl &body body &aux doc-string)
+(defmacro unless (pred &rest body)
+  "Syntax: (unless test {form}*)
+If TEST evaluates to NIL, then evaluates FORMs and returns all values of the
+last FORM.  If not, simply returns NIL."
+  `(IF (NOT ,pred) (PROGN ,@body)))
+
+(defmacro defun (&whole whole name vl &body body &aux doc-string)
   "Syntax: (defun name lambda-list {decl | doc}* {form}*)
 Defines a global function named by NAME.
 The complete syntax of a lambda-list is:
@@ -36,7 +42,7 @@ retrieved by (documentation 'NAME 'function)."
      (eval-when (:execute)
        (si::fset ',name ,function))
      (eval-when (:load-toplevel)
-       (si::fset ',name ,global-function))
+       ,(ext:register-with-pde whole `(si::fset ',name ,global-function)))
     ,@(si::expand-set-documentation name 'function doc-string)
     ',name)))
 
@@ -81,8 +87,9 @@ as a VARIABLE doc and can be retrieved by (documentation 'NAME 'variable)."
 	      (SETQ ,var ,form))))
     ,@(si::expand-set-documentation var 'variable doc-string)
     ,(ext:register-with-pde whole)
-    (eval-when (:compile-toplevel)
-      (si::register-global ',var))
+    ,(unless *bytecodes-compiler*
+       `(eval-when (:compile-toplevel)
+          (si::register-global ',var)))
     ',var))
 
 (defmacro defparameter (&whole whole var form &optional doc-string)
@@ -95,16 +102,24 @@ as a VARIABLE doc and can be retrieved by (documentation 'NAME 'variable)."
     (SETQ ,var ,form)
     ,@(si::expand-set-documentation var 'variable doc-string)
     ,(ext:register-with-pde whole)
-    (eval-when (:compile-toplevel)
-      (si::register-global ',var))
+    ,(unless *bytecodes-compiler*
+       `(eval-when (:compile-toplevel)
+          (si::register-global ',var)))
     ',var))
 
 (defmacro defconstant (&whole whole var form &optional doc-string)
-  `(PROGN (SYS:*MAKE-CONSTANT ',var ,form)
+  "Syntax: (defconstant symbol form [doc])
+
+Declares that the global variable named by SYMBOL is a constant with the value
+of FORM as its constant value.  The doc-string DOC, if supplied, is saved as a
+VARIABLE doc and can be retrieved by (DOCUMENTATION 'SYMBOL 'VARIABLE)."
+  `(PROGN
+     (SYS:*MAKE-CONSTANT ',var ,form)
     ,@(si::expand-set-documentation var 'variable doc-string)
     ,(ext:register-with-pde whole)
-    (eval-when (:compile-toplevel)
-      (si::register-global ',var))
+    ,(unless *bytecodes-compiler*
+       `(eval-when (:compile-toplevel)
+          (si::register-global ',var)))
     ',var))
 
 ;;;
@@ -194,12 +209,6 @@ TESTs evaluates to non-NIL."
 			   `(IF ,(car l) (PROGN ,@(cdr l)) ,form))))))
   )
 
-(defmacro unless (pred &rest body)
-  "Syntax: (unless test {form}*)
-If TEST evaluates to NIL, then evaluates FORMs and returns all values of the
-last FORM.  If not, simply returns NIL."
-  `(IF (NOT ,pred) (PROGN ,@body)))
-
 ; program feature
 
 (defmacro prog (vl &rest body &aux (decl nil))
@@ -241,9 +250,15 @@ SECOND-FORM."
 ; multiple values
 
 (defmacro multiple-value-list (form)
+  "Evaluates FORM and returns a list of all values FORM returns."
   `(MULTIPLE-VALUE-CALL 'LIST ,form))
 
 (defmacro multiple-value-setq (vars form)
+  "Syntax: (multiple-value-setq {var}* form)
+
+Evaluates FORM and binds the N-th VAR to the N-th value of FORM or, if FORM
+returns less than N values, to NIL.  Returns the first value of FORM or, if
+FORM returns no value, NIL."
   (do ((vl vars (cdr vl))
        (sym (gensym))
        (forms nil)
@@ -256,6 +271,11 @@ SECOND-FORM."
 ;; We do not use this macroexpanso, and thus we do not care whether
 ;; it is efficiently compiled by ECL or not.
 (defmacro multiple-value-bind (vars form &rest body)
+  "Syntax: (multiple-value-bind ({var}*) init {decl}* {form}*)
+
+Evaluates INIT and binds the N-th VAR to the N-th value of INIT or, if INIT
+returns less than N values, to NIL.  Then evaluates FORMs, and returns all
+values of the last FORM.  If no FORM is given, returns NIL."
   `(multiple-value-call #'(lambda (&optional ,@(mapcar #'list vars)) ,@body) ,form))
 
 (defun while-until (test body jmp-op)
@@ -337,4 +357,13 @@ SECOND-FORM."
 (defun maybe-unquote (form)
   (if (and (consp form) (eq (car form) 'quote))
       (second form)
+      form))
+
+(defun maybe-quote (form)
+  ;; Quotes a form only if strictly required. This happens only when FORM is
+  ;; either a symbol and not a keyword
+  (if (if (atom form)
+	  (typep form '(and symbol (not keyword) (not boolean)))
+	  (not (eq (first form) 'quote)))
+      (list 'quote form)
       form))

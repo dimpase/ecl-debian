@@ -33,6 +33,8 @@
 	   "ENSURE-CHAR-STORABLE" "DEF-TYPE"
 	   "WITH-CSTRING" "CONVERT-TO-CSTRING" "CONVERT-FROM-CSTRING" "FREE-CSTRING"
            "WITH-CAST-POINTER" "WITH-CSTRINGS"
+
+	   "*USE-DFFI*"
 	   )
   (:import-from "SYS" "NULL-POINTER-P" "GET-SYSPROP" "PUT-SYSPROP"))
 
@@ -54,7 +56,7 @@
 
 (defvar *ffi-types* (make-hash-table :size 128))
 
-#+dffi (defvar si::*use-dffi* t)
+(defvar *use-dffi* t)
 
 (defun foreign-elt-type-p (name)
   (and (symbolp name)
@@ -536,7 +538,7 @@
 
 (defmacro def-function (name args &key module (returning :void) (call :cdecl))
   #+DFFI 
-  (when (and module si::*use-dffi*)
+  (when (and module *use-dffi*)
     (return-from def-function
       `(def-lib-function ,name ,args :returning ,returning :module ,module :call ,call)))
   (multiple-value-bind (c-name lisp-name)
@@ -573,7 +575,7 @@
                           (and (consp ffi-type)
                                (member (first ffi-type) '(* :array)))))
 	   (inline-form (cond #+dffi
-                              ((and module si::*use-dffi*)
+                              ((and module *use-dffi*)
 			       `(si::find-foreign-symbol ,c-name ,module ',type ,(size-of-foreign-type type)))
 			      (t
 			       `(c-inline () () :object
@@ -654,7 +656,7 @@
                           `((eval-when (:compile-toplevel)
                               (do-load-foreign-library ,filename
 				,system-library)))))
-       (dyn-form #+dffi (when (and (not system-library) si::*use-dffi*)
+       (dyn-form #+dffi (when (and (not system-library) *use-dffi*)
                           `((si:load-foreign-module ,filename)))
                  #-dffi nil))
    `(progn ,@compile-form ,@dyn-form)))
@@ -669,7 +671,7 @@
 
 #+dffi
 (defmacro defcallback (name ret-type arg-desc &body body)
-  (if si::*use-dffi*
+  (if *use-dffi*
       (multiple-value-bind (name call-type) (if (consp name)
                                                 (values-list name)
                                                 (values name :cdecl))
@@ -700,6 +702,12 @@
       (list (list ,@args) ',arg-types ',ret-type ,@others))))
 
 (defmacro definline (fun arg-types type code)
+"Syntax: (definline symbol ({arg-type}*) value-type body)" "
+
+DEFINLINE behaves like a DEFCBODY (see), but also instructs the LISP compiler
+to expand inline any call to function SYMBOL into code corresponding
+to the C language expression BODY, whenever it can determine that
+the actual arguments are of the specified type."
   `(eval-when (:compile-toplevel :load-toplevel :execute)
               ;; defCbody must go first, because it clears symbol-plist of fun
               (defCbody ,fun ,arg-types ,type ,code)
@@ -707,24 +715,48 @@
 	      (def-inline ,fun :always ,arg-types ,type ,code)))
 
 (defmacro defla (&rest body)
+"Syntax: (defla name lambda-list {decl | doc}* {form}*)" "
+
+Used to DEFine Lisp Alternative.  For the interpreter, DEFLA is equivalent to
+DEFUN, but the compiler ignores this form."
   `(eval-when (:execute)
      (defun ,@body)))
 
 (defmacro defcbody (name arg-types result-type C-expr)
+"Syntax: (defcbody symbol ({arg-type}*) value-type body)" "
+
+The compiler defines a Lisp function named by SYMBOL whose body consists of the
+C code of the string BODY. In the BODY one can reference the arguments of the
+function as \"#0\", \"#1\", etc.
+The interpreter ignores this form.  ARG-TYPEs are argument types of the
+defined Lisp function and VALUE-TYPE is its the return type."
   (let ((args (mapcar #'(lambda (x) (gensym)) arg-types)))
   `(defun ,name ,args
      (c-inline ,args ,arg-types ,result-type
 	       ,C-expr :one-liner t))))
 
-(defmacro defentry (name arg-types c-name)
+(defmacro defentry (name arg-types c-name &key no-interrupts)
+"Syntax: (defentry symbol ({arg-type}*) (value-type function-name))
+
+The compiler defines a Lisp function named by SYMBOL whose body consists of a
+calling sequence to the C language function named by FUNCTION-NAME.  The
+interpreter ignores this form.  ARG-TYPEs are argument types of the C function
+and VALUE-TYPE is the return type of the C function.  Symbols OBJECT, INT,
+CHAR, CHAR*, FLOAT, DOUBLE are allowed for these types."
   (let ((output-type :object)
 	(args (mapcar #'(lambda (x) (gensym)) arg-types)))
     (if (consp c-name)
 	(setf output-type (first c-name)
 	      c-name (second c-name)))
-    (setf c-name (string c-name))
-    `(defun ,name ,args
-       (c-inline ,args ,arg-types ,output-type
-                 ,(produce-function-call c-name (length arg-types))
-		 :one-liner t))))
+    (let* ((call (produce-function-call (string c-name) (length arg-types)))
+	   (full-text (if no-interrupts
+			  (concatenate 'string
+				       "ecl_disable_interrupts();@(return)="
+				       call
+				       ";ecl_enable_interrupts();")
+			  call)))
+      `(defun ,name ,args
+	 (c-inline ,args ,arg-types ,output-type
+		   ,full-text
+		   :one-liner ,(not no-interrupts))))))
 

@@ -28,8 +28,19 @@
            "BUILD-FASL"
 	   "BUILD-STATIC-LIBRARY"
 	   "BUILD-SHARED-LIBRARY"
+	   "COMPILER-WARNING"
+	   "COMPILER-NOTE"
+	   "COMPILER-MESSAGE"
+	   "COMPILER-ERROR"
+	   "COMPILER-FATAL-ERROR"
+	   "COMPILER-INTERNAL-ERROR"
+	   "COMPILER-UNDEFINED-VARIABLE"
+	   "COMPILER-MESSAGE-FILE"
+	   "COMPILER-MESSAGE-FILE-POSITION"
+	   "COMPILER-MESSAGE-FORM"
 	   "*SUPPRESS-COMPILER-WARNINGS*"
-	   "*SUPPRESS-COMPILER-NOTES*")
+	   "*SUPPRESS-COMPILER-NOTES*"
+	   "*SUPPRESS-COMPILER-MESSAGES*")
   (:import-from "SI" "GET-SYSPROP" "PUT-SYSPROP" "REM-SYSPROP" "MACRO"
 		"*COMPILER-CONSTANTS*" "REGISTER-GLOBAL" "CMP-ENV-REGISTER-MACROLET"
 		"COMPILER-LET"))
@@ -219,6 +230,8 @@
   return-rep-type	;;; Representation type for the output
   arg-types		;;; List of lisp types for the arguments
   return-type		;;; Lisp type for the output
+  exact-return-type	;;; Only use this expansion when the output is
+			;;; declared to have a subtype of RETURN-TYPE
   expansion		;;; C template containing the expansion
   one-liner		;;; Whether the expansion spans more than one line
 )
@@ -247,10 +260,16 @@
 ;;; Variables and constants for error handling
 ;;;
 (defvar *current-form* '|compiler preprocess|)
+(defvar *compile-file-position* nil)
 (defvar *first-error* t)
-(defvar *error-count* 0)
-(defvar *error-p* nil)
 (defconstant *cmperr-tag* (cons nil nil))
+
+(defvar *active-handlers* nil)
+(defvar *active-protection* nil)
+(defvar *pending-actions* nil)
+
+(defvar *compiler-conditions* '()
+  "This variable determines whether conditions are printed or just accumulated.")
 
 (defvar *compile-print* t
   "This variable controls whether the compiler displays messages about
@@ -260,15 +279,13 @@ each form it processes. The default value is NIL.")
   "This variable controls whether the compiler should display messages about its
 progress. The default value is T.")
 
-(defvar *suppress-compiler-warnings* nil
-  "This variable controls whether the compiler should issue warnings.
-The default value is NIL.")
+(defvar *suppress-compiler-messages* nil
+  "A type denoting which compiler messages and conditions are _not_ displayed.")
 
-(defvar *suppress-compiler-notes* nil
-  "This variable controls whether the compiler displays compilation notices.
-The default value is NIL.")
+(defvar *suppress-compiler-notes* nil) ; Deprecated
+(defvar *suppress-compiler-warnings* nil) ; Deprecated
 
-(defvar *compiler-break-enable* nil)
+(defvar *compiler-break-enable* t)
 
 (defvar *compiler-in-use* nil)
 (defvar *compiler-input*)
@@ -320,6 +337,7 @@ The default value is NIL.")
 (defvar *env* 0)		; number of variables in current form
 (defvar *max-env* 0)		; maximum *env* in whole function
 (defvar *env-lvl* 0)		; number of levels of environments
+(defvar *aux-closure* nil)	; stack allocated closure needed for indirect calls
 
 (defvar *next-cmacro* 0)	; holds the last cmacro number used.
 (defvar *next-cfun* 0)		; holds the last cfun used.
@@ -424,7 +442,7 @@ coprocessor).")
 (defvar *cc-flags* "@CPPFLAGS@ @CFLAGS@ @ECL_CFLAGS@")
 
 (defvar *cc-optimize* #-msvc "-O"
-                      #+msvc "-O2")
+                      #+msvc "@CFLAGS_OPTIMIZE@")
 
 (defvar *ld-format* #-msvc "~A -o ~S -L~S ~{~S ~} ~@?"
                     #+msvc "~A -Fe~S~* ~{~S ~} ~@?")
@@ -497,6 +515,7 @@ lines are inserted, but the order is preserved")
 (defvar *global-var-objects* nil)	; var objects for global/special vars
 (defvar *global-vars* nil)		; variables declared special
 (defvar *global-funs* nil)		; holds	{ fun }*
+(defvar *global-cfuns-array* nil)	; holds	{ fun }*
 (defvar *linking-calls* nil)		; holds { ( global-fun-name fun symbol c-fun-name var-name ) }*
 (defvar *local-funs* nil)		; holds { fun }*
 (defvar *top-level-forms* nil)		; holds { top-level-form }*

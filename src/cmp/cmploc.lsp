@@ -29,6 +29,7 @@
 ;;;	( FRAME ndx )			variable in local frame stack
 ;;;	( CALL c-fun-name args fname )	locs are locations containing the arguments
 ;;;	( CALL-NORMAL fun locs)		similar as CALL, but number of arguments is fixed
+;;;	( CALL-INDIRECT fun narg args)	similar as CALL, but unknown function
 ;;;	( C-INLINE output-type fun/string locs side-effects output-var )
 ;;;	( COERCE-LOC representation-type location)
 ;;;	( CAR lcl )
@@ -68,25 +69,28 @@
 
 (defun set-loc (loc &aux fd
 		    (is-call (and (consp loc)
-				  (member (car loc) '(CALL CALL-NORMAL)  :test #'eq))))
+				  (member (car loc) '(CALL CALL-NORMAL CALL-INDIRECT)
+                                          :test #'eq))))
   (when (eql *destination* loc)
     (return-from set-loc))
   (case *destination*
     (VALUES
      (cond (is-call
-	    (wt-nl "VALUES(0)=") (wt-coerce-loc :object loc) (wt ";"))
+	    (wt-nl "cl_env_copy->values[0]=") (wt-coerce-loc :object loc) (wt ";"))
 	   ((eq loc 'VALUES) (return-from set-loc))
 	   (t
-	    (wt-nl "VALUES(0)=") (wt-coerce-loc :object loc) (wt "; NVALUES=1;"))))
+	    (wt-nl "cl_env_copy->values[0]=") (wt-coerce-loc :object loc)
+	    (wt "; cl_env_copy->nvalues=1;"))))
     (VALUE0
      (wt-nl "value0=") (wt-coerce-loc :object loc) (wt ";"))
     (RETURN
      (cond ((or is-call (eq loc 'VALUES))
 	    (wt-nl "value0=") (wt-coerce-loc :object loc) (wt ";"))
-	   ((eq loc 'VALUE0) (wt-nl "NVALUES=1;"))
+	   ((eq loc 'VALUE0) (wt-nl "cl_env_copy->nvalues=1;"))
 	   ((eq loc 'RETURN) (return-from set-loc))
 	   (t
-	    (wt-nl "value0=") (wt-coerce-loc :object loc) (wt "; NVALUES=1;"))))
+	    (wt-nl "value0=") (wt-coerce-loc :object loc)
+	    (wt "; cl_env_copy->nvalues=1;"))))
     (TRASH
      (cond (is-call (wt-nl "(void)" loc ";"))
 	   ((and (consp loc)
@@ -114,7 +118,7 @@
         ((eq loc 'RETURN)
 	 (wt "value0"))	; added for last inline-arg
 	((eq loc 'VALUES)
-	 (wt "VALUES(0)"))
+	 (wt "cl_env_copy->values[0]"))
 	((eq loc 'VA-ARG)
 	 (wt "va_arg(args,cl_object)"))
 	((eq loc 'CL-VA-ARG)
@@ -166,7 +170,7 @@
 (defun wt-character (value &optional vv)
   (wt (format nil "'\\~O'" value)))
 
-(defun wt-value (i) (wt "VALUES(" i ")"))
+(defun wt-value (i) (wt "cl_env_copy->values[" i "]"))
 
 (defun wt-keyvars (i) (wt "keyvars[" i "]"))
 
@@ -184,14 +188,8 @@
 (defun values-loc (n)
   (list 'VALUE n))
 
-(defun wt-local-frame (n)
-  (if n
-      (wt +ecl-local-stack-variable+ "[" n "]")
-      (wt "((cl_object)&" +ecl-local-stack-frame-variable+ ")")))
-
 ;;; -----------------------------------------------------------------
 
-(put-sysprop 'LOCAL-FRAME 'WT-LOC #'wt-local-frame)
 (put-sysprop 'TEMP 'WT-LOC #'wt-temp)
 (put-sysprop 'LCL 'WT-LOC #'wt-lcl-loc)
 (put-sysprop 'VV 'WT-LOC #'wt-vv)

@@ -539,11 +539,11 @@ mark_cl_env(struct cl_env_struct *env)
 /* We should mark the stacks of the threads somehow!!! */
 #error "The old garbage collector does not support threads"
 #else
-# if DOWN_STACK
+# ifdef ECL_DOWN_STACK
 	mark_stack_conservative((cl_ptr)(&where), (cl_ptr)env->cs_org);
 # else
 	mark_stack_conservative((cl_ptr)env->cs_org, (cl_ptr)(&where));
-# endif /* DOWN_STACK */
+# endif /* ECL_DOWN_STACK */
 #endif /* THREADS */
 
 #ifdef ECL_FFICALL
@@ -648,23 +648,13 @@ sweep_phase(void)
 			switch (x->d.t) {
 #ifdef ENABLE_DLOPEN
 			case t_codeblock:
-				if (x->cblock.links) {
-					cl_mapc(2, @'si::unlink-symbol', x->cblock.links);
-				}
 				ecl_library_close(x);
 				break;
 #endif
 			case t_stream:
-#if defined(ECL_WSOCK)
-				if (x->stream.mode == smm_input_wsock
-				    || x->stream.mode == smm_output_wsock
-				    || x->stream.mode == smm_io_wsock) {
-					closesocket((int)x->stream.file);
-				} else
-#endif
-				if (x->stream.file != NULL)
-					fclose(x->stream.file);
-				x->stream.file = NULL;
+                                if (!x->stream.closed)
+					cl_close(1, x);
+                                break;
 #ifdef ECL_THREADS
 			case t_lock:
 #if defined(_MSC_VER) || defined(mingw32)
@@ -727,7 +717,7 @@ contblock_sweep_phase(void)
 			q = p + 4;
 			while (q < e && !get_mark_bit((int *)q))
 				q += 4;
-			cl_dealloc(p);
+			ecl_dealloc(p);
 			p = q + 4;
 		}
 		i = j + 1;
@@ -746,6 +736,7 @@ cl_object (*GC_exit_hook)() = NULL;
 void
 ecl_gc(cl_type t)
 {
+	const cl_env_ptr env = ecl_process_env();
 	int i, j;
 	int tm;
 	int gc_start = ecl_runtime();
@@ -775,8 +766,8 @@ ecl_gc(cl_type t)
 #error "We need to stop all other threads"
 #endif /* THREADS */
 
-	interrupts = ecl_interrupt_enable;
-	ecl_interrupt_enable = 0;
+	interrupts = env->disable_interrupts;
+	env->disable_interrupts = 1;
 
 	collect_blocks = t > t_end;
 	if (collect_blocks)
@@ -863,7 +854,7 @@ ecl_gc(cl_type t)
 		fflush(stdout);
 	}
 
-	ecl_interrupt_enable = interrupts;
+	env->disable_interrupts = interrupts;
 
 	if (GC_exit_hook != NULL)
 		(*GC_exit_hook)();
@@ -884,9 +875,7 @@ ecl_gc(cl_type t)
 		fflush(stdout);
 	}
 
-	if (cl_env.interrupt_pending) si_check_pending_interrupts();
-	
-	end_critical_section();
+	if (env->interrupt_pending) ecl_check_pending_interrupts();
 }
 
 /*

@@ -126,6 +126,7 @@ cl_numerator(cl_object x)
 cl_object
 cl_denominator(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
  AGAIN:
 	switch (type_of(x)) {
 	case t_ratio:
@@ -145,6 +146,7 @@ cl_denominator(cl_object x)
 cl_object
 ecl_floor1(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
  AGAIN:
 	switch (type_of(x)) {
@@ -199,6 +201,7 @@ ecl_floor1(cl_object x)
 cl_object
 ecl_floor2(cl_object x, cl_object y)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
 	cl_type ty;
  AGAIN:
@@ -376,7 +379,7 @@ ecl_floor2(cl_object x, cl_object y)
 		float p = sf(x)/n;
 		float q = floorf(p);
 		v0 = float_to_integer(q);
-		v1 = make_shortfloat((p - q)*n);
+		v1 = make_shortfloat(p*n - q*n);
 		break;
 	}
 #endif
@@ -385,7 +388,10 @@ ecl_floor2(cl_object x, cl_object y)
 		float p = sf(x)/n;
 		float q = floorf(p);
 		v0 = float_to_integer(q);
-		v1 = ecl_make_singlefloat((p - q)*n);
+		/* We cannot factor these two multiplications because
+		 * if we have signed zeros (1 - 1) * (-1) = -0 while
+		 * 1*(-1) - 1*(-1) = +0 */
+		v1 = ecl_make_singlefloat(p*n - q*n);
 		break;
 	}
 	case t_doublefloat: {		/* DF / ANY */
@@ -393,7 +399,7 @@ ecl_floor2(cl_object x, cl_object y)
 		double p = df(x)/n;
 		double q = floor(p);
 		v0 = double_to_integer(q);
-		v1 = ecl_make_doublefloat((p - q)*n);
+		v1 = ecl_make_doublefloat(p*n - q*n);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
@@ -402,7 +408,7 @@ ecl_floor2(cl_object x, cl_object y)
 		long double p = ecl_long_float(x)/n;
 		long double q = floorl(p);
 		v0 = long_double_to_integer(q);
-		v1 = make_longfloat((p - q)*n);
+		v1 = make_longfloat(p*n - q*n);
 		break;
 	}
 #endif
@@ -425,6 +431,7 @@ ecl_floor2(cl_object x, cl_object y)
 cl_object
 ecl_ceiling1(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
  AGAIN:
 	switch (type_of(x)) {
@@ -479,6 +486,7 @@ ecl_ceiling1(cl_object x)
 cl_object
 ecl_ceiling2(cl_object x, cl_object y)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
 	cl_type ty;
  AGAIN:
@@ -530,7 +538,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  float p = fix(x)/n;
 		  float q = ceilf(p);
 		  v0 = float_to_integer(q);
-		  v1 = ecl_make_singlefloat((p - q)*n);
+		  v1 = ecl_make_singlefloat(p*n - q*n);
 		  break;
 		}
 #endif
@@ -539,7 +547,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  float p = fix(x)/n;
 		  float q = ceilf(p);
 		  v0 = float_to_integer(q);
-		  v1 = ecl_make_singlefloat((p - q)*n);
+		  v1 = ecl_make_singlefloat(p*n - q*n);
 		  break;
 		}
 		case t_doublefloat: {	/* FIX / DF */
@@ -547,7 +555,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  double p = fix(x)/n;
 		  double q = ceil(p);
 		  v0 = double_to_integer(q);
-		  v1 = ecl_make_doublefloat((p - q)*n);
+		  v1 = ecl_make_doublefloat(p*n - q*n);
 		  break;
 		}
 #ifdef ECL_LONG_FLOAT
@@ -556,7 +564,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  long double p = fix(x)/n;
 		  long double q = ceill(p);
 		  v0 = long_double_to_integer(q);
-		  v1 = make_longfloat((p - q)*n);
+		  v1 = make_longfloat(p*n - q*n);
 		  break;
 		}
 #endif
@@ -604,7 +612,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  float p = big_to_double(x)/n;
 		  float q = ceilf(p);
 		  v0 = float_to_integer(q);
-		  v1 = make_shortfloat((p - q)*n);
+		  v1 = make_shortfloat(p*n - q*n);
 		  break;
 		}
 #endif
@@ -613,7 +621,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  float p = big_to_double(x)/n;
 		  float q = ceilf(p);
 		  v0 = float_to_integer(q);
-		  v1 = ecl_make_singlefloat((p - q)*n);
+		  v1 = ecl_make_singlefloat(p*n - q*n);
 		  break;
 		}
 		case t_doublefloat: {	/* BIG / DF */
@@ -621,7 +629,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  double p = big_to_double(x)/n;
 		  double q = ceil(p);
 		  v0 = double_to_integer(q);
-		  v1 = ecl_make_doublefloat((p - q)*n);
+		  v1 = ecl_make_doublefloat(p*n - q*n);
 		  break;
 		}
 #ifdef ECL_LONG_FLOAT
@@ -630,7 +638,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  long double p = big_to_double(x)/n;
 		  long double q = ceill(p);
 		  v0 = long_double_to_integer(q);
-		  v1 = make_longfloat((p - q)*n);
+		  v1 = make_longfloat(p*n - q*n);
 		  break;
 		}
 #endif
@@ -656,7 +664,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		float p = sf(x)/n;
 		float q = ceilf(p);
 		v0 = float_to_integer(q);
-		v1 = make_shortfloat((p - q)*n);
+		v1 = make_shortfloat(p*n - q*n);
 		break;
 	}
 #endif
@@ -665,7 +673,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		float p = sf(x)/n;
 		float q = ceilf(p);
 		v0 = float_to_integer(q);
-		v1 = ecl_make_singlefloat((p - q)*n);
+		v1 = ecl_make_singlefloat(p*n - q*n);
 		break;
 	}
 	case t_doublefloat: {		/* DF / ANY */
@@ -673,7 +681,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		double p = df(x)/n;
 		double q = ceil(p);
 		v0 = double_to_integer(q);
-		v1 = ecl_make_doublefloat((p - q)*n);
+		v1 = ecl_make_doublefloat(p*n - q*n);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
@@ -682,7 +690,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		long double p = ecl_long_float(x)/n;
 		long double q = ceill(p);
 		v0 = long_double_to_integer(q);
-		v1 = make_longfloat((p - q)*n);
+		v1 = make_longfloat(p*n - q*n);
 		break;
 	}
 #endif
@@ -705,6 +713,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 cl_object
 ecl_truncate1(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
  AGAIN:
 	switch (type_of(x)) {
@@ -759,6 +768,7 @@ ecl_truncate1(cl_object x)
 cl_object
 ecl_truncate2(cl_object x, cl_object y)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	if (ecl_plusp(x) != ecl_plusp(y))
 		return ecl_ceiling2(x, y);
 	else
@@ -817,6 +827,7 @@ round_long_double(long double d)
 cl_object
 ecl_round1(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
  AGAIN:
 	switch (type_of(x)) {
@@ -867,6 +878,7 @@ ecl_round1(cl_object x)
 cl_object
 ecl_round2(cl_object x, cl_object y)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
 	cl_object q;
 
@@ -915,6 +927,7 @@ ecl_round2(cl_object x, cl_object y)
 cl_object
 cl_mod(cl_object x, cl_object y)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	/* INV: #'floor always outputs two values */
 	@floor(2, x, y);
 	@(return VALUES(1))
@@ -923,6 +936,7 @@ cl_mod(cl_object x, cl_object y)
 cl_object
 cl_rem(cl_object x, cl_object y)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	@truncate(2, x, y);
 	@(return VALUES(1))
 }
@@ -930,6 +944,7 @@ cl_rem(cl_object x, cl_object y)
 cl_object
 cl_decode_float(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	int e, s;
 	cl_type tx = type_of(x);
 	float f;
@@ -989,6 +1004,7 @@ cl_decode_float(cl_object x)
 cl_object
 cl_scale_float(cl_object x, cl_object y)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_fixnum k;
  AGAIN:
 	if (FIXNUMP(y)) {
@@ -1024,28 +1040,36 @@ cl_scale_float(cl_object x, cl_object y)
 cl_object
 cl_float_radix(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	while (cl_floatp(x) != Ct) {
 		x = ecl_type_error(@'float-radix',"argument",x,@'float');
 	}
 	@(return MAKE_FIXNUM(FLT_RADIX))
 }
 
-@(defun float_sign (x &optional (y x))
+#if !defined(ECL_SIGNED_ZERO) || !defined(signbit)
+# define signbit(x) ((x) < 0)
+#endif
+
+@(defun float_sign (x &optional (y x yp))
 	int negativep;
 @
+	if (!yp) {
+		y = cl_float(2, MAKE_FIXNUM(1), x);
+	}
   AGAIN:
 	switch (type_of(x)) {
 #ifdef ECL_SHORT_FLOAT
 	case t_shortfloat:
-		negativep = ecl_short_float(x) < 0; break;
+		negativep = signbit(ecl_short_float(x)); break;
 #endif
 	case t_singlefloat:
-		negativep = sf(x) < 0; break;
+		negativep = signbit(sf(x)); break;
 	case t_doublefloat:
-		negativep = df(x) < 0; break;
+		negativep = signbit(df(x)); break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		negativep = ecl_long_float(x) < 0; break;
+		negativep = signbit(ecl_long_float(x)); break;
 #endif
 	default:
 		x = ecl_type_error(@'float-sign',"argument",x,@'float');
@@ -1086,6 +1110,7 @@ cl_float_radix(cl_object x)
 cl_object
 cl_float_digits(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
  AGAIN:
 	switch (type_of(x)) {
 #ifdef ECL_SHORT_FLOAT
@@ -1112,6 +1137,7 @@ cl_float_digits(cl_object x)
 cl_object
 cl_float_precision(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	int precision;
 	float f; double d;
  AGAIN:
@@ -1190,6 +1216,7 @@ cl_float_precision(cl_object x)
 cl_object
 cl_integer_decode_float(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	int e, s;
  AGAIN:
 	switch (type_of(x)) {
@@ -1290,6 +1317,7 @@ cl_integer_decode_float(cl_object x)
 cl_object
 cl_realpart(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
  AGAIN:
 	switch (type_of(x)) {
 	case t_fixnum:
@@ -1317,6 +1345,7 @@ cl_realpart(cl_object x)
 cl_object
 cl_imagpart(cl_object x)
 {
+	const cl_env_ptr the_env = ecl_process_env();
  AGAIN:
 	switch (type_of(x)) {
 	case t_fixnum:

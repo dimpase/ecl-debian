@@ -17,36 +17,38 @@
 
 #include <ecl/ecl.h>
 #include <ecl/internal.h>
+#include <string.h>
 
-#define PREPARE_MAP(list, cdrs_frame, cars_frame, nargs) \
-	struct ecl_stack_frame cdrs_frame_aux, cars_frame_aux; \
-	cl_object cdrs_frame, cars_frame; \
-	cl_index nargs; \
-	cdrs_frame = ecl_stack_frame_from_va_list((cl_object)&cdrs_frame_aux, list); \
-	cars_frame = ecl_stack_frame_copy((cl_object)&cars_frame_aux, cdrs_frame); \
-	nargs = ECL_STACK_FRAME_SIZE(cars_frame); \
-	if (nargs == 0) { \
-		FEprogram_error("MAP*: Too few arguments", 0); \
+#define PREPARE_MAP(env, list, cdrs_frame, cars_frame, narg)    \
+	struct ecl_stack_frame frames_aux[2];                   \
+	const cl_object cdrs_frame = (cl_object)frames_aux;     \
+        const cl_object cars_frame = (cl_object)(frames_aux+1); \
+	ECL_STACK_FRAME_FROM_VA_LIST(env,cdrs_frame,list);      \
+	ECL_STACK_FRAME_COPY(cars_frame, cdrs_frame);           \
+	narg = cars_frame->frame.size;                          \
+	if (narg == 0) {                                        \
+		FEprogram_error("MAP*: Too few arguments", 0);  \
 	}
-
 
 @(defun mapcar (fun &rest lists)
 	cl_object res, *val = &res;
 	cl_index i;
 @ {
-	PREPARE_MAP(lists, cdrs_frame, cars_frame, nargs);
+	PREPARE_MAP(the_env, lists, cdrs_frame, cars_frame, narg);
 	res = Cnil;
 	while (TRUE) {
 		cl_index i;
-		for (i = 0;  i < nargs;  i++) {
-			cl_object cdr = ecl_stack_frame_elt(cdrs_frame, i);
-			if (ecl_endp(cdr)) {
+		for (i = 0;  i < narg;  i++) {
+			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
+                        if (!LISTP(cdr))
+                                FEtype_error_list(cdr);
+			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
 				@(return res)
 			}
-			ecl_stack_frame_elt_set(cars_frame, i, CAR(cdr));
-			ecl_stack_frame_elt_set(cdrs_frame, i, CDR(cdr));
+			ECL_STACK_FRAME_SET(cars_frame, i, ECL_CONS_CAR(cdr));
+			ECL_STACK_FRAME_SET(cdrs_frame, i, ECL_CONS_CDR(cdr));
 		}
 		*val = ecl_list1(ecl_apply_from_stack_frame(cars_frame, fun));
 		val = &ECL_CONS_CDR(*val);
@@ -56,19 +58,21 @@
 @(defun maplist (fun &rest lists)
 	cl_object res, *val = &res;
 @ {
-	PREPARE_MAP(lists, cdrs_frame, cars_frame, nargs);
+	PREPARE_MAP(the_env, lists, cdrs_frame, cars_frame, narg);
 	res = Cnil;
 	while (TRUE) {
 		cl_index i;
-		for (i = 0;  i < nargs;  i++) {
-			cl_object cdr = ecl_stack_frame_elt(cdrs_frame, i);
-			if (ecl_endp(cdr)) {
+		for (i = 0;  i < narg;  i++) {
+			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
+                        if (!LISTP(cdr))
+                                FEtype_error_list(cdr);
+			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
 				@(return res)
 			}
-			ecl_stack_frame_elt_set(cars_frame, i, cdr);
-			ecl_stack_frame_elt_set(cdrs_frame, i, CDR(cdr));
+			ECL_STACK_FRAME_SET(cars_frame, i, cdr);
+			ECL_STACK_FRAME_SET(cdrs_frame, i, ECL_CONS_CDR(cdr));
 		}
 		*val = ecl_list1(ecl_apply_from_stack_frame(cars_frame, fun));
 		val = &ECL_CONS_CDR(*val);
@@ -78,19 +82,21 @@
 @(defun mapc (fun &rest lists)
 	cl_object onelist;
 @ {
-	PREPARE_MAP(lists, cdrs_frame, cars_frame, nargs);
-	onelist = ecl_stack_frame_elt(cdrs_frame, 0);
+	PREPARE_MAP(the_env, lists, cdrs_frame, cars_frame, narg);
+	onelist = ECL_STACK_FRAME_REF(cdrs_frame, 0);
 	while (TRUE) {
 		cl_index i;
-		for (i = 0;  i < nargs;  i++) {
-			cl_object cdr = ecl_stack_frame_elt(cdrs_frame, i);
-			if (ecl_endp(cdr)) {
+		for (i = 0;  i < narg;  i++) {
+			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
+                        if (!LISTP(cdr))
+                                FEtype_error_list(cdr);
+			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
 				@(return onelist)
 			}
-			ecl_stack_frame_elt_set(cars_frame, i, CAR(cdr));
-			ecl_stack_frame_elt_set(cdrs_frame, i, CDR(cdr));
+			ECL_STACK_FRAME_SET(cars_frame, i, ECL_CONS_CAR(cdr));
+			ECL_STACK_FRAME_SET(cdrs_frame, i, ECL_CONS_CDR(cdr));
 		}
 		ecl_apply_from_stack_frame(cars_frame, fun);
 	}
@@ -99,19 +105,21 @@
 @(defun mapl (fun &rest lists)
 	cl_object onelist;
 @ {
-	PREPARE_MAP(lists, cdrs_frame, cars_frame, nargs);
-	onelist = ecl_stack_frame_elt(cdrs_frame, 0);
+	PREPARE_MAP(the_env, lists, cdrs_frame, cars_frame, narg);
+	onelist = ECL_STACK_FRAME_REF(cdrs_frame, 0);
 	while (TRUE) {
 		cl_index i;
-		for (i = 0;  i < nargs;  i++) {
-			cl_object cdr = ecl_stack_frame_elt(cdrs_frame, i);
-			if (ecl_endp(cdr)) {
+		for (i = 0;  i < narg;  i++) {
+			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
+                        if (!LISTP(cdr))
+                                FEtype_error_list(cdr);
+			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
 				@(return onelist)
 			}
-			ecl_stack_frame_elt_set(cars_frame, i, cdr);
-			ecl_stack_frame_elt_set(cdrs_frame, i, CDR(cdr));
+			ECL_STACK_FRAME_SET(cars_frame, i, cdr);
+			ECL_STACK_FRAME_SET(cdrs_frame, i, ECL_CONS_CDR(cdr));
 		}
 		ecl_apply_from_stack_frame(cars_frame, fun);
 	}
@@ -120,19 +128,21 @@
 @(defun mapcan (fun &rest lists)
 	cl_object res, *val = &res;
 @ {
-	PREPARE_MAP(lists, cdrs_frame, cars_frame, nargs);
+	PREPARE_MAP(the_env, lists, cdrs_frame, cars_frame, narg);
 	res = Cnil;
 	while (TRUE) {
 		cl_index i;
-		for (i = 0;  i < nargs;  i++) {
-			cl_object cdr = ecl_stack_frame_elt(cdrs_frame, i);
-			if (ecl_endp(cdr)) {
+		for (i = 0;  i < narg;  i++) {
+			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
+                        if (!LISTP(cdr))
+                                FEtype_error_list(cdr);
+			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
 				@(return res)
 			}
-			ecl_stack_frame_elt_set(cars_frame, i, CAR(cdr));
-			ecl_stack_frame_elt_set(cdrs_frame, i, CDR(cdr));
+			ECL_STACK_FRAME_SET(cars_frame, i, ECL_CONS_CAR(cdr));
+			ECL_STACK_FRAME_SET(cdrs_frame, i, ECL_CONS_CDR(cdr));
 		}
 		*val = ecl_apply_from_stack_frame(cars_frame, fun);
 		while (CONSP(*val))
@@ -143,19 +153,21 @@
 @(defun mapcon (fun &rest lists)
 	cl_object res, *val = &res;
 @ {
-	PREPARE_MAP(lists, cdrs_frame, cars_frame, nargs);
+	PREPARE_MAP(the_env, lists, cdrs_frame, cars_frame, narg);
 	res = Cnil;
 	while (TRUE) {
 		cl_index i;
-		for (i = 0;  i < nargs;  i++) {
-			cl_object cdr = ecl_stack_frame_elt(cdrs_frame, i);
-			if (ecl_endp(cdr)) {
+		for (i = 0;  i < narg;  i++) {
+			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
+                        if (!LISTP(cdr))
+                                FEtype_error_list(cdr);
+			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
 				@(return res)
 			}
-			ecl_stack_frame_elt_set(cars_frame, i, cdr);
-			ecl_stack_frame_elt_set(cdrs_frame, i, CDR(cdr));
+			ECL_STACK_FRAME_SET(cars_frame, i, cdr);
+			ECL_STACK_FRAME_SET(cdrs_frame, i, ECL_CONS_CDR(cdr));
 		}
 		*val = ecl_apply_from_stack_frame(cars_frame, fun);
 		while (CONSP(*val))

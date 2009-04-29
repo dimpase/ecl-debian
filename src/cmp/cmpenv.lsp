@@ -18,35 +18,36 @@
 ;;; If (safe-compile) is ON, some kind of run-time checks are not
 ;;; included in the compiled code.  The default value is OFF.
 
-(defun init-env ()
-  (setq *compiler-phase* 't1)
-  (setq *callbacks* nil)
-  (setq *max-stack* 0)
-  (setq *max-temp* 0)
-  (setq *temp* 0)
-  (setq *next-cmacro* 0)
-  (setq *next-cfun* 0)
-  (setq *last-label* 0)
-  (setq *load-objects* (make-hash-table :size 128 :test #'equal))
-  (setq *make-forms* nil)
-  (setq *permanent-objects* nil)
-  (setq *temporary-objects* nil)
-  (setq *local-funs* nil)
-  (setq *global-var-objects* nil)
-  (setq *global-vars* nil)
-  (setq *global-funs* nil)
-  (setq *linking-calls* nil)
-  (setq *global-entries* nil)
-  (setq *undefined-vars* nil)
-  (setq *reservations* nil)
-  (setq *top-level-forms* nil)
-  (setq *compile-time-too* nil)
-  (setq *clines-string-list* '())
-  (setq *function-declarations* nil)
-  (setq *inline-functions* nil)
-  (setq *inline-blocks* 0)
-  (setq *notinline* nil)
-  )
+(defconstant +init-env-form+
+  '((*gensym-counter* 0)
+    (*compiler-in-use* t)
+    (*compiler-phase* 't1)
+    (*callbacks* nil)
+    (*max-temp* 0)
+    (*temp* 0)
+    (*next-cmacro* 0)
+    (*next-cfun* 0)
+    (*last-label* 0)
+    (*load-objects* (make-hash-table :size 128 :test #'equal))
+    (*make-forms* nil)
+    (*permanent-objects* nil)
+    (*temporary-objects* nil)
+    (*local-funs* nil)
+    (*global-var-objects* nil)
+    (*global-vars* nil)
+    (*global-funs* nil)
+    (*global-cfuns-array* nil)
+    (*linking-calls* nil)
+    (*global-entries* nil)
+    (*undefined-vars* nil)
+    (*reservations* nil)
+    (*top-level-forms* nil)
+    (*compile-time-too* nil)
+    (*clines-string-list* '())
+    (*inline-functions* nil)
+    (*inline-blocks* 0)
+    (*notinline* nil)
+    (*debugger-hook* 'compiler-debugger)))
 
 (defun next-lcl () (list 'LCL (incf *lcl*)))
 
@@ -129,36 +130,44 @@
 (defun get-arg-types (fname)
   (let ((x (assoc fname *function-declarations*)))
     (if x
-	(second x)
+	(values (second x) t)
 	(get-sysprop fname 'PROCLAIMED-ARG-TYPES))))
 
 (defun get-return-type (fname)
   (let ((x (assoc fname *function-declarations*)))
     (if x
-	(third x)
+	(values (third x) t)
 	(get-sysprop fname 'PROCLAIMED-RETURN-TYPE))))
 
 (defun get-local-arg-types (fun &aux x)
   (if (setq x (assoc fun *function-declarations*))
-      (second x)
-      nil))
+      (values (second x) t)
+      (values nil nil)))
 
 (defun get-local-return-type (fun &aux x)
   (if (setq x (assoc fun *function-declarations*))
-      (caddr x)
-      nil))
+      (values (caddr x) t)
+      (values nil nil)))
 
 (defun get-proclaimed-narg (fun)
-  (multiple-value-bind (x found)
-      (get-sysprop fun 'PROCLAIMED-ARG-TYPES)
+  (multiple-value-bind (arg-list found)
+      (get-arg-types fun)
     (if found
-      (let ((minarg (length x)))
-	(if (eq (first (last x)) '*)
-	  (setf minarg (1- minarg)
-		maxarg call-arguments-limit)
-	  (setf maxarg minarg))
-	(values minarg maxarg))
-      (values 0 call-arguments-limit))))
+	(loop for type in arg-list
+	   with minarg = 0
+	   and maxarg = 0
+	   and in-optionals = nil
+	   do (cond ((member type '(* &rest &key &allow-other-keys) :test #'eq)
+		     (return (values minarg call-arguments-limit)))
+		    ((eq type '&optional)
+		     (setf in-optionals t maxarg minarg))
+		    (in-optionals
+		     (incf maxarg))
+		    (t
+		     (incf minarg)
+		     (incf maxarg)))
+	   finally (return (values minarg maxarg)))
+	(values 0 call-arguments-limit))))
 
 ;;; Proclamation and declaration handling.
 
@@ -166,13 +175,13 @@
   (not (or ; (compiler-<push-events)
 	;(>= *debug* 2) Breaks compilation of STACK-PUSH-VALUES
 	(member fname *notinline* :test #'same-fname-p)
-	(and (symbolp fname) (get-sysprop fname 'CMP-NOTINLINE)))))
+	(get-sysprop fname 'CMP-NOTINLINE))))
 
 #-:CCL
-(defun proclaim (decl)
+(defun proclaim (decl &aux decl-name)
   (unless (listp decl)
 	  (error "The proclamation specification ~s is not a list" decl))
-  (case (car decl)
+  (case (setf decl-name (car decl))
     (SPECIAL
      (dolist (var (cdr decl))
        (if (symbolp var)
@@ -198,13 +207,15 @@
          (proclaim-var (second decl) (cddr decl))
          (error "Syntax error in proclamation ~s" decl)))
     (FTYPE
-     (let (ftype)
-       (cond ((and (consp (cdr decl))
-		   (consp (setf ftype (second decl)))
-		   (eq (first ftype) 'FUNCTION))
-	      (dolist (v (cddr decl))
-		(add-function-proclamation v (rest ftype))))
-	     (t (error "Syntax error in proclamation ~a" decl)))))
+     (if (atom (rest decl))
+	 (error "Syntax error in proclamation ~a" decl)
+	 (multiple-value-bind (type-name args)
+	     (si::normalize-type (second decl))
+	   (if (eq type-name 'FUNCTION)
+	       (dolist (v (cddr decl))
+		 (add-function-proclamation v args))
+	       (error "In an FTYPE proclamation, found ~A which is not a function type."
+		      (second decl))))))
     (INLINE
      (dolist (fun (cdr decl))
        (if (si::valid-function-name-p fun)
@@ -219,7 +230,7 @@
      ;; FIXME! IGNORED!
      (dolist (var (cdr decl))
        (unless (si::valid-function-name-p var)
-	 (error "Not a valid function name ~s in ~s proclamation" fun (car decl)))))
+	 (error "Not a valid function name ~s in ~s proclamation" fun decl-name))))
     (DECLARATION
      (do-declaration (rest decl) #'error))
     (SI::C-EXPORT-FNAME
@@ -243,16 +254,20 @@
       READTABLE SEQUENCE SHORT-FLOAT SIMPLE-ARRAY SIMPLE-BIT-VECTOR
       SIMPLE-STRING SIMPLE-VECTOR SINGLE-FLOAT STANDARD-CHAR STREAM STRING
       SYMBOL T VECTOR SIGNED-BYTE UNSIGNED-BYTE FUNCTION)
-     (proclaim-var (car decl) (cdr decl)))
+     (proclaim-var decl-name (cdr decl)))
     (otherwise
-     (unless (member (car decl) si:*alien-declarations*)
-       (warn "The declaration specifier ~s is unknown." (car decl)))
-     (and (functionp (get-sysprop (car decl) :proclaim))
-	  (dolist (v (cdr decl))
-		    (funcall (get-sysprop (car decl) :proclaim) v))))
-    )
-  nil
-  )
+     (cond ((member (car decl) si:*alien-declarations*))
+	   ((multiple-value-bind (ok type)
+		(valid-type-specifier decl-name)
+	      (when ok
+		(proclaim-var type (rest decl))
+		t)))
+	   ((let ((proclaimer (get-sysprop (car decl) :proclaim)))
+	      (when (functionp proclaimer)
+		(mapc proclaimer (rest decl))
+		t)))
+	   (t
+	    (warn "The declaration specifier ~s is unknown." decl-name))))))
 
 (defun type-name-p (name)
   (or (get-sysprop name 'SI::DEFTYPE-DEFINITION)
@@ -360,9 +375,10 @@
     (when (and (consp i) (eq (first i) 'optimize))
       (dolist (j (rest i))
 	(cond ((consp j)
-	       (when (eq (first j) what) (return (second j))))
+	       (when (eq (first j) what)
+		 (return-from search-optimization-quality (second j))))
 	      ((eq j what)
-	       (return 3)))))))
+	       (return-from search-optimization-quality 3)))))))
 
 (defun c1add-declarations (decls &aux (dl nil) (optimizations))
   (dolist (decl decls)
@@ -387,23 +403,25 @@
 	       (COMPILATION-SPEED)
 	       (t (cmpwarn "The OPTIMIZE quality ~s is unknown." (car x))))))))
       (FTYPE
-       (let (ftype)
-	 (cond ((and (consp (cdr decl))
-		     (consp (setq ftype (second decl)))
-		     (eq (first ftype) 'FUNCTION))
-		(dolist (v (cddr decl))
-		  (add-function-declaration v (second ftype) (cddr ftype))))
-	       (t (cmpwarn "Syntax error in declaration ~s" decl)))))
+       (if (atom (rest decl))
+	   (cmpwarn "Syntax error in declaration ~a" decl)
+	   (multiple-value-bind (type-name args)
+	       (si::normalize-type (second decl))
+	     (if (eq type-name 'FUNCTION)
+		 (dolist (v (cddr decl))
+		   (add-function-declaration v (first args) (rest args)))
+		 (cmpwarn "In an FTYPE declaration, found ~A which is not a function type."
+			  (second decl))))))
       (INLINE
        (push decl dl)
        (dolist (fun (cdr decl))
-	 (if (symbolp fun)
+	 (if (si::valid-function-name-p fun)
 	   (setq *notinline* (remove fun *notinline*))
 	   (cmperr "Not a valid function name ~s in declaration ~s" fun decl))))
       (NOTINLINE
        (push decl dl)
        (dolist (fun (cdr decl))
-	 (if (symbolp fun)
+	 (if (si::valid-function-name-p fun)
 	   (push fun *notinline*)
 	   (cmperr "Not a valid function name ~s in declaration ~s" fun decl))))
       (DECLARATION
@@ -595,6 +613,13 @@
       (safety (second x))
       (space (third x))
       (speed (fourth x)))))
+
+(defun policy-assume-right-type (&optional (env *cmp-env*))
+  (< (cmp-env-optimization 'safety env) 2))
+
+(defun policy-check-stack-overflow (&optional (env *cmp-env*))
+  "Do we add a stack check to every function?"
+  (>= (cmp-env-optimization 'safety env) 2))
 
 (defun policy-inline-slot-access-p (&optional (env *cmp-env*))
   "Do we inline access to structures and sealed classes?"

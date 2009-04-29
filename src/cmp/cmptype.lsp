@@ -83,6 +83,7 @@
 		      (list 'ARRAY element-type))))))
 	(INTEGER (if (subtypep type 'FIXNUM) 'FIXNUM t))
 	((STREAM CONS) type-name) ; Juanjo
+        (FUNCTION type-name)
 	(t (cond ((eq type-name 'VALUES)
 		  (unless values-allowed
 		    (error "VALUES type found in a place where it is not allowed."))
@@ -143,12 +144,17 @@
 		  t2)
 		 (t
 		  `(AND ,t1 ,t2))))
+	  ((eq tag1 'CONS)
+	   (cmpwarn "Unsupported CONS type ~S. Replacing it with T." t1)
+	   t2)
+	  ((eq tag2 'CONS)
+	   (cmpwarn "Unsupported CONS type ~S. Replacing it with T." t2)
+	   t1)
 	  ((null tag1)
-	   (cmpwarn "Unknown type ~S" t1)
+	   (cmpwarn "Unknown type ~S. Assuming it is T." t1)
 	   t2)
 	  (t
-	   (error t2)
-	   (cmpwarn "Unknown type ~S" t2)
+	   (cmpwarn "Unknown type ~S. Assuming it is T." t2)
 	   t1))))
 
 (defun type-or (t1 t2)
@@ -172,12 +178,18 @@
 		  t1)
 		 (t
 		  `(OR ,t1 ,t2))))
+	  ((eq tag1 'CONS)
+	   (cmpwarn "Unsupported CONS type ~S. Replacing it with T." t1)
+	   T)
+	  ((eq tag2 'CONS)
+	   (cmpwarn "Unsupported CONS type ~S. Replacing it with T." t2)
+	   T)
 	  ((null tag1)
-	   (cmpwarn "Unkonwn type ~S" t1)
-	   'T)
+	   (cmpwarn "Unknown type ~S" t1)
+	   T)
 	  (t
-	   (cmpwarn "Unkonwn type ~S" t2)
-	   'T))))
+	   (cmpwarn "Unknown type ~S" t2)
+	   T))))
 
 (defun type>= (type1 type2)
   (subtypep type2 type1))
@@ -388,32 +400,66 @@
 	     fname
 	     forms)
     (when arg-types
-      (do ((fl forms (rest fl))
-	   (al lisp-forms (rest al))
-	   (i 1 (1+ i)))
-	  ((endp fl))
-	(unless (endp arg-types)
-	  ;; Check the type of the arguments.
+      (do* ((types arg-types (rest types))
+	    (fl forms (rest fl))
+	    (al lisp-forms (rest al))
+	    (i 1 (1+ i))
+	    (in-optionals nil))
+	   ((endp types)
+	    (when types
+	      (cmpwarn "Too many arguments passed to ~A" fname)))
+	(let ((expected-type (first types)))
+	  (when (member expected-type '(* &rest &key &allow-other-keys) :test #'eq)
+	    (return))
+	  (when (eq expected-type '&optional)
+	    (when in-optionals
+	      (cmpwarn "Syntax error in type proclamation for function ~A.~&~A"
+		       fname arg-types))
+	    (setf in-optionals t))
+	  (when (endp fl)
+	    (unless in-optionals
+	      (cmpwarn "Too few arguments for proclaimed function ~A" fname))
+	    (return))
 	  (let* ((form (first fl))
 		 (lisp-form (first al))
-		 (expected-type (pop arg-types))
-                 (old-type (c1form-type form)))
+		 (old-type (c1form-type form)))
 	    (and-form-type expected-type form lisp-form
 			   :safe "In the argument ~d of a call to ~a" i fname)
 	    ;; In safe mode, we cannot assume that the type of the
 	    ;; argument is going to be the right one.
 	    (unless (zerop (cmp-env-optimization 'safety))
-              (setf (c1form-type form) old-type))))))
+	      (setf (c1form-type form) old-type))))))
     return-type))
 
 (defmacro def-type-propagator (fname lambda-list &body body)
   `(put-sysprop ',fname 'C1TYPE-PROPAGATOR
-    #'(ext:lambda-block ,fname ,lambda-list ,body)))
+    #'(ext:lambda-block ,fname ,lambda-list ,@body)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;; TYPE CHECKING
 ;;
+
+(defun remove-function-types (type)
+  ;; We replace this type by an approximate one that contains no function
+  ;; types. This function may not produce the best approximation. Hence,
+  ;; it is only used for optional type checks where we do not want to pass
+  ;; TYPEP a complex type.
+  (flet ((simplify-type (type)
+           (cond ((subtypep type '(NOT FUNCTION))
+                  type)
+                 ((subtypep type 'FUNCTION)
+                  'FUNCTION)
+                 (t
+                  T))))
+    (if (atom type)
+        (simplify-type type)
+        (case (first type)
+          ((OR AND NOT)
+           (cons (first type)
+                 (loop for i in (rest type) collect (remove-function-types i))))
+          (FUNCTION 'FUNCTION)
+          (otherwise (simplify-type type))))))
 
 (defmacro optional-check-type (&whole whole var-name type &environment env)
   "Generates a type check that is only activated for the appropriate
@@ -421,5 +467,8 @@ safety settings and when the type is not trivial."
   (unless (policy-automatic-check-type-p env)
     (cmpnote "Unable to emit check for variable ~A" whole))
   (when (policy-automatic-check-type-p env)
-    (unless (subtypep 't type)
-      `(check-type ,var-name ,type))))
+    (setf type (remove-function-types type))
+    (multiple-value-bind (ok valid)
+	(subtypep 't type)
+      (unless (or ok (not valid))
+	`(check-type ,var-name ,type)))))

@@ -46,7 +46,7 @@ Returns, as a string, the location of the machine on which ECL runs."
 (defun lisp-implementation-version ()
   "Args:()
 Returns the version of your ECL as a string."
-  "@PACKAGE_VERSION@ (CVS 2008-06-19 17:09)")
+  "@PACKAGE_VERSION@")
 
 (defun machine-type ()
   "Args: ()
@@ -106,9 +106,6 @@ Returns, as a string, the version of the software under which ECL runs."
 ;;
 #-ecl-min
 (progn
-  #-(and mingw32 msvc)
-  (si::pathname-translations "SYS" '(("**;*.*" "@ecldir\@/**/*.*")))
-  #+(or mingw32 msvc)
   (si::pathname-translations "SYS"
 			     `(("**;*.*" ,(merge-pathnames "**/*.*" (si::get-library-pathname)))))
 );#-eclmin

@@ -4,17 +4,37 @@ dnl --------------------------------------------------------------
 dnl http://autoconf-archive.cryp.to/ac_c_long_long_.html
 dnl Provides a test for the existance of the long long int type and defines HAVE_LONG_LONG if it is found.
 AC_DEFUN([AC_C_LONG_LONG],
-[AC_CACHE_CHECK(for long long int, ac_cv_c_long_long,
-[if test "$GCC" = yes; then
+[AC_MSG_CHECKING(size of long long)
+if test "$GCC" = yes; then
   ac_cv_c_long_long=yes
-  else
-        AC_TRY_COMPILE(,[long long int i;],
-   ac_cv_c_long_long=yes,
-   ac_cv_c_long_long=no)
-   fi])
-   if test $ac_cv_c_long_long = yes; then
-     AC_DEFINE(HAVE_LONG_LONG, 1, [compiler understands long long])
-   fi
+else
+  AC_TRY_COMPILE(,[long long int i;],
+  ac_cv_c_long_long=yes,
+  ac_cv_c_long_long=no)
+fi
+if test $ac_cv_c_long_long = yes; then
+  AC_RUN_IFELSE([AC_LANG_SOURCE([[#include <stdio.h>
+int main() {
+  const char *int_type;
+  int bits;
+  unsigned long long x = 1;
+  FILE *f=fopen("conftestval", "w");
+  if (!f) exit(1);
+  for (bits = 0; x; bits++) {
+    x <<= 1;
+  }
+  fprintf(f,"ECL_LONG_LONG_BITS='%d'",bits);
+  exit(0);
+}]])],[eval "`cat conftestval`"],[],[])
+fi
+if test -z "$ECL_LONG_LONG_BITS"; then
+  AC_MSG_RESULT(not available)
+else
+  AC_MSG_RESULT([$ECL_LONG_LONG_BITS])
+  AC_DEFINE(ecl_long_long_t, long long, [compiler understands long long])
+  AC_DEFINE(ecl_ulong_long_t, unsigned long long, [compiler understands long long])
+  AC_DEFINE_UNQUOTED([ECL_LONG_LONG_BITS],[$ECL_LONG_LONG_BITS])
+fi
 ])
 
 dnl --------------------------------------------------------------
@@ -30,6 +50,13 @@ dnl libraries.
 dnl
 AC_DEFUN([ECL_ADD_LISP_MODULE], [
   ECL_ADD_FEATURE([wants-$1])
+])
+
+dnl --------------------------------------------------------------
+dnl Add lisp module and build it into the compiler.
+dnl
+AC_DEFUN([ECL_ADD_BUILTIN_MODULE], [
+  ECL_ADD_FEATURE([builtin-$1])
 ])
 
 dnl --------------------------------------------------------------
@@ -177,6 +204,8 @@ THREAD_GC_FLAGS='--enable-threads=posix'
 INSTALL_TARGET='install'
 THREAD_OBJ='threads'
 clibs=''
+SONAME=''
+SONAME_LDFLAGS=''
 case "${host_os}" in
 	# libdir may have a dollar expression inside
 	linux*)
@@ -189,6 +218,8 @@ case "${host_os}" in
 		clibs="-ldl"
 		# Maybe CFLAGS="-D_ISOC99_SOURCE ${CFLAGS}" ???
 		CFLAGS="-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 ${CFLAGS}"
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
 	gnu*)
 		thehost='gnu'
@@ -199,6 +230,8 @@ case "${host_os}" in
 		LDRPATH='-Wl,--rpath,~A'
 		clibs="-ldl"
 		CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
 	kfreebsd*-gnu)
 		thehost='kfreebsd'
@@ -209,6 +242,8 @@ case "${host_os}" in
 		LDRPATH='-Wl,--rpath,~A'
 		clibs="-ldl"
 		CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
 	freebsd*)
 		thehost='freebsd'
@@ -217,6 +252,8 @@ case "${host_os}" in
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
 		LDRPATH="-Wl,--rpath,~A"
 		clibs=""
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
 	netbsd*)
 		thehost='netbsd'
@@ -224,13 +261,19 @@ case "${host_os}" in
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
 		LDRPATH="-Wl,--rpath,~A"
 		clibs=""
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
 	openbsd*)
 		thehost='openbsd'
+		THREAD_CFLAGS=''
+		THREAD_LIBS='-lpthread'
 		SHARED_LDFLAGS="-shared ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
 		LDRPATH="-Wl,--rpath,~A"
 		clibs=""
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
 	solaris*)
 		thehost='sun4sol2'
@@ -255,7 +298,6 @@ case "${host_os}" in
 		thehost='mingw32'
 		clibs=''
 		shared='yes'
-		THREAD_OBJ='threads_win32'
 		THREAD_CFLAGS='-D_THREAD_SAFE'
 		THREAD_GC_FLAGS='--enable-threads=win32'
 		SHARED_LDFLAGS=''
@@ -284,6 +326,8 @@ case "${host_os}" in
 		fi
 		# ECL, due to some of the libraries, does not build on
 		# 64 bit mode on OSX. We prevent GMP using that mode.
+		SONAME="${SHAREDPREFIX}ecl.SOVERSION.${SHAREDEXT}"
+		SONAME_LDFLAGS="-Wl,-install_name,SONAME -Wl,-compatibility_version,${PACKAGE_VERSION}"
 		;;
 	nsk*)
 		# HP Non-Stop platform
@@ -355,7 +399,91 @@ int main() {
 }]])],[ECL_FILE_CNT=3],[])
 fi
 ])
-
+dnl
+dnl --------------------------------------------------------------
+dnl Check the existence of different integer types and that they
+dnl have the right size;
+dnl
+AC_DEFUN(ECL_INTEGER_TYPES,[
+AC_SUBST(ECL_HAVE_INT16_T)
+ECL_UINT16_T=""
+ECL_UINT32_T=""
+ECL_UINT64_T=""
+ECL_INT16_T=""
+ECL_INT32_T=""
+ECL_INT64_T=""
+if test -z "${ECL_UINT16_T}"; then
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdint.h>]], [[
+{
+  uint16_t i = 0x8000UL;
+  if (i == 0)
+    return 0;
+  if ((i << 1))
+    return 0;
+  if ((i - 1) != 0x7FFFUL)
+    return 0;
+  return 1;
+}]])],[ECL_UINT16_T=uint16_t;ECL_INT16_T=int16_t],[])
+fi
+if test -z "${ECL_UINT32_T}"; then
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdint.h>]], [[
+{
+  uint32_t i = 0x80000000UL;
+  if (i == 0)
+    return 0;
+  if ((i << 1))
+    return 0;
+  if ((i - 1) != 0x7FFFFFFFUL)
+    return 0;
+  return 1;
+}]])],[ECL_UINT32_T=uint32_t;ECL_INT32_T=int32_t],[])
+fi
+if test -z "${ECL_UINT64_T}"; then
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdint.h>]], [[
+{
+  uint64_t i = 1;
+  i <<= 63; if (i == 0) return 0;
+  i <<= 1;  if (i) return 0;
+  return 1;
+}]])],[ECL_UINT64_T=uint64_t;ECL_INT64_T=int64_t],[])
+fi
+if test "${ECL_UINT16_T}${CL_FIXNUM_BITS}" = "16"; then
+  ECL_UINT16_T="cl_index"
+  ECL_INT16_T="cl_fixnum"
+fi
+if test "${ECL_UINT32_T}${CL_FIXNUM_BITS}" = "32"; then
+  ECL_UINT32_T="cl_index"
+  ECL_INT32_T="cl_fixnum"
+fi
+if test "${ECL_UINT64_T}${CL_FIXNUM_BITS}" = "64"; then
+  ECL_UINT64_T="cl_index"
+  ECL_INT64_T="cl_fixnum"
+fi
+AC_MSG_CHECKING(uint16_t type)
+if test -n "${ECL_UINT16_T}"; then
+  AC_DEFINE_UNQUOTED([ecl_uint16_t],[$ECL_UINT16_T])
+  AC_DEFINE_UNQUOTED([ecl_int16_t],[$ECL_INT16_T])
+  AC_MSG_RESULT(${ECL_UINT16_T})
+else
+  AC_MSG_RESULT(none)
+fi
+AC_MSG_CHECKING(uint32_t type)
+if test -n "${ECL_UINT32_T}"; then
+  AC_DEFINE_UNQUOTED([ecl_uint32_t],[$ECL_UINT32_T])
+  AC_DEFINE_UNQUOTED([ecl_int32_t],[$ECL_INT32_T])
+  AC_MSG_RESULT(${ECL_UINT32_T})
+else
+  AC_MSG_RESULT(none)
+fi
+AC_MSG_CHECKING(uint64_t type)
+if test -n "${ECL_UINT64_T}"; then
+  AC_DEFINE_UNQUOTED([ecl_uint64_t],[$ECL_UINT64_T])
+  AC_DEFINE_UNQUOTED([ecl_int64_t],[$ECL_INT64_T])
+  AC_MSG_RESULT(${ECL_UINT64_T})
+else
+  AC_MSG_RESULT(none)
+fi
+])
 dnl
 dnl --------------------------------------------------------------
 dnl Check the direction to which the stack grows (for garbage
@@ -384,7 +512,7 @@ int main() {
 ]])],[ECL_STACK_DIR=down],[ECL_STACK_DIR=up],[])
 fi
 case "${ECL_STACK_DIR}" in
-  down|DOWN) AC_MSG_RESULT(yes); AC_DEFINE(DOWN_STACK, [1], [Stack grows downwards]) ;;
+  down|DOWN) AC_MSG_RESULT(yes); AC_DEFINE(ECL_DOWN_STACK, [1], [Stack grows downwards]) ;;
   up|UP) AC_MSG_RESULT(no) ;;
   *) AC_MSG_ERROR(Unable to determine stack growth direction)
 esac])
@@ -555,6 +683,7 @@ case "${host_cpu}" in
 		EXTRA_OBJS="${EXTRA_OBJS} apply_x86.o"
 		AC_DEFINE(ECL_ASM_APPLY)
 	fi
+        AC_DEFINE(ECL_USE_VARARG_AS_POINTER)
 	dynamic_ffi=yes
 	;;
    x86_64 )
@@ -584,7 +713,6 @@ AC_TRY_COMPILE(,[static __thread void *data;],
    ac_cv_ecl___thread=yes,
    ac_cv_ecl___thread=no))
 dnl We deactivate this test because it seems to slow down ECL A LOT!!!
-ac_cv_ecl___thread=no
 ])
 
 dnl ----------------------------------------------------------------------

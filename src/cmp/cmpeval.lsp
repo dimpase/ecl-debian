@@ -105,17 +105,19 @@
 	     (make-c1form* 'CALL-GLOBAL
 			   :sp-change (function-may-change-sp fname)
 			   :type return-type
-			   :args fname forms))))))
+			   :args fname forms
+                           ;; loc and type are filled by c2expr
+                           ))))))
 
-(defun c2expr (form &aux (name (c1form-name form)) (args (c1form-args form)))
-  (if (eq name 'CALL-GLOBAL)
-      (c2call-global (first args) (second args) nil (destination-type))
-      (let ((dispatch (get-sysprop name 'C2)))
-	(if (or (eq name 'LET) (eq name 'LET*))
-	    (let ((*volatile* (c1form-volatile* form)))
-	      (declare (special *volatile*))
-	      (apply dispatch args))
-	    (apply dispatch args)))))
+(defun c2expr (form)
+  (let* ((name (c1form-name form))
+         (args (c1form-args form))
+         (dispatch (get-sysprop name 'C2)))
+    (if (or (eq name 'LET) (eq name 'LET*))
+        (let ((*volatile* (c1form-volatile* form)))
+          (declare (special *volatile*))
+          (apply dispatch args))
+        (apply dispatch args))))
 
 (defun c2expr* (form)
   (let* ((*exit* (next-label))

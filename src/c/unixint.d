@@ -15,8 +15,11 @@
     See file '../Copyright' for full details.
 */
 
+#include <errno.h>
+#include <string.h>
+#include <stdio.h>
 #include <ecl/ecl.h>
-#if defined(HAVE_FENV_H)
+#if defined(HAVE_FENV_H) && !defined(ECL_AVOID_FENV_H)
 # define _GNU_SOURCE
 # include <fenv.h>
 # ifndef FE_UNDERFLOW
@@ -36,6 +39,12 @@
 # endif
 #endif
 #include <signal.h>
+#ifdef ECL_USE_MPROTECT
+# ifndef SA_SIGINFO
+#  error "We cannot use the mmap code without siginfo"
+# endif
+# include <sys/mman.h>
+#endif
 #if defined(mingw32) || defined(_MSC_VER)
 # include <windows.h>
 void handle_fpe_signal(int,int);
@@ -45,20 +54,127 @@ void handle_fpe_signal(int,int);
 #endif
 #include <ecl/internal.h>
 
+static struct {
+	int code;
+	char *text;
+} known_signals[] = {
+#ifdef SIGHUP
+	{ SIGHUP, "+SIGHUP+" },
+#endif
+#ifdef SIGINT
+	{ SIGINT, "+SIGINT+" },
+#endif
+#ifdef SIGQUIT
+	{ SIGQUIT, "+SIGQUIT+" },
+#endif
+#ifdef SIGILL
+	{ SIGILL, "+SIGILL+" },
+#endif
+#ifdef SIGTRAP
+	{ SIGTRAP, "+SIGTRAP+" },
+#endif
+#ifdef SIGABRT
+	{ SIGABRT, "+SIGABRT+" },
+#endif
+#ifdef SIGEMT
+	{ SIGEMT, "+SIGEMT+" },
+#endif
+#ifdef SIGFPE
+	{ SIGFPE, "+SIGFPE+" },
+#endif
+#ifdef SIGKILL
+	{ SIGKILL, "+SIGKILL+" },
+#endif
+#ifdef SIGBUS
+	{ SIGBUS, "+SIGBUS+" },
+#endif
+#ifdef SIGSEGV
+	{ SIGSEGV, "+SIGSEGV+" },
+#endif
+#ifdef SIGSYS
+	{ SIGSYS, "+SIGSYS+" },
+#endif
+#ifdef SIGPIPE
+	{ SIGPIPE, "+SIGPIPE+" },
+#endif
+#ifdef SIGALRM
+	{ SIGALRM, "+SIGALRM+" },
+#endif
+#ifdef SIGTERM
+	{ SIGTERM, "+SIGTERM+" },
+#endif
+#ifdef SIGURG
+	{ SIGURG, "+SIGURG+" },
+#endif
+#ifdef SIGSTOP
+	{ SIGSTOP, "+SIGSTOP+" },
+#endif
+#ifdef SIGTSTP
+	{ SIGTSTP, "+SIGTSTP+" },
+#endif
+#ifdef SIGCONT
+	{ SIGCONT, "+SIGCONT+" },
+#endif
+#ifdef SIGCHLD
+	{ SIGCHLD, "+SIGCHLD+" },
+#endif
+#ifdef SIGTTIN
+	{ SIGTTIN, "+SIGTTIN+" },
+#endif
+#ifdef SIGTTOU
+	{ SIGTTOU, "+SIGTTOU+" },
+#endif
+#ifdef SIGIO
+	{ SIGIO, "+SIGIO+" },
+#endif
+#ifdef SIGXCPU
+	{ SIGXCPU, "+SIGXCPU+" },
+#endif
+#ifdef SIGXFSZ
+	{ SIGXFSZ, "+SIGXFSZ+" },
+#endif
+#ifdef SIGVTALRM
+	{ SIGVTALRM, "+SIGVTALRM+" },
+#endif
+#ifdef SIGPROF
+	{ SIGPROF, "+SIGPROF+" },
+#endif
+#ifdef SIGWINCH
+	{ SIGWINCH, "+SIGWINCH+" },
+#endif
+#ifdef SIGINFO
+	{ SIGINFO, "+SIGINFO+" },
+#endif
+#ifdef SIGUSR1
+	{ SIGUSR1, "+SIGUSR1+" },
+#endif
+#ifdef SIGUSR2
+	{ SIGUSR2, "+SIGUSR2+" },
+#endif
+#ifdef SIGTHR
+	{ SIGTHR, "+SIGTHR+" },
+#endif
+	{ -1, "" }
+};
+
 /******************************* ------- ******************************/
 
-bool ecl_interrupt_enable;
-
 #ifdef HAVE_SIGPROCMASK
+# define define_handler(name, sig, info, aux) name(sig, info, aux)
+# define call_handler(name, sig, info, aux) name(sig, info, aux)
+# define reinstall_signal(x,y)
+# define copy_siginfo(x,y) memcpy(x, y, sizeof(struct sigaction))
 static void
 mysignal(int code, void *handler)
 {
 	struct sigaction new_action, old_action;
-
 #ifdef SA_SIGINFO
 	new_action.sa_sigaction = handler;
 	sigemptyset(&new_action.sa_mask);
 	new_action.sa_flags = SA_SIGINFO;
+	if (code == SIGSEGV) {
+		new_action.sa_flags |= SA_ONSTACK;
+	}
 #else
 	new_action.sa_handler = handler;
 	sigemptyset(&new_action.sa_mask);
@@ -66,21 +182,46 @@ mysignal(int code, void *handler)
 #endif
 	sigaction(code, &new_action, &old_action);
 }
-#else
-#define mysignal(x,y) signal(x,y)
+#else /* HAVE_SIGPROCMASK */
+# define define_handler(name, sig, info, aux) name(sig)
+# define call_handler(name, sig, info, aux) name(sig)
+# define mysignal(x,y) signal(x,y)
+# define reinstall_signal(x,y) signal(x,y)
+# define copy_siginfo(x,y)
 #endif
 
-static void
-#ifdef SA_SIGINFO
-handle_signal(int sig, siginfo_t *info, void *aux)
-#else
-handle_signal(int sig)
-#endif
+static bool
+interrupts_disabled_by_C(cl_env_ptr the_env)
 {
+	return the_env->disable_interrupts;
+}
+
+static bool
+interrupts_disabled_by_lisp(cl_env_ptr the_env)
+{
+	return (ecl_get_option(ECL_OPT_BOOTED) &&
+		ecl_symbol_value(@'si::*interrupt-enable*') == Cnil);
+}
+
+static void
+jump_to_sigsegv_handler(cl_env_ptr the_env)
+{
+	ecl_frame_ptr destination = frs_sch(OBJNULL);
+	if (destination) {
+		the_env->nvalues = 0;
+		ecl_unwind(the_env, destination);
+	}
+	ecl_internal_error("SIGSEGV without handler to jump to.");
+}
+
+static void
+define_handler(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
+{
+	cl_env_ptr the_env = &cl_env;
 	switch (sig) {
 #if defined(ECL_THREADS) && !defined(_MSC_VER) && !defined(mingw32)
 	case SIGUSR1:
-		funcall(1, cl_env.own_process->process.interrupt);
+		funcall(1, the_env->own_process->process.interrupt);
 		break;
 #endif
 	case SIGINT:
@@ -88,7 +229,7 @@ handle_signal(int sig)
 		break;
 	case SIGFPE: {
 		cl_object condition = @'arithmetic-error';
-#if defined(HAVE_FENV_H)
+#if defined(HAVE_FENV_H) & !defined(ECL_AVOID_FENV_H)
 		int bits = fetestexcept(FE_ALL_EXCEPT);
 		if (bits & FE_DIVBYZERO)
 			condition = @'division-by-zero';
@@ -115,114 +256,250 @@ handle_signal(int sig)
 		cl_error(1, condition);
 		break;
 	}
-	case SIGSEGV:
-		FEerror("Segmentation violation.", 0);
-		break;
+	case SIGSEGV: {
+		ecl_frame_ptr destination = frs_sch(OBJNULL);
+		if (destination) {
+			the_env->nvalues = 0;
+			ecl_unwind(the_env, destination);
+		}
+		ecl_internal_error("SIGSEGV without handler to jump to.");
+	}
+#ifdef SIGBUS
+	case SIGBUS: {
+		ecl_frame_ptr destination = frs_sch(OBJNULL);
+		if (destination) {
+			the_env->nvalues = 0;
+			ecl_unwind(the_env, destination);
+		}
+		ecl_internal_error("SIGSEGV without handler to jump to.");
+	}
+#endif
 	default:
 		FEerror("Serious signal ~D caught.", 1, MAKE_FIXNUM(sig));
 	}
 }
 
-/*
- * TODO: Use POSIX signals, and in particular use sigaltstack to
- * handle stack overflows gracefully.
- */
-static void
-#ifdef SA_SIGINFO
-signal_catcher(int sig, siginfo_t *siginfo, void *data)
-#else
-signal_catcher(int sig)
-#endif
-{
-	if (!ecl_interrupt_enable ||
-	    ecl_symbol_value(@'si::*interrupt-enable*') == Cnil) {
-		mysignal(sig, signal_catcher);
-		cl_env.interrupt_pending = sig;
-		return;
-	}
-	mysignal(sig, signal_catcher);
 #ifdef HAVE_SIGPROCMASK
-	CL_UNWIND_PROTECT_BEGIN {
-#ifdef SA_SIGINFO
-		handle_signal(sig, siginfo, data);
+static void
+unblock_signal(int signal)
+{
+	struct sigaction oact;
+	sigset_t block_mask;
+	sigaction(signal, NULL, &oact);
+	block_mask = oact.sa_mask;
+	sigaddset(&block_mask, signal);
+# ifdef ECL_THREADS
+	pthread_sigmask(SIG_UNBLOCK, &block_mask, NULL);
+# else
+	sigprocmask(SIG_UNBLOCK, &block_mask, NULL);
+# endif
+}
 #else
-		handle_signal(sig);
+# define unblock_signal(sig)
 #endif
-	} CL_UNWIND_PROTECT_EXIT {
-		sigset_t block_mask;
-		sigemptyset(&block_mask);
-		sigaddset(&block_mask, sig);
-#ifdef ECL_THREADS
-		pthread_sigmask(SIG_UNBLOCK, &block_mask, NULL);
-#else
-		sigprocmask(SIG_UNBLOCK, &block_mask, NULL);
-#endif
-	} CL_UNWIND_PROTECT_END;
-#else
+
+static void
+define_handler(handle_signal_now, int sig, siginfo_t *info, void *aux)
+{
 #if defined (_MSC_VER)
 	if (sig == SIGFPE) {
 		handle_fpe_signal(sig, _fpecode);
 	}
 #endif
-	handle_signal(sig);
+	unblock_signal(sig);
+	call_handler(lisp_signal_handler, sig, info, aux);
+}
+
+static void define_handler(sigsegv_handler, int sig, siginfo_t *info, void *aux);
+
+static void
+define_handler(non_evil_signal_handler, int sig, siginfo_t *siginfo, void *data)
+{
+	int old_errno = errno;
+	cl_env_ptr the_env;
+	if (!ecl_get_option(ECL_OPT_BOOTED)) {
+		ecl_internal_error("Got signal before environment was installed"
+				   " on our thread.");
+	}
+	the_env = ecl_process_env();
+	reinstall_signal(sig, non_evil_signal_handler);
+	/*
+	 * If interrupts are disabled by C we are not so eager on
+	 * detecting when the interrupts become enabled again. We
+	 * queue the signal and are done with that.
+	 */
+	if (interrupts_disabled_by_lisp(the_env)) {
+		if (!the_env->interrupt_pending) {
+			the_env->interrupt_pending = sig;
+			copy_siginfo(the_env->interrupt_info, siginfo);
+		}
+		errno = old_errno;
+		return;
+	}
+	/*
+	 * If interrupts are disabled by C, and we have not pushed a
+	 * pending signal, save this signal and return. On platforms
+	 * in which mprotect() works, we block all write access to the
+	 * environment for a cheap check of pending interrupts. On other
+	 * platforms we change the value of disable_interrupts to 3, so
+	 * that we detect changes.
+	 */
+	if (interrupts_disabled_by_C(the_env)) {
+		the_env->disable_interrupts = 3;
+		if (!the_env->interrupt_pending) {
+			the_env->interrupt_pending = sig;
+			copy_siginfo(the_env->interrupt_info, siginfo);
+#ifdef ECL_USE_MPROTECT
+			if (mprotect(the_env, sizeof(*the_env), PROT_READ) < 0) {
+				ecl_internal_error("Unable to mprotect environment.");
+                        }
+#endif
+		}
+		errno = old_errno;
+		return;
+	}
+	/*
+	 * If interrupts are enabled, that means we are in a safe area
+	 * and may execute arbitrary lisp code. We can thus call the
+	 * appropriate handlers.
+	 */
+	errno = old_errno;
+	call_handler(handle_signal_now, sig, siginfo, data);
+}
+
+static void
+define_handler(sigsegv_handler, int sig, siginfo_t *info, void *aux)
+{
+	cl_env_ptr the_env = ecl_process_env();
+	if (!ecl_get_option(ECL_OPT_BOOTED)) {
+		ecl_internal_error("Got signal before environment was installed"
+				   " on our thread.");
+	}
+	the_env = ecl_process_env();
+#ifdef HAVE_SIGPROCMASK
+# ifdef ECL_DOWN_STACK
+	if ((cl_fixnum*)info->si_addr > the_env->cs_barrier &&
+	    (cl_fixnum*)info->si_addr <= the_env->cs_org) {
+		return jump_to_sigsegv_handler(the_env);
+	}
+# else
+	if ((cl_fixnum*)info->si_addr < the_env->cs_barrier &&
+	    (cl_fixnum*)info->si_addr >= the_env->cs_org) {
+		return jump_to_sigsegv_handler(the_env);
+	}
+# endif
+	if (interrupts_disabled_by_lisp(the_env)) {
+		if (!the_env->interrupt_pending) {
+			the_env->interrupt_pending = sig;
+			copy_siginfo(the_env->interrupt_info, info);
+		}
+		return;
+	}
+	if (interrupts_disabled_by_C(the_env)) {
+		if (!the_env->interrupt_pending) {
+			the_env->interrupt_pending = sig;
+			copy_siginfo(the_env->interrupt_info, info);
+# ifdef ECL_USE_MPROTECT
+			if (mprotect(the_env, sizeof(*the_env), PROT_READ) < 0)
+				ecl_internal_error("Unable to mprotect environment.");
+# endif
+		}
+		return;
+	}
+	handle_signal_now(sig, info, aux);
+#else
+	reinstall_signal(sig, sigsegv_handler);
+	/*
+	 * We cannot distinguish between a stack overflow and a simple
+	 * access violation. Thus we assume the worst case and jump to
+	 * the outermost handler.
+	 */
+	jump_to_sigsegv_handler(&cl_env);
 #endif
 }
+
+#ifdef SIGBUS
+static void
+define_handler(sigbus_handler, int sig, siginfo_t *info, void *aux)
+{
+	cl_env_ptr the_env = &cl_env;
+#if defined(SA_SIGINFO) && defined(ECL_USE_MPROTECT)
+	/* We access the environment when it was protected. That
+	 * means there was a pending signal. */
+	if (the_env == info->si_addr) {
+		int signal = the_env->interrupt_pending;
+		siginfo_t info = *(siginfo_t*)(the_env->interrupt_info);
+		mprotect(the_env, sizeof(*the_env), PROT_READ | PROT_WRITE);
+		the_env->interrupt_pending = 0;
+		the_env->disable_interrupts = 0;
+		unblock_signal(sig);
+		return handle_signal_now(signal, &info, aux);
+	}
+#endif
+	call_handler(handle_signal_now, sig, info, aux);
+}
+#endif
 
 cl_object
 si_check_pending_interrupts(void)
 {
-	int what = cl_env.interrupt_pending;
-	cl_env.interrupt_pending = 0;
-	if (what) {
-#if defined (HAVE_SIGPROCMASK) && defined(SA_SIGINFO)
-		handle_signal(what, 0, 0);
-#else
-		handle_signal(what);
-#endif
-	}
+	ecl_check_pending_interrupts();
 	@(return)
 }
 
-cl_object
-si_catch_bad_signals()
+void
+ecl_check_pending_interrupts(void)
 {
-	mysignal(SIGILL, signal_catcher);
-#ifndef GBC_BOEHM
-	mysignal(SIGBUS, signal_catcher);
-#endif
-#ifndef GBC_BOEHM_GENGC
-	mysignal(SIGSEGV, signal_catcher);
-#endif
-#ifdef SIGIOT
-	mysignal(SIGIOT, signal_catcher);
-#endif
-#ifdef SIGEMT
-	mysignal(SIGEMT, signal_catcher);
-#endif
-#ifdef SIGSYS
-	mysignal(SIGSYS, signal_catcher);
-#endif
-	@(return Ct)
+	const cl_env_ptr env = ecl_process_env();
+	int sig;
+	void *info;
+	env->disable_interrupts = 0;
+	info = env->interrupt_info;
+	sig = env->interrupt_pending;
+	if (sig) {
+		call_handler(handle_signal_now, sig, info, 0);
+	}
 }
 
 cl_object
-si_uncatch_bad_signals()
+si_catch_signal(cl_object code, cl_object boolean)
 {
-	mysignal(SIGILL, SIG_DFL);
-#ifndef GBC_BOEHM
-	mysignal(SIGBUS, SIG_DFL);
+	int code_int = fixnnint(code);
+	int i;
+#ifdef GBC_BOEHM
+	int error = 0;
+#ifdef SIGSEGV
+	if ((code_int == SIGSEGV) && ecl_get_option(ECL_OPT_INCREMENTAL_GC))
+		FEerror("It is not allowed to change the behavior of SIGSEGV.",
+			0);
 #endif
-	mysignal(SIGSEGV, SIG_DFL);
-#ifdef SIGIOT
-	mysignal(SIGIOT, SIG_DFL);
+#ifdef SIGBUS
+	if (code_int == SIGBUS)
+		FEerror("It is not allowed to change the behavior of SIGBUS.",
+			0);
 #endif
-#ifdef SIGEMT
-	mysignal(SIGEMT, SIG_DFL);
 #endif
-#ifdef SIGSYS
-	mysignal(SIGSYS, SIG_DFL);
+#if defined(ECL_THREADS) && !defined(_MSC_VER) && !defined(mingw32)
+	if (code_int == SIGUSR1) {
+		FEerror("It is not allowed to change the behavior of SIGUSR1", 0);
+	}
 #endif
-	@(return Ct)
+	for (i = 0; known_signals[i].code >= 0; i++) {
+		if (known_signals[i].code == code_int) {
+			if (Null(boolean))
+				mysignal(code_int, SIG_DFL);
+			else if (code_int == SIGSEGV)
+				mysignal(code_int, sigsegv_handler);
+#ifdef SIGBUS
+			else if (code_int == SIGBUS)
+				mysignal(code_int, sigbus_handler);
+#endif
+			else
+				mysignal(code_int, non_evil_signal_handler);
+			@(return Ct)
+		}
+	}
+	@(return Cnil)
 }
 
 #ifdef _MSC_VER
@@ -243,15 +520,15 @@ LONG WINAPI W32_exception_filter(struct _EXCEPTION_POINTERS* ep)
 		case EXCEPTION_FLT_DENORMAL_OPERAND:
 		case EXCEPTION_FLT_INVALID_OPERATION:
 		case EXCEPTION_FLT_STACK_CHECK:
-			handle_signal(SIGFPE);
+			non_evil_signal_handler(SIGFPE);
 			break;
 		/* Catch segmentation fault */
 		case EXCEPTION_ACCESS_VIOLATION:
-			handle_signal(SIGSEGV);
+			sigsegv_handler(SIGSEGV);
 			break;
 		/* Catch illegal instruction */
 		case EXCEPTION_ILLEGAL_INSTRUCTION:
-			handle_signal(SIGILL);
+			non_evil_signal_handler(SIGILL);
 			break;
 		/* Do not catch anything else */
 		default:
@@ -277,7 +554,6 @@ void handle_fpe_signal(int sig, int num)
 		condition = @'division-by-zero';
 		break;
 	}
-
 	si_trap_fpe(@'last', Ct);
 	cl_error(1, condition);
 }
@@ -288,7 +564,7 @@ BOOL WINAPI W32_console_ctrl_handler(DWORD type)
 	{
 		/* Catch CTRL-C */
 		case CTRL_C_EVENT:
-			handle_signal(SIGINT);
+			non_evil_signal_handler(SIGINT);
 			return TRUE;
 	}
 	return FALSE;
@@ -298,7 +574,7 @@ BOOL WINAPI W32_console_ctrl_handler(DWORD type)
 cl_object
 si_trap_fpe(cl_object condition, cl_object flag)
 {
-#if (defined(HAVE_FENV_H) && defined(HAVE_FEENABLEEXCEPT)) || defined(_MSC_VER) || defined(mingw32)
+#if (defined(HAVE_FENV_H) && defined(HAVE_FEENABLEEXCEPT) && !defined(ECL_AVOID_FENV_H)) || defined(_MSC_VER) || defined(mingw32)
 	static int last_bits = 0;
 	int bits = 0;
 	if (condition == @'division-by-zero')
@@ -328,18 +604,46 @@ si_trap_fpe(cl_object condition, cl_object flag)
 }	
 
 void
-init_unixint(void)
+init_unixint(int pass)
 {
-	mysignal(SIGFPE, signal_catcher);
-	si_trap_fpe(Ct, Ct);
-	mysignal(SIGINT, signal_catcher);
+	if (pass == 0) {
+#ifdef SIGSEGV
+		if (ecl_get_option(ECL_OPT_TRAP_SIGSEGV)) {
+			mysignal(SIGSEGV, sigsegv_handler);
+		}
+#endif
+#if defined(SIGBUS) /*&& !defined(GBC_BOEHM)*/
+		if (ecl_get_option(ECL_OPT_TRAP_SIGBUS)) {
+			mysignal(SIGBUS, sigbus_handler);
+		}
+#endif
+#ifdef SIGINT
+		if (ecl_get_option(ECL_OPT_TRAP_SIGINT)) {
+			mysignal(SIGINT, non_evil_signal_handler);
+		}
+#endif
 #if defined(ECL_THREADS) && !defined(_MSC_VER) && !defined(mingw32)
-	mysignal(SIGUSR1, signal_catcher);
+		mysignal(SIGUSR1, non_evil_signal_handler);
 #endif
 #ifdef _MSC_VER
-	SetUnhandledExceptionFilter(W32_exception_filter);
-	SetConsoleCtrlHandler(W32_console_ctrl_handler, TRUE);
+		SetUnhandledExceptionFilter(W32_exception_filter);
+		SetConsoleCtrlHandler(W32_console_ctrl_handler, TRUE);
 #endif
-	ECL_SET(@'si::*interrupt-enable*', Ct);
-	ecl_interrupt_enable = 1;
+	} else {
+		int i;
+		for (i = 0; known_signals[i].code >= 0; i++) {
+			cl_object name =
+				_ecl_intern(known_signals[i].text,
+					    cl_core.system_package);
+			si_Xmake_constant(name, MAKE_FIXNUM(known_signals[i].code));
+		}
+		ECL_SET(@'si::*interrupt-enable*', Ct);
+#ifdef SIGFPE
+		if (ecl_get_option(ECL_OPT_TRAP_SIGFPE)) {
+			mysignal(SIGFPE, non_evil_signal_handler);
+			si_trap_fpe(Ct, Ct);
+		}
+#endif
+		ecl_process_env()->disable_interrupts = 0;
+	}
 }

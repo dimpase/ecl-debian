@@ -27,8 +27,7 @@
   (catch *cmperr-tag*
     (when (consp form)
       (let ((fun (car form)) (args (cdr form)) fd)
-	(when (and *compile-print*
-		   (member fun *toplevel-forms-to-print*))
+	(when (member fun *toplevel-forms-to-print*)
 	  (print-current-form))
 	(cond
             ((consp fun) (t1ordinary form))
@@ -113,7 +112,7 @@
     (wt-nl-h "#include <string.h>"))
   ;;; Initialization function.
   (let* ((*lcl* 0) (*lex* 0) (*max-lex* 0) (*max-env* 0) (*max-temp* 0)
-	 (*max-stack* 0)
+         (*aux-closure* nil)
 	 (*reservation-cmacro* (next-cmacro))
 	 (c-output-file *compiler-output1*)
 	 (*compiler-output1* (make-string-output-stream))
@@ -129,6 +128,7 @@
 	    " VLEX" *reservation-cmacro*
             " CLSR" *reservation-cmacro*
 	    " STCK" *reservation-cmacro*)
+    (wt-nl "const cl_env_ptr cl_env_copy = ecl_process_env();")
     (wt-nl "cl_object value0;")
     (wt-nl "cl_object *VVtemp;")
     (when shared-data
@@ -146,6 +146,8 @@
       (wt-nl "flag->cblock.temp_data_size = VMtemp;")
       (wt-nl "flag->cblock.data_text = compiler_data_text;")
       (wt-nl "flag->cblock.data_text_size = compiler_data_text_size;")
+      (wt-nl "flag->cblock.cfuns_size = compiler_cfuns_size;")
+      (wt-nl "flag->cblock.cfuns = compiler_cfuns;")
       (wt-nl "return;}")
       (wt-nl "#ifdef ECL_DYNAMIC_VV")
       (wt-nl "VV = Cblock->cblock.data;")
@@ -195,6 +197,7 @@
 	  (wt-nl-h "#else")
 	  (wt-nl-h "static cl_object VV[VM];")
 	  (wt-nl-h "#endif"))))
+
   (dolist (l *linking-calls*)
     (let* ((c-name (fourth l))
 	   (var-name (fifth l)))
@@ -213,6 +216,12 @@
       (wt-nl1 "static cl_object " c-name "(cl_narg narg, ...)"
 	      "{TRAMPOLINK(narg," lisp-name ",&" var-name ",Cblock);}")))
 
+  (wt-nl-h "#ifdef __cplusplus")
+  (wt-nl-h "}")
+  (wt-nl-h "#endif")
+
+  (output-cfuns *compiler-output2*)
+
   (setq *compiler-phase* 't3)
 
   ;;; Callbacks
@@ -220,11 +229,6 @@
     (wt-nl-h "#include <ecl/internal.h>")
     (dolist (x *callbacks*)
       (apply #'t3-defcallback x)))
-
-  (wt-nl-h "#ifdef __cplusplus")
-  (wt-nl-h "}")
-  (wt-nl-h "#endif")
-
 
   (wt-nl top-output-string))
 
@@ -340,7 +344,7 @@
       " CLSR" *reservation-cmacro*
       " STCK" *reservation-cmacro*)
   (wt-nl "cl_object value0;")
-  (when sp (wt-nl "bds_check;"))
+  (when sp (wt-nl "ecl_bds_check(cl_env_copy);"))
   ; (when (compiler-push-events) (wt-nl "ihs_check;"))
   )
 
@@ -364,13 +368,11 @@
     (wt-h " volatile cl_object lex" *level* "[" *max-lex* "];"))
   (wt-nl-h "#define CLSR" *reservation-cmacro*)
   (wt-nl-h "#define STCK" *reservation-cmacro*)
-  (unless (zerop *max-stack*)
-    (wt-h " cl_object " +ecl-local-stack-variable+ "[" *max-stack* "]; "
-	  "struct ecl_stack_frame " +ecl-local-stack-frame-variable+
-	  " = { t_frame, 0, 0, 0, " +ecl-local-stack-variable+ ", 0, 0 };"))
   (when (plusp *max-env*)
     (unless (eq closure-type 'CLOSURE)
       (wt-h " cl_object " *volatile* "env0;"))
+    (when *aux-closure*
+      (wt-h " struct ecl_cclosure aux_closure;"))
     (wt-h " cl_object " *volatile*)
     (dotimes (i *max-env*)
       (wt-h "CLV" i)
@@ -394,7 +396,7 @@
     (wt-nl1 "{")
     (when (compiler-check-args)
       (wt-nl "check_arg(" (length arg-types) ");"))
-    (wt-nl "NVALUES=1;")
+    (wt-nl "cl_env_copy->nvalues=1;")
     (wt-nl "return " (case return-type
                             (FIXNUM "MAKE_FIXNUM")
                             (CHARACTER "CODE_CHAR")
@@ -525,7 +527,7 @@
                               (lambda-list (c1form-arg 0 lambda-expr))
                               (requireds (car lambda-list)))
   (declare (fixnum level nenvs))
-  (when *compile-print* (print-emitting fun))
+  (print-emitting fun)
   (wt-comment (cond ((fun-global fun) "function definition for ")
 		    ((eq (fun-closure fun) 'CLOSURE) "closure ")
 		    (t "local function "))
@@ -548,10 +550,6 @@
       (wt-h comma "volatile cl_object  *")
       (wt comma "volatile cl_object *lex" n)
       (setf comma ", "))
-    (when (eq (fun-closure fun) 'CLOSURE)
-      (wt-h comma "cl_object " *volatile*)
-      (wt comma "cl_object " *volatile* "env0")
-      (setf comma ", "))
     (let ((lcl 0))
       (declare (fixnum lcl))
       (dolist (var requireds)
@@ -568,6 +566,7 @@
 	 (*lex* 0) (*max-lex* 0)
 	 (*env* (fun-env fun))		; continue growing env
 	 (*max-env* *env*) (*env-lvl* 0)
+         (*aux-closure* nil)
 	 (*level* level)
 	 (*exit* 'RETURN) (*unwind-exit* '(RETURN))
 	 (*destination* 'RETURN)
@@ -578,9 +577,14 @@
 	" VLEX" *reservation-cmacro*
 	" CLSR" *reservation-cmacro*
 	" STCK" *reservation-cmacro*)
+    (wt-nl "const cl_env_ptr cl_env_copy = ecl_process_env();")
+    (when (eq (fun-closure fun) 'CLOSURE)
+      (wt "cl_object " *volatile* "env0 = cl_env_copy->function->cclosure.env;"))
     (wt-nl *volatile* "cl_object value0;")
     (when (>= (fun-debug fun) 2)
       (wt-nl "struct ihs_frame ihs;"))
+    (when (policy-check-stack-overflow)
+      (wt-nl "ecl_cs_check(cl_env_copy,value0);"))
     (when (eq (fun-closure fun) 'CLOSURE)
       (let ((clv-used (remove-if
 		       #'(lambda (x)
@@ -614,16 +618,12 @@
               (pop clv-used)))
 	  (wt-nl "{ /* ... closure scanning finished */")
 	  (incf *inline-blocks*)))
-    ;; If we ask for high level of debugging information, we push the function
-    ;; name into the invocation stack
-    (when (>= (fun-debug fun) 2)
-      (push 'IHS *unwind-exit*)
-      (wt-nl "ihs_push(&ihs," (add-symbol (fun-name fun)) ",Cnil);"))
 
     (c2lambda-expr (c1form-arg 0 lambda-expr)
 		   (c1form-arg 2 lambda-expr)
 		   (fun-cfun fun) (fun-name fun)
 		   narg
+                   (>= (fun-debug fun) 2)
 		   (fun-closure fun))
     (wt-nl1)
     (close-inline-blocks)
@@ -654,11 +654,13 @@
 	      (return-from c1fset
 		(make-c1form* 'SI:FSET :args fun-object nil nil nil nil)))
 	    (when (and (typep macro 'boolean)
-		       (typep pprint '(or integer null)))
+		       (typep pprint '(or integer null))
+		       (consp fname)
+		       (eq (first fname) 'quote))
 	      (return-from c1fset
 		(make-c1form* 'SI:FSET :args
 			      fun-object ;; Function object
-			      (c1expr fname)
+			      (add-object (second fname) :permanent t :duplicate t)
 			      macro
 			      pprint
 			      ;; The c1form, when we do not optimize
@@ -679,24 +681,33 @@
   (unless (and (not (fun-closure fun))
 	       (eq *destination* 'TRASH))
     (return-from c2fset
-      (c2call-global 'SI:FSET c1forms 'NIL
-		     (c1form-primary-type (second c1forms)))))
-  (let* ((*inline-blocks* 0)
-	 (fname (first (coerce-locs (inline-args (list fname)))))
-	 (cfun (fun-cfun fun))
-	 (minarg (fun-minarg fun))
-	 (maxarg (fun-maxarg fun))
-	 (narg (if (= minarg maxarg) maxarg nil)))
+      (c2call-global 'SI:FSET c1forms (c1form-primary-type (second c1forms)))))
+  (let ((*inline-blocks* 0)
+	(loc (data-empty-loc)))
+    (push (list loc fname fun) *global-cfuns-array*)
     ;; FIXME! Look at c2function!
     (new-local fun)
-    (if macro
-	(if narg
-	    (wt-nl "cl_def_c_macro(" fname ",(void*)" cfun "," narg ");")
-	    (wt-nl "cl_def_c_macro(" fname ",(void*)" cfun ",-1);"))
-	(if narg
-	    (wt-nl "cl_def_c_function(" fname ",(void*)" cfun "," narg ");")
-	    (wt-nl "cl_def_c_function_va(" fname ",(void*)" cfun ");")))
+    (wt-nl (if macro "ecl_cmp_defmacro(" "ecl_cmp_defun(")
+	   loc ");")
     (close-inline-blocks)))
+
+(defun output-cfuns (stream)
+  (let ((n-cfuns (length *global-cfuns-array*)))
+    (wt-nl-h "#define compiler_cfuns_size " n-cfuns)
+    (if (zerop n-cfuns)
+        (wt-nl-h "#define compiler_cfuns NULL")
+        (progn
+          (format stream "~%static const struct ecl_cfun compiler_cfuns[] = {~
+~%~t/*t,m,narg,padding,name,block,entry*/");
+          (loop for (loc fname-loc fun) in (nreverse *global-cfuns-array*)
+             do (let* ((cfun (fun-cfun fun))
+                       (minarg (fun-minarg fun))
+                       (maxarg (fun-maxarg fun))
+                       (narg (if (= minarg maxarg) maxarg nil)))
+                  (format stream "~%{0,0,~D,0,MAKE_FIXNUM(~D),MAKE_FIXNUM(~D),(cl_objectfn)~A},"
+                          (or narg -1) (second loc) (second fname-loc)
+                          cfun)))
+          (format stream "~%};")))))
 
 ;;; ----------------------------------------------------------------------
 
