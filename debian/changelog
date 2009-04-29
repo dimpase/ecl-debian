@@ -9,8 +9,9 @@ ecl (0.9l-1) unstable; urgency=low
   * remove redundant Section field for binary package
   * remove empty usr/lib/ecl/h directory
   * fixed gnu typo in control file
+  * fixed watch file to see new version numbering scheme
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 28 Apr 2009 10:09:15 +0200
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 29 Apr 2009 05:58:47 +0200
 
 ecl (0.9j-20080306-5) unstable; urgency=low
 
