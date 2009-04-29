@@ -28,12 +28,29 @@ static const cl_object ecl_foreign_type_table[] = {
 	@':unsigned-int',
 	@':long',
 	@':unsigned-long',
+#ifdef ecl_uint16_t
+        @':int16-t',
+        @':uint16-t',
+#endif
+#ifdef ecl_uint32_t
+        @':int64-t',
+        @':uint64-t',
+#endif
+#ifdef ecl_uint64_t
+        @':int64-t',
+        @':uint64-t',
+#endif
+#ifdef ecl_long_long_t
+        @':long-long',
+        @':unsigned-long-long',
+#endif
 	@':pointer-void',
 	@':cstring',
 	@':object',
 	@':float',
 	@':double',
-	@':void'};
+	@':void'
+};
 
 static const cl_object ecl_foreign_cc_table[] = {
 	@':cdecl',
@@ -51,17 +68,34 @@ static unsigned int ecl_foreign_type_size[] = {
 	sizeof(unsigned int),
 	sizeof(long),
 	sizeof(unsigned long),
+#ifdef ecl_uint16_t
+        sizeof(ecl_int16_t),
+        sizeof(ecl_uint16_t),
+#endif
+#ifdef ecl_uint32_t
+        sizeof(ecl_int32_t),
+        sizeof(ecl_uint32_t),
+#endif
+#ifdef ecl_uint64_t
+        sizeof(ecl_int64_t),
+        sizeof(ecl_uint64_t),
+#endif
+#ifdef ecl_long_long_t
+        sizeof(long long),
+        sizeof(unsigned long long),
+#endif
 	sizeof(void *),
 	sizeof(char *),
 	sizeof(cl_object),
 	sizeof(float),
 	sizeof(double),
-	0};
+	0
+};
 
 cl_object
 ecl_make_foreign_data(cl_object tag, cl_index size, void *data)
 {
-	cl_object output = cl_alloc_object(t_foreign);
+	cl_object output = ecl_alloc_object(t_foreign);
 	output->foreign.tag = tag == Cnil ? @':void' : tag;
 	output->foreign.size = size;
 	output->foreign.data = (char*)data;
@@ -71,10 +105,10 @@ ecl_make_foreign_data(cl_object tag, cl_index size, void *data)
 cl_object
 ecl_allocate_foreign_data(cl_object tag, cl_index size)
 {
-	cl_object output = cl_alloc_object(t_foreign);
+	cl_object output = ecl_alloc_object(t_foreign);
 	output->foreign.tag = tag;
 	output->foreign.size = size;
-	output->foreign.data = (char*)cl_alloc_atomic(size);
+	output->foreign.data = (char*)ecl_alloc_atomic(size);
 	return output;
 }
 
@@ -115,11 +149,14 @@ ecl_null_terminated_base_string(cl_object f)
 cl_object
 si_allocate_foreign_data(cl_object tag, cl_object size)
 {
-	cl_object output = cl_alloc_object(t_foreign);
+	cl_object output = ecl_alloc_object(t_foreign);
 	cl_index bytes = fixnnint(size);
 	output->foreign.tag = tag;
 	output->foreign.size = bytes;
-	output->foreign.data = bytes? cl_alloc_atomic(bytes) : NULL;
+	/* FIXME! Should be atomic uncollectable or malloc, but we do not export
+	 * that garbage collector interface and malloc may be overwritten
+	 * by the GC library */
+	output->foreign.data = bytes? ecl_alloc_uncollectable(bytes) : NULL;
 	@(return output)
 }
 
@@ -130,7 +167,8 @@ si_free_foreign_data(cl_object f)
 		FEwrong_type_argument(@'si::foreign-data', f);
 	}
 	if (f->foreign.size) {
-		cl_dealloc(f->foreign.data);
+		/* See si_allocate_foreign_data() */
+		ecl_free_uncollectable(f->foreign.data);
 	}
 	f->foreign.size = 0;
 	f->foreign.data = NULL;
@@ -152,7 +190,7 @@ si_make_foreign_data_from_array(cl_object array)
 		FEerror("Cannot make foreign object from array with element type ~S.", 1, ecl_elttype_to_symbol(array->array.elttype));
 		break;
 	}
-	@(return ecl_make_foreign_data(tag, 0, array->array.self.ch));
+	@(return ecl_make_foreign_data(tag, 0, array->array.self.bc));
 }
 
 cl_object
@@ -187,7 +225,7 @@ si_foreign_data_pointer(cl_object f, cl_object andx, cl_object asize,
 	if (ndx >= f->foreign.size || (f->foreign.size - ndx) < size) {
 		FEerror("Out of bounds reference into foreign data type ~A.", 1, f);
 	}
-	output = cl_alloc_object(t_foreign);
+	output = ecl_alloc_object(t_foreign);
 	output->foreign.tag = tag;
 	output->foreign.size = size;
 	output->foreign.data = f->foreign.data + ndx;
@@ -280,6 +318,30 @@ ecl_foreign_data_ref_elt(void *p, enum ecl_ffi_tag tag)
 		return ecl_make_unsigned_integer(*(unsigned int *)p);
 	case ECL_FFI_LONG:
 		return ecl_make_integer(*(long *)p);
+#ifdef ecl_uint16_t
+        case ECL_FFI_INT16_T:
+                return ecl_make_int16_t(*(ecl_int16_t *)p);
+        case ECL_FFI_UINT16_T:
+                return ecl_make_uint16_t(*(ecl_uint16_t *)p);
+#endif
+#ifdef ecl_uint32_t
+        case ECL_FFI_INT32_T:
+                return ecl_make_int32_t(*(ecl_int32_t *)p);
+        case ECL_FFI_UINT32_T:
+                return ecl_make_uint32_t(*(ecl_uint32_t *)p);
+#endif
+#ifdef ecl_uint64_t
+        case ECL_FFI_INT64_T:
+                return ecl_make_int64_t(*(ecl_int64_t *)p);
+        case ECL_FFI_UINT64_T:
+                return ecl_make_uint64_t(*(ecl_uint64_t *)p);
+#endif
+#ifdef ecl_long_long_t
+        case ECL_FFI_LONG_LONG:
+                return ecl_make_long_long(*(ecl_long_long_t *)p);
+        case ECL_FFI_UNSIGNED_LONG_LONG:
+                return ecl_make_unsigned_long_long(*(ecl_ulong_long_t *)p);
+#endif
 	case ECL_FFI_UNSIGNED_LONG:
 		return ecl_make_unsigned_integer(*(unsigned long *)p);
 	case ECL_FFI_POINTER_VOID:
@@ -331,11 +393,35 @@ ecl_foreign_data_set_elt(void *p, enum ecl_ffi_tag tag, cl_object value)
 	case ECL_FFI_UNSIGNED_LONG:
 		*(unsigned long *)p = fixnnint(value);
 		break;
+#ifdef ecl_uint16_t
+        case ECL_FFI_INT16_T:
+                *(ecl_int16_t *)p = ecl_to_int16_t(value);
+        case ECL_FFI_UINT16_T:
+                *(ecl_uint16_t *)p = ecl_to_uint16_t(value);
+#endif
+#ifdef ecl_uint32_t
+        case ECL_FFI_INT32_T:
+                *(ecl_int32_t *)p = ecl_to_int32_t(value);
+        case ECL_FFI_UINT32_T:
+                *(ecl_uint32_t *)p = ecl_to_uint32_t(value);
+#endif
+#ifdef ecl_uint64_t
+        case ECL_FFI_INT64_T:
+                *(ecl_int64_t *)p = ecl_to_int64_t(value);
+        case ECL_FFI_UINT64_T:
+                *(ecl_uint64_t *)p = ecl_to_uint64_t(value);
+#endif
+#ifdef ecl_long_long_t
+        case ECL_FFI_LONG_LONG:
+                *(ecl_long_long_t *)p = ecl_to_long_long(value);
+        case ECL_FFI_UNSIGNED_LONG_LONG:
+                *(ecl_ulong_long_t *)p = ecl_to_unsigned_long_long(value);
+#endif
 	case ECL_FFI_POINTER_VOID:
 		*(void **)p = ecl_foreign_data_pointer_safe(value);
 		break;
 	case ECL_FFI_CSTRING:
-		*(char **)p = value == Cnil ? NULL : value->base_string.self;
+		*(char **)p = value == Cnil ? NULL : (char*)value->base_string.self;
 		break;
 	case ECL_FFI_OBJECT:
 		*(cl_object *)p = value;
@@ -418,19 +504,10 @@ si_load_foreign_module(cl_object filename)
 	cl_object output;
 	int i;
 
-	filename = cl_namestring(cl_truename(filename));
-
 #ifdef ECL_THREADS
 	mp_get_lock(1, ecl_symbol_value(@'mp::+load-compile-lock+'));
-	CL_UNWIND_PROTECT_BEGIN {
+	CL_UNWIND_PROTECT_BEGIN(ecl_process_env()) {
 #endif
-	libraries = cl_core.libraries;
-	for (i=0; i<libraries->vector.fillp; i++)
-		if (cl_stringE(2, libraries->vector.self.t[i]->cblock.name, filename) != Cnil)
-		{
-			output = libraries->vector.self.t[i];
-			goto OUTPUT;
-		}
 	output = ecl_library_open(filename, 0);
 	if (output->cblock.handle == NULL)
 	{
@@ -447,9 +524,9 @@ OUTPUT:
 	if (type_of(output) == t_codeblock) {
 		output->cblock.locked |= 1;
 		@(return output)
-	}
-	else
+	} else {
 		FEerror("LOAD-FOREIGN-MODULE: Could not load foreign module ~S (Error: ~S)", 2, filename, output);
+	}
 #endif
 }
 
@@ -465,7 +542,7 @@ si_find_foreign_symbol(cl_object var, cl_object module, cl_object type, cl_objec
 
 	block = (module == @':default' ? module : si_load_foreign_module(module));
 	var = ecl_null_terminated_base_string(var);
-	sym = ecl_library_symbol(block, var->base_string.self, 1);
+	sym = ecl_library_symbol(block, (char*)var->base_string.self, 1);
 	if (sym == NULL) {
 		if (block != @':default')
 			output = ecl_library_error(block);

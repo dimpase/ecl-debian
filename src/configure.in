@@ -8,8 +8,8 @@ dnl  AUTOCONF configuration for ECL
 dnl  Giuseppe Attardi 25.1.1994
 dnl
 
-AC_INIT([ecl],[0.9l],[])
-AC_REVISION([$Revision: 1.167 $])
+AC_INIT([ecl],[9.4.1],[])
+AC_REVISION([$Revision$])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
 AC_PREREQ(2.59)
@@ -49,6 +49,12 @@ AC_ARG_ENABLE(slow-config,
 		  [use GMP to guess compiler/linker flags]
 		  [(no|yes, default=NO)]),
   [], [enable_slow_config=no] )
+
+AC_ARG_ENABLE(soname,
+  AS_HELP_STRING( [--enable-soname],
+		  [link and install the library using version numbers]
+		  [(no|yes, default=yes)]),
+  [], [enable_soname=yes] )
 
 AC_ARG_WITH(system-boehm,
   AS_HELP_STRING( [--with-system-boehm], [Deprecated! See --enable-boehm] ),
@@ -113,22 +119,22 @@ AC_ARG_WITH(cxx,
 
 AC_ARG_WITH(tcp,
   AS_HELP_STRING( [--with-tcp],
-                  [include socket interface (default=YES)]),
+                  [include socket interface (yes|builtin|no, default=YES)]),
   [], [with_tcp=yes])
 
 AC_ARG_WITH(serve_event,
   AS_HELP_STRING( [--with-serve-event],
-                  [include serve-event module (default=YES)]),
+                  [include serve-event module (yes|builtin|no, default=YES)]),
   [], [with_serve_event=${enable_shared}])
 
 AC_ARG_WITH(clx,
   AS_HELP_STRING( [--with-clx],
-                  [include CLX library (default=NO)]),
+                  [include CLX library (yes|builtin|no, default=NO)]),
   [], [with_clx=no])
 
 AC_ARG_WITH(clos-streams,
   AS_HELP_STRING( [--with-clos-streams],
-                  [user defined stream objects (default=YES)]),
+                  [user defined stream objects (yes|builtin|no, default=YES)]),
   [], [with_clos_streams=yes])
 
 AC_ARG_WITH(cmuformat,
@@ -139,31 +145,47 @@ AC_ARG_WITH(cmuformat,
 AC_ARG_WITH(asdf,
   AS_HELP_STRING( [--with-asdf],
                   [include ASDF building facility]
-                  [(default=YES if shared library support is on)]),
+                  [(yes|builtin|no, default=YES)]),
   [], [with_asdf=${enable_shared}])
 
 AC_ARG_WITH(defsystem,
   AS_HELP_STRING( [--with-defsystem],
                   [include DEFSYSTEM building facility]
-                  [(default=YES if shared library support is on)]),
+                  [(yes|builtin|no, default=YES)]),
   [], [with_defsystem=${enable_shared}])
 
 AC_ARG_WITH(cmp,
   AS_HELP_STRING( [--with-cmp],
-                  [build in the compiler (default=YES)] ),
+                  [build the compiler (yes|builtin|no, default=YES)] ),
   [], [with_cmp=yes])
+
+AC_ARG_WITH(bytecmp,
+  AS_HELP_STRING( [--with-bytecmp],
+                  [build the bytecodes compiler (yes|builtin|no, default=YES)] ),
+  [], [with_bytecmp=yes])
 
 AC_ARG_WITH(rt,
   AS_HELP_STRING( [--with-rt],
                   [include MIT-RT testing environment]
-                  [(default=YES)]),
-  [], [with_rt=${enable_shared}])
+                  [(yes|builtin|no, default=YES)]),
+  [], [with_rt=yes])
 
 AC_ARG_WITH(profile,
   AS_HELP_STRING( [--with-profile],
                   [include CMUCL's simple profiler]
-                  [(default=YES if Boehm-Weiser garbage collector used)]),
+                  [(yes|builtin|no, default=YES if Boehm-Weiser garbage collector used)]),
   [], [with_profile=yes])
+
+AC_ARG_WITH(fpe,
+  AS_HELP_STRING( [--with-fpe],
+                  [detect floating point exceptions]
+                  [(default=YES)]),
+  [], [with_fpe=yes])
+
+AC_ARG_WITH(signed-zero,
+  AS_HELP_STRING( [--with-signed-zero={yes|no}],
+                  [allow for IEEE signed zeros (default=YES).]),
+  [], [with_signed_zero="yes"])
 
 AC_ARG_ENABLE(unicode,
   AS_HELP_STRING( [--enable-unicode],
@@ -190,9 +212,9 @@ AC_ARG_ENABLE(hpack,
 
 AC_ARG_ENABLE(asmapply,
   AS_HELP_STRING( [--enable-asmapply],
-                  [enable optimizations written in assembler]
-                  [(default=YES)]),
-  [enable_asmapply=${enableval}],[enable_asmapply=yes])
+                  [enable optimizations written in assembler, EXPERIMENTAL]
+                  [(default=NO)]),
+  [enable_asmapply=${enableval}],[enable_asmapply=no])
 
 AC_ARG_ENABLE(smallcons,
   AS_HELP_STRING( [--enable-smallcons],
@@ -208,9 +230,9 @@ AC_ARG_ENABLE(gengc,
 
 dnl -----------------------------------------------------------------------
 dnl Installation directories
-ecldir="${libdir}/ecl"
+ecldir="${libdir}/ecl-${PACKAGE_VERSION}"
 AC_SUBST([ecldir])
-test -z "${docdir}" && docdir="${datadir}/doc/ecl"
+test -z "${docdir}" && docdir="${datadir}/doc/ecl-${PACKAGE_VERSION}"
 AC_SUBST([docdir])
 
 dnl -----------------------------------------------------------------------
@@ -374,7 +396,52 @@ if test "x${with_gmp}" != "xno"; then
       LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclgmp.${LIBEXT}"
     fi
   fi
-fi  
+fi
+
+dnl ----------------------------------------------------------------------
+dnl SONAME is only active when SONAME_LDFLAGS and SONAME are non nil
+dnl
+AC_MSG_CHECKING(for soname flags)
+PACKAGE_MAJOR=`echo ${PACKAGE_VERSION} | sed -e 's,\(.*\)\..*\..*,\1,g'`
+PACKAGE_MINOR=`echo ${PACKAGE_VERSION} | sed -e 's,.*\.\(.*\)\..*,\1,g'`
+PACKAGE_LEAST=`echo ${PACKAGE_VERSION} | sed -e 's,.*\..*\.\(.*\),\1,g'`
+if test "${enable_soname}" != yes; then
+   SONAME=''
+   SONAME1=''
+   SONAME2=''
+   SONAME3=''
+   SONAME_ALIASES=''
+   SONAME_LDFLAGS=''
+   AC_MSG_RESULT([none])
+else
+   i="${PACKAGE_MAJOR}.${PACKAGE_MINOR}.${PACKAGE_LEAST}"
+   SONAME3=`echo $SONAME | sed "s,.SOVERSION,.$i,g"`
+   i="${PACKAGE_MAJOR}.${PACKAGE_MINOR}"
+   SONAME2=`echo $SONAME | sed "s,.SOVERSION,.$i,g"`
+   i="${PACKAGE_MAJOR}"
+   SONAME1=`echo $SONAME | sed "s,.SOVERSION,.$i,g"`
+   SONAME=`echo $SONAME | sed "s,.SOVERSION,,g"`
+   SONAME_LDFLAGS=`echo $SONAME_LDFLAGS | sed "s,SONAME,$SONAME2,g"`
+   AC_MSG_RESULT([${SONAME_LDFLAGS}])
+fi
+AC_SUBST(SONAME3)
+AC_SUBST(SONAME2)
+AC_SUBST(SONAME1)
+AC_SUBST(SONAME)
+AC_SUBST(SONAME_LDFLAGS)
+
+dnl Related to that, the package version number
+ECL_VERSION_NUMBER=$(($PACKAGE_MAJOR * 10000 + $PACKAGE_MINOR * 100 + $PACKAGE_LEAST))
+AC_SUBST(ECL_VERSION_NUMBER)
+
+dnl ----------------------------------------------------------------------
+dnl Deactivate floating point exceptions if asked to
+if test "${with_fpe}" != yes; then
+   AC_DEFINE(ECL_AVOID_FPE_H)
+fi
+if test "${with_signed_zero}" = yes; then
+   AC_DEFINE(ECL_SIGNED_ZERO)
+fi
 
 dnl =====================================================================
 dnl Checks for header files
@@ -391,7 +458,8 @@ AC_CHECK_HEADERS( [fcntl.h inttypes.h limits.h netdb.h netinet/in.h] \
 dnl !!! end autoscan
 
 AC_CHECK_HEADERS( [sys/resource.h sys/utsname.h float.h pwd.h dlfcn.h link.h] \
-                  [mach-o/dyld.h ulimit.h dirent.h sys/ioctl.h sys/select.h])
+                  [mach-o/dyld.h ulimit.h dirent.h sys/ioctl.h sys/select.h] \
+                  [sys/wait.h] )
 
 dnl =====================================================================
 dnl Checks for typedefs, structures, and compiler characteristics.
@@ -425,6 +493,7 @@ dnl fi
 dnl ----------------------------------------------------------------------
 dnl Check the appropiate type for cl_fixnum/cl_index
 ECL_FIXNUM_TYPE
+ECL_INTEGER_TYPES
 
 ECL_LINEFEED_MODE
 ECL_FIND_SETJMP
@@ -473,6 +542,8 @@ AC_CHECK_FUNCS( [expf logf sqrtf cosf sinf tanf sinhf coshf tanhf] \
 
 AC_CHECK_FUNCS( [sched_yield uname fseeko] )
 
+AC_CHECK_HEADER( [sys/mman.h], AC_DEFINE(ECL_USE_MPROTECT) )
+
 dnl =====================================================================
 dnl Checks for system services
 
@@ -506,6 +577,7 @@ if test ${enable_shared} = "yes"; then
   LSP_LIBRARIES="${SHAREDPREFIX}ecl.${SHAREDEXT}"
   ECL_ADD_FEATURE([wants-dlopen])
 else
+  enable_soname=no
   LSP_LIBRARIES="${LIBPREFIX}ecl.${LIBEXT}"
   LDRPATH='~*'
 fi
@@ -520,11 +592,20 @@ if test "${with_clos_streams}" = "yes"; then
              [Allow STREAM operations to work on arbitrary objects])
 fi
 
+if test "${with_cmp}" = "builtin"; then
+  ECL_ADD_BUILTIN_MODULE([cmp])
+  with_cmp=yes
+fi
 if test "${with_cmp}" = "yes"; then
   ECL_ADD_LISP_MODULE([cmp])
 fi
 
 AC_SUBST(CLX_INFO)
+if test "${with_clx}" = "builtin"; then
+  ECL_ADD_BUILTIN_MODULE([clx])
+  ECL_ADD_BUILTIN_MODULE([sockets])
+  with_clx=yes
+fi
 if test ${with_clx} = "yes"; then
   tcp="yes"
   ECL_ADD_LISP_MODULE([clx])
@@ -540,6 +621,10 @@ if test "${with_tcp}" = "yes"; then
   LIBS="${LIBS} ${TCPLIBS}"
 fi
 
+if test "${with_serve_event}" = "builtin"; then
+  ECL_ADD_BUILTIN_MODULE([serve_event])
+  with_serve_event=yes
+fi
 if test "${with_serve_event}" = "yes"; then
   case "${host_os}" in
     mingw*|cygwin*) ;;
@@ -549,20 +634,44 @@ if test "${with_serve_event}" = "yes"; then
   esac
 fi
 
+if test "${with_asdf}" = "builtin"; then
+  ECL_ADD_BUILTIN_MODULE([asdf])
+  with_asdf=yes
+fi
 if test "${with_asdf}" = "yes"; then
   ECL_ADD_LISP_MODULE([asdf])
 fi
 
+if test "${with_defsystem}" = "builtin"; then
+  ECL_ADD_BUILTIN_MODULE([defsystem])
+  with_defsystem=yes
+fi
 if test "${with_defsystem}" = "yes"; then
   ECL_ADD_LISP_MODULE([defsystem])
 fi
 
+if test "${with_profile}" = "builtin"; then
+  ECL_ADD_BUILTIN_MODULE([profile])
+  with_profile=yes
+fi
 if test "${with_profile}" = "yes"; then
   if test "${enable_boehm}" != "no"; then
     ECL_ADD_LISP_MODULE([profile])
   fi
 fi
 
+if test "${with_bytecmp}" = "builtin"; then
+  ECL_ADD_BUILTIN_MODULE([bytecmp])
+  with_bytecmp=yes
+fi
+if test "${with_bytecmp}" = "yes"; then
+  ECL_ADD_LISP_MODULE([bytecmp])
+fi
+
+if test "${with_rt}" = "builtin"; then
+  ECL_ADD_BUILTIN_MODULE([rt])
+  with_rt=yes
+fi
 if test "${with_rt}" = "yes"; then
   ECL_ADD_LISP_MODULE([rt])
 fi
@@ -586,7 +695,7 @@ case "${enable_boehm}" in
      (destdir=`${PWDCMD}`; cd gc; \
       CC="${CC} ${PICFLAG}" CFLAGS="-DGC_BUILD ${CFLAGS}" LDFLAGS="${LDFLAGS}" \
         $srcdir/gc/configure --disable-shared --prefix=${destdir} \
-	--includedir=${destdir}/ecl/gc/ --libdir=${destdir} --build=${build_alias} \
+	--includedir=${destdir}/ecl/ --libdir=${destdir} --build=${build_alias} \
 	--host=${host_alias} ${boehm_configure_flags})
       ECL_BOEHM_GC_HEADER='ecl/gc/gc.h'
     else

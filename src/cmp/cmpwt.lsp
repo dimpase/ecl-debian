@@ -143,7 +143,7 @@
     (null (return-from data-dump))
     ((or pathname string)
      (setf stream (open stream :direction :output :if-does-not-exist :create
-			:if-exists :supersede)
+			:if-exists :supersede :external-format :default)
 	   must-close stream))
     (stream))
   (let ((*print-radix* nil)
@@ -250,7 +250,7 @@
 		   :test #'(lambda (k record) (eq k (first record))))))
     (if x
 	(progn
-	  (cmpnote "Reusing keywords lists for ~S" keywords)
+	  (cmpnote "~@<Reusing keywords lists for ~_~A~@:>" keywords)
 	  (second (elt *permanent-objects* x)))
 	(prog1
 	    (add-object (pop keywords) :duplicate t :permanent t)

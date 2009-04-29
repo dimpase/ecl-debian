@@ -114,12 +114,6 @@
 	  ((atom type)
 	   form)
 	  ;;
-	  ;; Complex types with arguments.
-	  ((setf rest (rest type)
-		 first (first type)
-		 function (get-sysprop first 'SI::DEFTYPE-DEFINITION))
-	   (expand-typep form object `',(apply function rest) env))
-	  ;;
 	  ;; (TYPEP o '(NOT t)) => (NOT (TYPEP o 't))
 	  ((eq first 'NOT)
 	   `(not (typep ,object ',(first rest))))
@@ -149,6 +143,12 @@
 	     `(LET ((,var ,object))
 		(AND (TYPEP ,var ',first)
 		     ,@(expand-in-interval-p `(the ,first ,var) rest)))))
+	  ;;
+	  ;; Complex types with arguments.
+	  ((setf rest (rest type)
+		 first (first type)
+		 function (get-sysprop first 'SI::DEFTYPE-DEFINITION))
+	   (expand-typep form object `',(apply function rest) env))
 	  (t
 	   form))))
 
@@ -162,6 +162,7 @@
 ;;; other possible type checks.
 ;;;
 
+(eval-when (:load-toplevel)
 (defmacro dolist ((var expression &optional output-form) &body body &environment env)
   (multiple-value-bind (declarations body)
       (si:process-declarations body nil)
@@ -179,6 +180,7 @@
 	      (setq ,list-var (rest ,typed-var)))
 	   ,(when output-form `(setq ,var nil))
 	   ,output-form)))))
+)
 
 ;;;
 ;;; COERCE
@@ -188,8 +190,9 @@
 ;;; lisp form. We use a LET form to avoid evaluating twice the same
 ;;; form.
 ;;;
-(defvar +coercion-table+
-  '((float . (float x))
+(defparameter +coercion-table+
+  '((integer . (let ((y x)) (check-type y integer) y))
+    (float . (float x))
     (short-float  . (float x 0.0s0))
     (single-float . (float x 0.0f0))
     (double-float . (float x 0.0d0))
@@ -197,10 +200,6 @@
     (base-char . (character x))
     (character . (character x))
     (function . (si::coerce-to-function x))
-    (complex .
-     (let ((y x))
-       (declare (:read-only y))
-       (complex (realpart y) (imagpart y))))
     ))
 
 (defun expand-coerce (form value type env)
@@ -235,6 +234,14 @@
 	  ((loop for (a-type . template) in +coercion-table+
 	      when (eq type a-type)
 	      do (return (subst value 'x template))))
+	  ;;
+	  ;; FIXME! COMPLEX cannot be in +coercion-table+ because
+	  ;; (type= '(complex) '(complex double-float)) == T
+	  ;;
+	  ((eq type 'COMPLEX)
+	   `(let ((y ,value))
+	      (declare (:read-only y))
+	      (complex (realpart y) (imagpart y))))
 	  ;;
 	  ;; Complex types defined with DEFTYPE.
 	  ((and (atom type)
@@ -284,16 +291,17 @@
 	  ;;
 	  ;; (INTEGER * *), etc We have to signal an error if the type
 	  ;; does not match. However, if safety settings are low, we
-	  ;; skip this test.
+	  ;; skip the interval test.
 	  ((member first '(INTEGER RATIONAL FLOAT REAL SINGLE-FLOAT
 			   DOUBLE-FLOAT #+long-float LONG-FLOAT
 			   #+short-float SHORT-FLOAT))
 	   (let ((unchecked (expand-coerce form value `',first env)))
 	     (if (< safety 1)
-		 default
+		 unchecked
 		 `(let ((x ,unchecked))
 		    (declare (,first x))
-		    (check-type x ',type "coerced value")
+		    (unless (and ,@(expand-in-interval-p 'x (rest type)))
+		      (si::do-check-type x ',type nil "coerced value"))
 		    x))))
 	  ;;
 	  ;; We did not find a suitable expansion.

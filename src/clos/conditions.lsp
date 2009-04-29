@@ -473,6 +473,11 @@ strings."
 		:FORMAT-ARGUMENTS (list function-name datum)))))
 
 (defun break (&optional (format-control "Break") &rest format-arguments)
+  "Enters a break loop.  The execution of the program can be resumed by typing
+:CONTINUE at the break loop.  Type :HELP to see the break-loop commands list.
+If FORMAT-STRING is non-NIL, it is used as the format string to be output to
+*ERROR-OUTPUT* before entering the break loop.  ARGs are arguments to the
+format string."
   (with-simple-restart (continue "Return from BREAK.")
     (invoke-debugger
       (make-condition 'SIMPLE-CONDITION
@@ -527,13 +532,32 @@ returns with NIL."
 
 (define-condition style-warning (warning) ())
 
+(define-condition simple-style-warning (style-warning simple-condition) ())
+
 (define-condition simple-error (simple-condition error) ())
 
 (define-condition storage-condition (serious-condition) ())
 
-(define-condition stack-overflow    (storage-condition) ())
+(define-condition ext:segmentation-violation (storage-condition) ())
 
-(define-condition storage-exhausted (storage-condition) ())
+(define-condition ext:stack-overflow (storage-condition)
+  ((size :initarg :size :initform 0 :reader ext:stack-overflow-size)
+   (type :initarg :type :initform nil :reader ext:stack-overflow-type))
+  (:REPORT
+   (lambda (condition stream)
+     (let* ((type (ext::stack-overflow-type condition))
+	    (size (ext::stack-overflow-size condition)))
+       (if size
+	   (format stream "~A overflow at size ~D. Stack can probably be resized."
+		   type size)
+	   (format stream "~A stack overflow. Stack cannot grow any further. Either exit
+or return to an outer frame, undoing all the function calls so far."
+		   type))))))
+
+(define-condition ext:storage-exhausted (storage-condition) ()
+  (:REPORT
+   (lambda (condition stream)
+     (format stream "Memory limit reached. Please jump to an outer point or quit program."))))
 
 (define-condition type-error (error)
   ((datum :INITARG :DATUM :READER type-error-datum)
@@ -698,7 +722,7 @@ returns with NIL."
 					cases)))
 	  `(block ,tag
 	     (let ((,var nil))
-	       (declare (ignore ,var))
+	       (declare (ignorable ,var))
 	       (tagbody
 		 (handler-bind ,(mapcar #'(lambda (annotated-case)
 					    (list (cadr annotated-case)

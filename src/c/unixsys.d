@@ -20,14 +20,14 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <ecl/internal.h>
-#ifdef mingw32
-#include <w32api.h>
-#include <wtypes.h>
-#include <winbase.h>
-#include <io.h>
-#endif
-#ifdef _MSC_VER
+#if defined(mingw32) || defined (_MSC_VER)
 #include <windows.h>
+#endif
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#ifdef HAVE_SYS_WAIT_H
+#include <sys/wait.h>
 #endif
 
 cl_object
@@ -63,9 +63,11 @@ si_make_pipe()
 		output = Cnil;
 	} else {
 		cl_object fake_in_name = make_simple_base_string("PIPE-READ-ENDPOINT");
-		cl_object in = ecl_make_stream_from_fd(fake_in_name, fds[0], smm_input);
+		cl_object in = ecl_make_stream_from_fd(fake_in_name, fds[0], smm_input, 8,
+						       ECL_STREAM_DEFAULT_FORMAT, Cnil);
 		cl_object fake_out_name = make_simple_base_string("PIPE-WRITE-ENDPOINT");
-		cl_object out = ecl_make_stream_from_fd(fake_out_name, fds[1], smm_output);
+		cl_object out = ecl_make_stream_from_fd(fake_out_name, fds[1], smm_output, 8,
+						       ECL_STREAM_DEFAULT_FORMAT, Cnil);
 		output = cl_make_two_way_stream(in, out);
 	}
 	@(return output)
@@ -77,7 +79,8 @@ si_make_pipe()
 	int child_pid;
 	cl_object stream_write;
 	cl_object stream_read;
-@{
+	cl_object exit_status = Cnil;
+@
 	command = si_copy_to_simple_base_string(command);
 	argv = cl_mapcar(2, @'si::copy-to-simple-base-string', argv);
 #if defined(mingw32) || defined (_MSC_VER)
@@ -123,7 +126,8 @@ si_make_pipe()
 		/* The child inherits a duplicate of our input
 		   handle. Creating a duplicate avoids problems when
 		   the child closes it */
-		int stream_handle = ecl_stream_to_handle(SYM_VAL(@'*standard-input*'), 0);
+		cl_object input_stream = ecl_symbol_value(@'*standard-input*');
+		int stream_handle = ecl_stream_to_handle(input_stream, 0);
 		if (stream_handle >= 0)
 			DuplicateHandle(current, _get_osfhandle(stream_handle) /*GetStdHandle(STD_INPUT_HANDLE)*/,
 					current, &child_stdin, 0, TRUE,
@@ -155,7 +159,8 @@ si_make_pipe()
 		/* The child inherits a duplicate of our output
 		   handle. Creating a duplicate avoids problems when
 		   the child closes it */
-		int stream_handle = ecl_stream_to_handle(SYM_VAL(@'*standard-output*'), 1);
+		cl_object output_stream = ecl_symbol_value(@'*standard-output*');
+		int stream_handle = ecl_stream_to_handle(output_stream, 1);
 		if (stream_handle >= 0)
 			DuplicateHandle(current, _get_osfhandle(stream_handle) /*GetStdHandle(STD_OUTPUT_HANDLE)*/,
 					current, &child_stdout, 0, TRUE,
@@ -176,7 +181,8 @@ si_make_pipe()
 		/* The child inherits a duplicate of our output
 		   handle. Creating a duplicate avoids problems when
 		   the child closes it */
-		int stream_handle = ecl_stream_to_handle(SYM_VAL(@'*error-output*'), 1);
+		cl_object error_stream = ecl_symbol_value(@'*error-output*');
+		int stream_handle = ecl_stream_to_handle(error_stream, 1);
 		if (stream_handle >= 0)
 			DuplicateHandle(current, _get_osfhandle(stream_handle) /*GetStdHandle(STD_ERROR_HANDLE)*/,
 					current, &child_stderr, 0, TRUE,
@@ -235,10 +241,15 @@ si_make_pipe()
 	if (child_stdout) CloseHandle(child_stdout);
 	if (child_stderr) CloseHandle(child_stderr);
 	if (ok) {
+		DWORD exitcode;
 		CloseHandle(pr_info.hThread);
 		child_pid = pr_info.dwProcessId;
 		if (wait != Cnil) {
 			  WaitForSingleObject(pr_info.hProcess, INFINITE);
+			  if (GetExitCodeProcess(pr_info.hProcess, &exitcode) &&
+			      STILL_ACTIVE != exitcode) {
+				  exit_status = MAKE_FIXNUM(exitcode);
+			  }
 		}
 		CloseHandle(pr_info.hProcess);
 	} else {
@@ -263,8 +274,10 @@ si_make_pipe()
 		child_stdin = fd[0];
 	} else {
 		child_stdin = -1;
-		if (input == @'t')
-			child_stdin = ecl_stream_to_handle(SYM_VAL(@'*standard-input*'), 0);
+		if (input == @'t') {
+			cl_object input_stream = ecl_symbol_value(@'*standard-input*');
+			child_stdin = ecl_stream_to_handle(input_stream, 0);
+		}
 		if (child_stdin >= 0)
 			child_stdin = dup(child_stdin);
 		else
@@ -277,8 +290,10 @@ si_make_pipe()
 		child_stdout = fd[1];
 	} else {
 		child_stdout = -1;
-		if (output == @'t')
-			child_stdout = ecl_stream_to_handle(SYM_VAL(@'*standard-output*'), 1);
+		if (output == @'t') {
+			cl_object output_stream = ecl_symbol_value(@'*standard-output*');
+			child_stdout = ecl_stream_to_handle(output_stream, 1);
+		}
 		if (child_stdout >= 0)
 			child_stdout = dup(child_stdout);
 		else
@@ -287,7 +302,8 @@ si_make_pipe()
 	if (error == @':output') {
 		child_stderr = child_stdout;
 	} else if (error == @'t') {
-		child_stderr = ecl_stream_to_handle(SYM_VAL(@'*error-output*'), 1);
+		cl_object error_stream = ecl_symbol_value(@'*error-output*');
+		child_stderr = ecl_stream_to_handle(error_stream, 1);
 	} else {
 		child_stderr = -1;
 	}
@@ -317,7 +333,7 @@ si_make_pipe()
 				argv_ptr[j] = arg->base_string.self;
 			}
 		}
-		execvp(command->base_string.self, argv_ptr);
+		execvp((char*)command->base_string.self, argv_ptr);
 		/* at this point exec has failed */
 		perror("exec");
 		abort();
@@ -326,8 +342,9 @@ si_make_pipe()
 	close(child_stdout);
 	close(child_stderr);
 	if (child_pid > 0 && wait != Cnil) {
-	   	int status[0];
-		waitpid(child_pid, status, 0);
+	   	int status;
+		waitpid(child_pid, &status, 0);
+		exit_status = MAKE_FIXNUM(WEXITSTATUS(status));
 	}
 }
 #endif /* mingw */
@@ -340,19 +357,23 @@ si_make_pipe()
 	}
 	if (parent_write > 0) {
 		stream_write = ecl_make_stream_from_fd(command, parent_write,
-						       smm_output);
+						       smm_output, 8,
+						       ECL_STREAM_DEFAULT_FORMAT, Ct);
 	} else {
 		parent_write = 0;
 		stream_write = cl_core.null_stream;
 	}
 	if (parent_read > 0) {
 		stream_read = ecl_make_stream_from_fd(command, parent_read,
-						      smm_input);
+						      smm_input, 8,
+						      ECL_STREAM_DEFAULT_FORMAT, Ct);
 	} else {
 		parent_read = 0;
 		stream_read = cl_core.null_stream;
 	}
 	@(return ((parent_read || parent_write)?
 		  cl_make_two_way_stream(stream_read, stream_write) :
-		  Cnil))
+		  Cnil)
+		 exit_status)
 @)
+

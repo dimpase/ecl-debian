@@ -92,12 +92,14 @@ _hash_equal(int depth, cl_hashkey h, cl_object x)
 		x = x->symbol.name;
 #ifdef ECL_UNICODE
 	case t_base_string:
-		return hash_base_string(x->base_string.self, x->base_string.fillp, h);
+		return hash_base_string((ecl_base_char *)x->base_string.self,
+					x->base_string.fillp, h);
 	case t_string:
-		return hash_full_string(x->base_string.self, x->base_string.fillp, h);
+		return hash_full_string(x->string.self, x->string.fillp, h);
 #else
 	case t_base_string:
-		return hash_string(h, x->base_string.self, x->base_string.fillp);
+		return hash_string(h, (ecl_base_char *)x->base_string.self,
+				   x->base_string.fillp);
 #endif
 	case t_pathname:
 		h = _hash_equal(0, h, x->pathname.directory);
@@ -112,9 +114,38 @@ _hash_equal(int depth, cl_hashkey h, cl_object x)
 		 * If so, the extra bits _must_ _not_ take part in the hash,
 		 * because otherwise two bit arrays which are EQUAL might
 		 * have different hash keys. */
-		return hash_string(h, x->vector.self.ch, x->vector.fillp / 8);
+		return hash_string(h, x->vector.self.bc, x->vector.fillp / 8);
 	case t_random:
 		return _hash_equal(0, h, x->random.value);
+#ifdef ECL_SIGNED_ZERO
+# ifdef ECL_SHORT_FLOAT
+	case t_shortfloat: {
+		float f = ecl_short_float(x);
+		return hash_string(h, (unsigned char*)&f, sizeof(f));
+	}
+# endif
+	case t_singlefloat: {
+		float f = sf(x);
+		if (f == 0.0) f = 0.0;
+		return hash_string(h, (unsigned char*)&f, sizeof(f));
+	}
+	case t_doublefloat: {
+		double f = df(x);
+		if (f == 0.0) f = 0.0;
+		return hash_string(h, (unsigned char*)&f, sizeof(f));
+	}
+# ifdef ECL_LONG_FLOAT
+	case t_longfloat: {
+		long double f = ecl_long_float(x);
+		if (f == 0.0) f = 0.0;
+		return hash_string(h, (unsigned char*)&f, sizeof(f));
+	}
+# endif
+	case t_complex: {
+		h = _hash_equal(depth, h, x->complex.real);
+		return _hash_equal(depth, h, x->complex.imag);
+	}
+#endif
 	default:
 		return _hash_eql(h, x);
 	}
@@ -126,7 +157,7 @@ _hash_equalp(int depth, cl_hashkey h, cl_object x)
 	cl_index i, len;
 	switch (type_of(x)) {
 	case t_character:
-		return hash_word(h, toupper(CHAR_CODE(x)));
+		return hash_word(h, ecl_char_upcase(CHAR_CODE(x)));
 	case t_list:
 		if (Null(x)) {
 			return _hash_equalp(depth, h, Cnil_symbol->symbol.name);
@@ -349,13 +380,13 @@ ecl_extend_hashtable(cl_object hashtable)
 	} else {
 		new_size = fix(new_size_obj);
 	}
-	old = cl_alloc_object(t_hashtable);
+	old = ecl_alloc_object(t_hashtable);
 	old->hash = hashtable->hash;
 	hashtable->hash.data = NULL; /* for GC sake */
 	hashtable->hash.entries = 0;
 	hashtable->hash.size = new_size;
 	hashtable->hash.data = (struct ecl_hashtable_entry *)
-	  cl_alloc(new_size * sizeof(struct ecl_hashtable_entry));
+	  ecl_alloc(new_size * sizeof(struct ecl_hashtable_entry));
 	for (i = 0;  i < new_size;  i++) {
 		hashtable->hash.data[i].key = OBJNULL;
 		hashtable->hash.data[i].value = OBJNULL;
@@ -451,13 +482,13 @@ cl__make_hash_table(cl_object test, cl_object size, cl_object rehash_size,
 	/*
 	 * Build actual hash.
 	 */
-	h = cl_alloc_object(t_hashtable);
+	h = ecl_alloc_object(t_hashtable);
 	h->hash.test = htt;
 	h->hash.size = hsize;
         h->hash.entries = 0;
 	h->hash.data = NULL;	/* for GC sake */
 	h->hash.data = (struct ecl_hashtable_entry *)
-		cl_alloc(hsize * sizeof(struct ecl_hashtable_entry));
+		ecl_alloc(hsize * sizeof(struct ecl_hashtable_entry));
 	do_clrhash(h);
 
 	h->hash.rehash_size = rehash_size;
@@ -577,8 +608,10 @@ cl_hash_table_count(cl_object ht)
 }
 
 static cl_object
-si_hash_table_iterate(cl_narg narg, cl_object env)
+si_hash_table_iterate(cl_narg narg)
 {
+	const cl_env_ptr the_env = ecl_process_env();
+        cl_object env = the_env->function->cclosure.env;
 	cl_object index = CAR(env);
 	cl_object ht = CADR(env);
 	cl_fixnum i;

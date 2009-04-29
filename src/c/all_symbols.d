@@ -39,18 +39,16 @@
 
 cl_index cl_num_symbols_in_core = 0;
 
-static char *
-mangle_name(cl_object output, char *source, int l)
+static unsigned char *
+mangle_name(cl_object output, unsigned char *source, int l)
 {
-	char c;
+	unsigned char c;
 
 	while (l--) {
 		c = *(source++);
-		if (isalpha(c))
-			c = tolower(c);
-		else if (isdigit(c))
-			;
-		else if (c == '-' || c == '_') {
+		if (ecl_alphanumericp(c)) {
+			c = ecl_char_downcase(c);
+		} else if (c == '-' || c == '_') {
 			c = '_';
 		} else if (c == '&') {
 			c = 'A';
@@ -78,7 +76,7 @@ mangle_name(cl_object output, char *source, int l)
 
 @(defun si::mangle-name (symbol &optional as_function)
 	cl_index l;
-	char c, *source, *dest;
+	unsigned char c, *source, *dest;
 	cl_object output;
 	cl_object package;
 	cl_object found = Cnil;

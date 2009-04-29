@@ -71,11 +71,9 @@
 		    (or (eq slot-names 'T)
 			(member slot-name slot-names))
 		    (not (slot-boundp instance slot-name)))
-	   (let ((initform (slot-definition-initform slotd)))
-	     (unless (eq initform '+INITFORM-UNSUPPLIED+)
-	       (when (functionp initform)
-		 (setq initform (funcall initform)))
-	       (setf (slot-value instance slot-name) initform)))))
+	   (let ((initfun (slot-definition-initfunction slotd)))
+	     (when initfun
+	       (setf (slot-value instance slot-name) (funcall initfun))))))
 	)))
   instance)
 
@@ -131,7 +129,7 @@
 		(eq supplied-value 'si::failed))
 	(when (eq supplied-value '+initform-unsupplied+)
 	  (remf initargs initarg))
-	(setf value (if (functionp value) (funcall value) value)
+	(setf value (funcall value)
 	      initargs (append initargs (list initarg value))))))
   initargs)
 
@@ -300,9 +298,7 @@ because it contains a reference to the undefined class~%  ~A"
   (std-class-generate-accessors class))
 
 (defmethod compute-class-precedence-list ((class class))
-  (cons class
-	(compute-clos-class-precedence-list (class-name class)
-					    (class-direct-superclasses class))))
+  (compute-clos-class-precedence-list class (class-direct-superclasses class)))
 
 (defmethod compute-slots ((class class))
   ;; INV: for some classes ECL expects that the order of the inherited slots is
@@ -367,8 +363,11 @@ because it contains a reference to the undefined class~%  ~A"
 	     (setf (slot-definition-initargs new-slotd)
 		   (union (slot-definition-initargs new-slotd)
 			  (slot-definition-initargs old-slotd)))
-	     (when (eq (slot-definition-initform new-slotd) '+INITFORM-UNSUPPLIED+)
-	       (setf (slot-definition-initform new-slotd) (slot-definition-initform old-slotd)))
+	     (unless (slot-definition-initfunction new-slotd)
+	       (setf (slot-definition-initform new-slotd)
+		     (slot-definition-initform old-slotd)
+		     (slot-definition-initfunction new-slotd)
+		     (slot-definition-initfunction old-slotd)))
 	     (setf (slot-definition-readers new-slotd)
 		   (union (slot-definition-readers new-slotd)
 			  (slot-definition-readers old-slotd))
@@ -414,7 +413,9 @@ because it contains a reference to the undefined class~%  ~A"
 	 (error "~a is not a valid class specifier." class-or-symbol))
 	((find-class class-or-symbol fail))
 	(t
-	 (warn "Class ~A has been forward referenced." class-or-symbol)
+	 (warn 'ext::simple-style-warning
+	       :format-control "Class ~A has been forward referenced."
+	       :format-arguments (list class-or-symbol))
 	 (ensure-class class-or-symbol
 		       :metaclass 'forward-referenced-class
 		       :direct-superclasses (list (find-class 'standard-object))
@@ -535,8 +536,9 @@ because it contains a reference to the undefined class~%  ~A"
 		       (table (slot-table class))
 		       (slotd (gethash slot-name table))
 		       (index (slot-definition-location slotd))
-		       (value (si:instance-ref self index)))
-		  (declare (fixnum index))
+		       (value (if (si::fixnump index)
+				  (si:instance-ref self (the fixnum index))
+				  (car (the cons index)))))
 		  (if (si:sl-boundp value)
 		      value
 		      (values (slot-unbound (class-of self) self slot-name)))))
@@ -545,8 +547,9 @@ because it contains a reference to the undefined class~%  ~A"
 		       (table (slot-table class))
 		       (slotd (gethash slot-name table))
 		       (index (slot-definition-location slotd)))
-		  (declare (fixnum index))
-		  (si:instance-set self index value))))))
+		  (if (si::fixnump index)
+		      (si:instance-set self (the fixnum index) value)
+		      (rplaca (the cons index) value)))))))
 
 (defun std-class-sealed-accessors (index)
   (declare (si::c-local)

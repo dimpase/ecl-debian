@@ -27,22 +27,13 @@
 #include <ecl/internal.h>
 
 void
-ecl_cs_overflow(void)
-{
-#ifdef DOWN_STACK
-	if (cl_env.cs_limit < cl_env.cs_org - cl_env.cs_size)
-	  cl_env.cs_limit -= CSGETA;
-#else
-	if (cl_env.cs_limit > cl_env.cs_org + cl_env.cs_size)
-	  cl_env.cs_limit += CSGETA;
-#endif
-	FEerror("Control stack overflow.", 0);
-}
-
-void
 ecl_internal_error(const char *s)
 {
+        int saved_errno = errno;
 	printf("\nInternal or unrecoverable error in:\n%s\n", s);
+        if (saved_errno) {
+                printf("  [%d: %s]\n", saved_errno, strerror(saved_errno));
+        }
 	fflush(stdout);
 #ifdef SIGIOT
 	signal(SIGIOT, SIG_DFL); /* avoid getting into a loop with abort */
@@ -59,6 +50,7 @@ FEerror(const char *s, int narg, ...)
 {
 	cl_va_list args;
 	cl_va_start(args, narg, narg, 0);
+	ecl_enable_interrupts();
 	funcall(4, @'si::universal-error-handler',
 		Cnil,                    /*  not correctable  */
 		make_constant_base_string(s),	 /*  condition text  */
@@ -70,6 +62,7 @@ CEerror(cl_object c, const char *err, int narg, ...)
 {
 	cl_va_list args;
 	cl_va_start(args, narg, narg, 0);
+	ecl_enable_interrupts();
 	return funcall(4, @'si::universal-error-handler',
 		       c,			/*  correctable  */
 		       make_constant_base_string(err),	/*  continue-format-string  */
@@ -83,7 +76,7 @@ CEerror(cl_object c, const char *err, int narg, ...)
 void
 FEprogram_error(const char *s, int narg, ...)
 {
-  cl_object form, real_args, text;
+	cl_object form, real_args, text;
 	cl_va_list args;
 	cl_va_start(args, narg, narg, 0);
 	text = make_constant_base_string(s);
@@ -92,7 +85,7 @@ FEprogram_error(const char *s, int narg, ...)
 	    /* When FEprogram_error is invoked from the compiler, we can
 	     * provide information about the offending form.
 	     */
-	    cl_object stmt = SYM_VAL(@'si::*current-form*');
+	    cl_object stmt = ecl_symbol_value(@'si::*current-form*');
 	    if (stmt != Cnil) {
 		real_args = @list(3, stmt, text, real_args);
 		text = make_constant_base_string("In form~%~S~%~?");
@@ -222,11 +215,11 @@ FEinvalid_function_name(cl_object fname)
 }
 
 /*      bootstrap version                */
-static
-@(defun "universal_error_handler" (c err args)
-@
+static cl_object
+universal_error_handler(cl_narg narg, cl_object c, cl_object err, cl_object args, ...)
+{
 	ecl_internal_error("\nLisp initialization error.\n");
-@)
+}
 
 void
 FEillegal_index(cl_object x, cl_object i)
@@ -298,18 +291,16 @@ FEwin32_error(const char *msg, int narg, ...)
 
 @(defun error (eformat &rest args)
 @
-	funcall(4, @'si::universal-error-handler',
-		Cnil,
-		eformat,
-		cl_grab_rest_args(args));
+	ecl_enable_interrupts();
+	return funcall(4, @'si::universal-error-handler', Cnil, eformat,
+		       cl_grab_rest_args(args));
 @)
 
 @(defun cerror (cformat eformat &rest args)
 @
-	return(funcall(4, @'si::universal-error-handler',
-		       cformat,
-		       eformat,
-		       cl_grab_rest_args(args)));
+	ecl_enable_interrupts();
+	return funcall(4, @'si::universal-error-handler', cformat, eformat,
+		       cl_grab_rest_args(args));
 @)
 
 void

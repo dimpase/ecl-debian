@@ -143,7 +143,7 @@
   instead of the end of a line. The default method uses repeated
   calls to STREAM-READ-CHAR."))
 
-(defgeneric stream-read-sequence (stream seq &optional start end)
+(defgeneric stream-read-sequence (stream sequence &optional start end)
   (:documentation
    "This is like CL:READ-SEQUENCE, but for Gray streams."))
 
@@ -192,9 +192,13 @@
   FUNDAMENTAL-CHARACTER-OUTPUT-STREAM uses repeated calls to
   STREAM-WRITE-CHAR."))
 
-(defgeneric stream-write-sequence (stream seq &optional start end)
+(defgeneric stream-write-sequence (stream sequence &optional start end)
   (:documentation
    "This is like CL:WRITE-SEQUENCE, but for Gray streams."))
+
+(defgeneric stream-file-position (stream &optional position)
+  (:documentation
+   "This is like CL:FILE-POSITION, but for Gray streams."))
 
 
 ;;;
@@ -450,10 +454,10 @@
 
 ;; UNREAD-CHAR
 
-(defmethod stream-unread-char ((stream ansi-stream) c)
-  (cl:unread-char stream c))
+(defmethod stream-unread-char ((stream ansi-stream) character)
+  (cl:unread-char stream character))
 
-(defmethod stream-unread-char ((stream ansi-stream) c)
+(defmethod stream-unread-char ((stream ansi-stream) character)
   (bug-or-error stream 'stream-unread-char))
 
 
@@ -478,10 +482,10 @@
     (loop
      (let ((ch (stream-read-char stream)))
        (cond ((eq ch :eof)
-	      (return (values (shrink-vector res index) t)))
+	      (return (values (si::shrink-vector res index) t)))
 	     (t
 	      (when (char= ch #\newline)
-		(return (values (shrink-vector res index) nil)))
+		(return (values (si::shrink-vector res index) nil)))
 	      (when (= index len)
 		(setq len (* len 2))
 		(let ((new (make-string len)))
@@ -500,18 +504,18 @@
 ;; READ-SEQUENCE
 
 (defmethod stream-read-sequence ((stream fundamental-character-input-stream)
-                                 seq &optional (start 0) (end nil))
-  (si::do-read-sequence seq stream start end))
+                                 sequence &optional (start 0) (end nil))
+  (si::do-read-sequence sequence stream start end))
 
 (defmethod stream-read-sequence ((stream fundamental-binary-input-stream)
-                                 seq &optional (start 0) (end nil))
-  (si::do-read-sequence seq stream start end))
+                                 sequence &optional (start 0) (end nil))
+  (si::do-read-sequence sequence stream start end))
 
-(defmethod stream-read-sequence ((stream ansi-stream) seq
+(defmethod stream-read-sequence ((stream ansi-stream) sequence
 				 &optional (start 0) (end nil))
-  (si:do-read-sequence stream seq start end))
+  (si:do-read-sequence stream sequence start end))
 
-(defmethod stream-read-sequence ((stream t) seq &optional start end)
+(defmethod stream-read-sequence ((stream t) sequence &optional start end)
   (bug-or-error stream 'stream-read-sequence))
 
 
@@ -520,13 +524,21 @@
 (defmethod stream-start-line-p ((stream fundamental-character-output-stream))
   (eql (stream-line-column stream) 0))
 
+;; FILE-POSITION
+
+(defmethod stream-file-position ((stream ansi-stream) &optional position)
+  (file-position stream position))
+
+(defmethod stream-file-position ((stream t) &optional position)
+  (declare (ignore stream position))
+  nil)
 
 ;; STREAM-P
 
 (defmethod streamp ((stream stream))
   t)
 
-(defmethod streamp ((no-stream t))
+(defmethod streamp ((stream t))
   nil)
 
 
@@ -541,27 +553,27 @@
 
 ;; WRITE-CHAR
 
-(defmethod stream-write-char ((stream ansi-stream) c)
-  (cl:write-char stream c))
+(defmethod stream-write-char ((stream ansi-stream) character)
+  (cl:write-char stream character))
 
-(defmethod stream-write-char ((stream t) c)
+(defmethod stream-write-char ((stream t) character)
   (bug-or-error stream 'stream-write-char))
 
 
 ;; WRITE-SEQUENCE
 
-(defmethod stream-write-sequence ((stream fundamental-character-output-stream) seq
+(defmethod stream-write-sequence ((stream fundamental-character-output-stream) sequence
                                   &optional (start 0) end)
-  (si::do-write-sequence seq stream start end))
+  (si::do-write-sequence sequence stream start end))
 
-(defmethod stream-write-sequence ((stream fundamental-binary-output-stream) seq
+(defmethod stream-write-sequence ((stream fundamental-binary-output-stream) sequence
                                   &optional (start 0) end)
-  (si::do-write-sequence seq stream start end))
+  (si::do-write-sequence sequence stream start end))
 
-(defmethod stream-write-sequence ((stream ansi-stream) seq &optional (start 0) end)
-  (si::do-write-sequence seq stream start end))
+(defmethod stream-write-sequence ((stream ansi-stream) sequence &optional (start 0) end)
+  (si::do-write-sequence sequence stream start end))
 
-(defmethod stream-write-sequence ((stream t) seq &optional start end)
+(defmethod stream-write-sequence ((stream t) sequence &optional start end)
   (bug-or-error stream 'stream-write-sequence))
 
 
@@ -602,6 +614,7 @@
 				       cl:open-stream-p cl:output-stream-p cl:streamp)))
 
 (let ((p (find-package "GRAY")))
+  (export '(nil) p)
   (do-external-symbols (s (find-package "COMMON-LISP"))
     (unless (member s '#.+conflicting-symbols+)
       (export s p))))
@@ -611,10 +624,11 @@
   (let ((x (si::package-lock "COMMON-LISP" nil)))
     (loop for cl-symbol in '#.+conflicting-symbols+
        with gray-package = (find-package "GRAY")
-       do (let ((gray-symbol (find-symbol (symbol-name cl-symbol) gray-package)))
-	    (setf (fdefinition cl-symbol) (fdefinition gray-symbol))
-	    (unintern gray-symbol gray-package)
-	    (import cl-symbol gray-package)
-	    (export cl-symbol gray-package)))
+       do (unless (typep (fdefinition cl-symbol) 'generic-function) 
+	    (let ((gray-symbol (find-symbol (symbol-name cl-symbol) gray-package)))
+	      (setf (fdefinition cl-symbol) (fdefinition gray-symbol))
+	      (unintern gray-symbol gray-package)
+	      (import cl-symbol gray-package)
+	      (export cl-symbol gray-package))))
     (si::package-lock "COMMON-LISP" x)
     nil))

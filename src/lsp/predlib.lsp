@@ -82,12 +82,45 @@ bignums."
 (deftype bignum ()
   '(OR (INTEGER * (#.most-negative-fixnum)) (INTEGER (#.most-positive-fixnum) *)))
 
-(deftype ext::byte8 () `(INTEGER 0 255))
-(deftype ext::integer8 () `(INTEGER -128 127))
-(deftype ext::cl-fixnum () `(SIGNED-BYTE #.CL-FIXNUM-BITS))
-(deftype ext::cl-index () `(UNSIGNED-BYTE #.CL-FIXNUM-BITS))
+(deftype ext::byte8 () '(INTEGER 0 255))
+(deftype ext::integer8 () '(INTEGER -128 127))
+(deftype ext::byte16 () '(INTEGER 0 #xFFFF))
+(deftype ext::integer16 () '(INTEGER #x-8000 #x7FFF))
+(deftype ext::byte32 () '(INTEGER 0 #xFFFFFFFF))
+(deftype ext::integer32 () '(INTEGER #x-80000000 #x7FFFFFFF))
+(deftype ext::byte64 () '(INTEGER 0 #xFFFFFFFFFFFFFFFF))
+(deftype ext::integer64 () '(INTEGER #x-8000000000000000 #x7FFFFFFFFFFFFFFF))
+(deftype ext::cl-fixnum () '(SIGNED-BYTE #.CL-FIXNUM-BITS))
+(deftype ext::cl-index () '(UNSIGNED-BYTE #.CL-FIXNUM-BITS))
 
-(deftype real (&rest foo) '(OR RATIONAL FLOAT))
+(deftype real (&optional (start '* start-p) (end '*))
+  (if start-p
+      (let (rat-start
+	    real-start
+	    rat-end
+	    real-end)
+	(cond ((consp start)
+	       (setf start (first start)
+		     rat-start (list (rational start))
+		     real-start (list (float start))))
+	      ((numberp start)
+	       (setf rat-start (rational start)
+		     real-start (float start)))
+	      (t
+	       (setf rat-start start
+		     real-start start)))
+	(cond ((consp end)
+	       (setf end (first end)
+		     rat-end (list (rational end))
+		     real-end (list (float end))))
+	      ((numberp end)
+	       (setf rat-end (rational end)
+		     real-end (float end)))
+	      (t
+	       (setf rat-end end
+		     real-end end)))
+	`(OR (RATIONAL ,rat-start ,rat-end) (FLOAT ,real-start ,real-end)))
+      '(OR RATIONAL FLOAT)))
 
 #-short-float
 (deftype short-float (&rest args)
@@ -122,8 +155,14 @@ can be represented with N bits."
       '(INTEGER 0 *)
       `(INTEGER 0 ,(1- (expt 2 s)))))
 
-(deftype null () '(MEMBER NIL))
-(deftype sequence () '(OR CONS NULL (ARRAY * (*))))
+(deftype null ()
+  "The type to which only NIL belongs."
+  '(MEMBER NIL))
+
+(deftype sequence ()
+  "A sequence is either a list or a vector."
+  '(OR CONS NULL (ARRAY * (*))))
+
 (deftype list ()
   "As a type specifier, LIST is used to specify the type consisting of NIL and
 cons objects.  In our ordinary life with Lisp, however, a list is either NIL
@@ -160,6 +199,7 @@ may be adjustable.  Other vectors are called simple-vectors."
   `(array ,element-type (,size)))
 
 (deftype extended-char ()
+  "A character which is not of type BASE-CHAR."
   '(and character (not base-char)))
 
 (deftype string (&optional size)
@@ -176,8 +216,22 @@ called simple-strings."
       '(or (array base-char (*)) (array character (*)))))
 
 (deftype base-string (&optional size)
+  "A string which is made of BASE-CHAR."
   (if size `(array base-char (,size)) '(array base-char (*))))
+
+(deftype extended-string (&optional size)
+  "A string which is nt a base string"
+  #-unicode
+  NIL
+  #+unicode
+  (if size `(array character (,size)) '(array character (*))))
+
 (deftype bit-vector (&optional size)
+  "A bit-vector is a vector of bits.  A bit-vector is notated by '#*' followed
+by its elements (0 or 1).  Bit-vectors may be displaced to another array, may
+have a fill-pointer, or may be adjustable.  Other bit-vectors are called
+simple-bit-vectors.  Only simple-bit-vectors can be input in the above format
+using '#*'."
   (if size `(array bit (,size)) '(array bit (*))))
 
 (deftype simple-vector (&optional size)
@@ -199,11 +253,12 @@ fill-pointer, and is not adjustable."
       '(or (simple-array base-char (*)) (simple-array character (*)))))
 
 (deftype simple-base-string (&optional size)
+  "A base-string which cannot be adjusted nor displaced."
   (if size `(simple-array base-char (,size)) '(simple-array base-char (*))))
 
 (deftype simple-bit-vector (&optional size)
-  "A simple-bit-vector is a bit-vector that is not displaced to another array,
-has no fill-pointer, and is not adjustable."
+  "A bit-vector that is not displaced to another array, has no fill-pointer,
+and is not adjustable."
   (if size `(simple-array bit (,size)) '(simple-array bit (*))))
 
 ;;************************************************************
@@ -266,7 +321,13 @@ has no fill-pointer, and is not adjustable."
   (put-sysprop (car l) 'TYPE-PREDICATE (cdr l)))
 
 (defconstant +upgraded-array-element-types+
-  '(NIL BASE-CHAR #+unicode CHARACTER BIT EXT::BYTE8 EXT::INTEGER8 EXT::CL-FIXNUM EXT::CL-INDEX SINGLE-FLOAT DOUBLE-FLOAT T))
+  '#.(append '(NIL BASE-CHAR #+unicode CHARACTER BIT EXT:BYTE8 EXT:INTEGER8)
+             #+:uint16-t '(EXT:BYTE16 EXT:INTEGER16)
+             #+:uint32-t '(EXT:BYTE32 EXT:INTEGER32)
+             (when (< 32 cl-fixnum-bits 64) '(EXT::CL-INDEX FIXNUM))
+             #+:uint64-t '(EXT:BYTE64 EXT:INTEGER64)
+             (when (< 64 cl-fixnum-bits) '(EXT::CL-INDEX FIXNUM))
+             '(SINGLE-FLOAT DOUBLE-FLOAT T)))
 
 (defun upgraded-array-element-type (element-type &optional env)
   (let* ((hash (logand 127 (si:hash-eql element-type)))
@@ -676,7 +737,8 @@ if not possible."
 ;; T3) = T implies either (SUBTYPEP T2 T3) = T or (SUBTYPEP T3 T2) = T.
 ;;
 (defun find-type-bounds (type in-our-family-p type-<= minimize-super)
-  (declare (si::c-local))
+  (declare (si::c-local)
+	   (function in-our-family-p type-<=)) 
   (let* ((subtype-tag 0)
 	 (disjoint-tag 0)
 	 (supertype-tag (if minimize-super -1 0)))
@@ -707,39 +769,63 @@ if not possible."
 ;; procedure, TYPE-<=; the second possibility is detected by means of tags.
 ;;
 (defun register-type (type in-our-family-p type-<=)
-  (declare (si::c-local))
+  (declare (si::c-local)
+	   (function in-our-family-p type-<=))
   (or (find-registered-tag type)
       (multiple-value-bind (tag-super tag-sub)
 	  (find-type-bounds type in-our-family-p type-<= nil)
-	(let ((tag (logior (new-type-tag) tag-sub)))
+	(let ((tag (new-type-tag)))
 	  (update-types (logandc2 tag-super tag-sub) tag)
+	  (setf tag (logior tag tag-sub))
 	  (push-type type tag)
 	  tag))))
 
 ;;----------------------------------------------------------------------
 ;; MEMBER types. We register this object in a separate list, *MEMBER-TYPES*,
-;; and tag all types to which it belongs.
+;; and tag all types to which it belongs. We need to treat three cases
+;; separately
+;;	- Ordinary types, via simple-member-type, check the objects
+;;	  against all pre-registered types, adding their tags.
+;;	- Ordinary numbers, are translated into intervals.
+;;	- Floating point zeros, have to be treated separately. This
+;;	  is done by assigning a special tag to -0.0 and translating
+;;	  (MEMBER 0.0) = (AND (float-type 0.0 0.0) (NOT (MEMBER -0.0)))
 ;;
 (defun register-member-type (object)
   ;(declare (si::c-local))
   (let ((pos (assoc object *member-types*)))
-    (or (and pos (cdr pos))
-	;; We convert number into intervals, so that (AND INTEGER (NOT
-	;; (EQL 10))) is detected as a subtype of (OR (INTEGER * 9)
-	;; (INTEGER 11 *)).
-	(and (realp object)
-	     (let* ((base-type (if (integerp object) 'INTEGER (type-of object)))
-		    (type (list base-type object object)))
-	       (or (find-registered-tag type)
-		   (register-interval-type type))))
-	(let* ((tag (new-type-tag)))
-	  (maybe-save-types)
-	  (setq *member-types* (acons object tag *member-types*))
-	  (dolist (i *elementary-types*)
-	    (let ((type (car i)))
-	      (when (typep object type)
-		(setf (cdr i) (logior tag (cdr i))))))
-	  tag))))
+    (cond ((and pos (cdr pos)))
+	  ((not (realp object))
+	   (simple-member-type object))
+	  ((and (floatp object) (zerop object))
+	   #.(if (eql (- 0.0) 0.0)
+		 '(number-member-type object)
+		 '(if (minusp (float-sign object))
+		      (simple-member-type object)
+		      (logandc2 (number-member-type object)
+			        (register-member-type (- object))))))
+	  (t
+	   (number-member-type object)))))
+
+(defun simple-member-type (object)
+  (declare (si::c-local))
+  (let* ((tag (new-type-tag)))
+    (maybe-save-types)
+    (setq *member-types* (acons object tag *member-types*))
+    (dolist (i *elementary-types*)
+      (let ((type (car i)))
+	(when (typep object type)
+	  (setf (cdr i) (logior tag (cdr i))))))
+    tag))
+
+;; We convert number into intervals, so that (AND INTEGER (NOT (EQL
+;; 10))) is detected as a subtype of (OR (INTEGER * 9) (INTEGER 11
+;; *)).
+(defun number-member-type (object)
+  (let* ((base-type (if (integerp object) 'INTEGER (type-of object)))
+	 (type (list base-type object object)))
+    (or (find-registered-tag type)
+	(register-interval-type type))))
 
 (defun push-type (type tag)
   (declare (si::c-local))
@@ -1007,7 +1093,7 @@ if not possible."
 	  ((and (= car-tag -1) (= cdr-tag -1))
 	   (canonical-type 'CONS))
 	  (t
-	   (throw '+canonical-type-failure+ 'cons)))))
+	   (throw '+canonical-type-failure+ 'CONS)))))
 
 ;;----------------------------------------------------------------------
 ;; FIND-BUILT-IN-TAG

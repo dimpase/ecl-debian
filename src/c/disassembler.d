@@ -46,70 +46,34 @@ print_oparg_arg(const char *s, cl_fixnum n, cl_object x) {
 	ecl_princ(x, Cnil);
 }
 
-static cl_object *
-disassemble_vars(const char *message, cl_object *data, cl_index step) {
-	cl_object o = *(data++);
-	cl_index n = fix(o);
-
-	if (n) {
-	  ecl_terpri(Cnil);
-	  print_noarg(message);
-	  for (; n; n--, data+=step) {
-	    ecl_prin1(data[0], Cnil);
-	    if (n > 1) print_noarg(", ");
-	  }
-	}
-	return data;
-}
-
 static void
 disassemble_lambda(cl_object bytecodes) {
+	const cl_env_ptr env = ecl_process_env();
 	cl_object *data;
 	cl_opcode *vector;
 
-	bds_bind(@'*print-pretty*', Cnil);
+	ecl_bds_bind(env, @'*print-pretty*', Cnil);
 
+	/* Print required arguments */
+	data = bytecodes->bytecodes.data;
+
+	/* Name of LAMBDA */
+	print_arg("\nName:\t\t", bytecodes->bytecodes.name);
 	if (bytecodes->bytecodes.name == OBJNULL ||
 	    bytecodes->bytecodes.name == @'si::bytecodes') {
 		print_noarg("\nEvaluated form:");
 		goto NO_ARGS;
 	}
 
-	/* Name of LAMBDA */
-	print_arg("\nName:\t\t", bytecodes->bytecodes.name);
-
-	/* Print required arguments */
-	data = bytecodes->bytecodes.data;
-	data = disassemble_vars("Required:\t", data, 1);
-
-	/* Print optional arguments */
-	data = disassemble_vars("Optionals:\t", data, 3);
-
-	/* Print rest argument */
-	if (data[0] != Cnil) {
-		print_arg("\nRest:\t\t", data[0]);
-	}
-	data++;
-
-	/* Print keyword arguments */
-	if (data[0] == MAKE_FIXNUM(0)) {
-		data++;
-		goto NO_KEYS;
-	}
-	if (data[0] != Cnil) {
-		print_arg("\nOther keys:\t", data[0]);
-	}
-	data++;
-	data = disassemble_vars("Keywords:\t", data, 4);
-NO_KEYS:
 	/* Print aux arguments */
 	print_arg("\nDocumentation:\t", *(data++));
 	print_arg("\nDeclarations:\t", *(data++));
-NO_ARGS:
+
+ NO_ARGS:
 	base = vector = (cl_opcode *)bytecodes->bytecodes.code;
 	disassemble(bytecodes, vector);
 
-	bds_unwind1();
+	ecl_bds_unwind1(env);
 }
 
 /* -------------------- DISASSEMBLER CORE -------------------- */
@@ -368,11 +332,33 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	case OP_MCALL:		string = "MCALL";
 				goto NOARG;
 
-	/* OP_ENTRY
-		Marks the entry of a lambda form
+	/* OP_POPREQ
+		Extracts next required argument.
 	*/
-	case OP_ENTRY:		string = "ENTRY";
+	case OP_POPREQ:		string = "POP\tREQ";
 				goto NOARG;
+	/* OP_NOMORE
+		Ensure there are no more arguments.
+	*/
+	case OP_NOMORE:		string = "NOMORE";
+				goto NOARG;
+	/* OP_POPOPT
+		Extracts next optional argument.
+	*/
+	case OP_POPOPT:		string = "POP\tOPT";
+				goto NOARG;
+	/* OP_POPREST
+		Extracts list of remaining arguments.
+	*/
+	case OP_POPREST:	string = "POP\tREST";
+				goto NOARG;
+        /* OP_PUSHKEYS
+        	Parses the keyword arguments
+        */
+        case OP_PUSHKEYS:	string = "PUSH\tKEYS ";
+				GET_DATA(o, vector, data);
+                		goto ARG;
+
 	/* OP_EXIT
 		Marks the end of a high level construct
 	*/
@@ -629,6 +615,7 @@ si_bc_disassemble(cl_object v)
 cl_object
 si_bc_split(cl_object b)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object vector;
 	cl_object data;
 	cl_object lex = Cnil;
@@ -649,6 +636,7 @@ si_bc_split(cl_object b)
 cl_object
 si_bc_file(cl_object b)
 {
+	cl_env_ptr the_env = ecl_process_env();
 	if (type_of(b) == t_bclosure) {
 		b = b->bclosure.code;
 	}
