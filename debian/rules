@@ -85,7 +85,7 @@ clean:
 	# Add here commands to clean up after the build process.
 	# correct lintian warning debian-rules-ignores-make-clean-error
 	[ ! -f Makefile ] || $(MAKE) distclean
-        rm -f src/gc/configure.in
+	rm -f src/gc/configure.in
 
 	rm -rf build
 
