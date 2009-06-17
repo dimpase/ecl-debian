@@ -2,8 +2,9 @@ ecl (9.6.1-1) unstable; urgency=low
 
   * New upstream release. 
   * Fixed watch file
+  * fixed clean to remove src/gc/configure.in file
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 17 Jun 2009 07:10:21 +0200
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 17 Jun 2009 22:42:16 +0200
 
 ecl (9.4.1-1) unstable; urgency=low
 
