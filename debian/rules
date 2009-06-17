@@ -47,7 +47,7 @@ config.status: configure
 	   --with-system-gmp=yes \
 	   --with-tcp \
 	   --with-clx  \
-	   --enable-threads=auto \
+	   --enable-threads=no \
 	   --enable-boehm=system \
 	   --with-x
 	   #--enable-boehm=system
