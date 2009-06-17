@@ -148,6 +148,9 @@
       (wt-nl "flag->cblock.data_text_size = compiler_data_text_size;")
       (wt-nl "flag->cblock.cfuns_size = compiler_cfuns_size;")
       (wt-nl "flag->cblock.cfuns = compiler_cfuns;")
+      (when *compile-file-truename*
+        (wt-nl "flag->cblock.source = make_constant_base_string(\""
+               (namestring *compile-file-truename*) "\");"))
       (wt-nl "return;}")
       (wt-nl "#ifdef ECL_DYNAMIC_VV")
       (wt-nl "VV = Cblock->cblock.data;")
@@ -167,8 +170,10 @@
 
     ;; useless in initialization.
     (dolist (form (nconc (nreverse *make-forms*) *top-level-forms*))
-      (let ((*compile-to-linking-call* nil)
-	    (*env* 0) (*level* 0) (*temp* 0))
+      (let* ((*compile-to-linking-call* nil)
+             (*compile-file-truename* (and form (c1form-file form)))
+             (*compile-file-position* (and form (c1form-file-position form)))
+             (*env* 0) (*level* 0) (*temp* 0))
 	  (t2expr form))
       (let ((*compiler-output1* c-output-file))
 	(emit-local-funs)))
@@ -219,6 +224,15 @@
   (wt-nl-h "#ifdef __cplusplus")
   (wt-nl-h "}")
   (wt-nl-h "#endif")
+
+  (when (and (listp *static-constants*)
+             (setf *static-constants* (nreverse *static-constants*)))
+    (wt-nl-h "/*")
+    (wt-nl-h " * Statically defined constants")
+    (wt-nl-h " */")
+    (loop for (value name builder) in (reverse *static-constants*)
+          do (terpri *compiler-output2*)
+          do (funcall builder name value *compiler-output2*)))
 
   (output-cfuns *compiler-output2*)
 
@@ -383,7 +397,7 @@
 (defun wt-global-entry (fname cfun arg-types return-type)
     (when (and (symbolp fname) (get-sysprop fname 'NO-GLOBAL-ENTRY))
       (return-from wt-global-entry nil))
-    (wt-comment "global entry for the function " fname)
+    (wt-comment-nl "global entry for the function ~a" fname)
     (wt-nl1 "static cl_object L" cfun "(cl_narg narg")
     (wt-nl-h "static cl_object L" cfun "(cl_narg")
     (do ((vl arg-types (cdr vl))
@@ -403,7 +417,7 @@
                             (DOUBLE-FLOAT "ecl_make_doublefloat")
                             (SINGLE-FLOAT "ecl_make_singlefloat")
 			    #+long-float
-                            (LONG-FLOAT "make_longfloat")
+                            (LONG-FLOAT "ecl_make_longfloat")
                             (otherwise ""))
            "(LI" cfun "(")
     (do ((types arg-types (cdr types))
@@ -513,6 +527,60 @@
           (t (cmperr "The C variable specification ~s is illegal." cvs))))
   )
 
+(defvar *debug-fun* nil)
+
+(defun locative-type-from-var-kind (kind)
+  (cdr (assoc kind
+              '((:object . "_ecl_object_loc")
+                (:fixnum . "_ecl_fixnum_loc")
+                (:char . "_ecl_base_char_loc")
+                (:float . "_ecl_float_loc")
+                (:double . "_ecl_double_loc")
+                ((special global closure replaced lexical) . NIL)))))
+
+(defun build-debug-lexical-env (var-locations &optional first)
+  (let* ((filtered-locations '())
+         (filtered-codes '()))
+    ;; Filter out variables that we know how to store in the
+    ;; debug information table. This excludes among other things
+    ;; closures and special variables.
+    (loop for var in var-locations
+          for name = (let ((*package* (find-package "KEYWORD")))
+                       (format nil "\"~S\"" (var-name var)))
+          for code = (locative-type-from-var-kind (var-kind var))
+          for loc = (var-loc var)
+          when (and code (consp loc) (eq (first loc) 'LCL))
+          do (progn
+               (push (cons name code) filtered-codes)
+               (push (second loc) filtered-locations)))
+    ;; Generate two tables, a static one with information about the
+    ;; variables, including name and type, and dynamic one, which is
+    ;; a vector of pointer to the variables.
+    (when filtered-codes
+      (wt-nl "static const struct ecl_var_debug_info _ecl_descriptors[]={")
+      (loop for (name . code) in filtered-codes
+            for i from 0
+            do (wt-nl (if (zerop i) "{" ",{") name "," code "}"))
+      (wt "};")
+      (wt-nl "const cl_index _ecl_debug_info_raw[]={")
+      (wt-nl (if first "(cl_index)(Cnil)," "(cl_index)(_ecl_debug_env),")
+             "(cl_index)(_ecl_descriptors)")
+      (loop for var-loc in filtered-locations
+            do (wt ",(cl_index)(&" (lcl-name var-loc) ")"))
+      (wt "};")
+      (wt-nl "ecl_def_ct_vector(_ecl_debug_env,aet_index,_ecl_debug_info_raw,"
+             (+ 2 (length filtered-locations))
+             ",,);"))
+    (if first
+        (if (not filtered-codes)
+            (wt-nl "cl_object _ecl_debug_env = Cnil;"))
+        (if filtered-codes
+            (wt-nl "ihs.lex_env=_ecl_debug_env;")))
+    filtered-codes))
+
+(defun pop-debug-lexical-env ()
+  (wt-nl "ihs.lex_env=_ecl_debug_env;"))
+
 (defun t3local-fun (fun &aux  (lambda-expr (fun-lambda fun))
 			      (level (if (eq (fun-closure fun) 'LEXICAL)
 					 (fun-level fun)
@@ -525,15 +593,16 @@
 			      (*volatile* (c1form-volatile* lambda-expr))
 			      (*tail-recursion-info* fun)
                               (lambda-list (c1form-arg 0 lambda-expr))
-                              (requireds (car lambda-list)))
+                              (requireds (car lambda-list))
+                              (*debug-fun* *debug-fun*))
   (declare (fixnum level nenvs))
   (print-emitting fun)
-  (wt-comment (cond ((fun-global fun) "function definition for ")
-		    ((eq (fun-closure fun) 'CLOSURE) "closure ")
-		    (t "local function "))
-	      (or (fun-name fun) (fun-description fun) 'CLOSURE))
+  (wt-comment-nl (cond ((fun-global fun) "function definition for ~a")
+                       ((eq (fun-closure fun) 'CLOSURE) "closure ~a")
+                       (t "local function ~a"))
+                 (or (fun-name fun) (fun-description fun) 'CLOSURE))
   (when (fun-shares-with fun)
-    (wt-comment "... shares definition with " (fun-name (fun-shares-with fun)))
+    (wt-comment-nl "... shares definition with ~a" (fun-name (fun-shares-with fun)))
     (return-from t3local-fun))
   (cond ((fun-exported fun)
 	 (wt-nl-h "ECL_DLLEXPORT cl_object " cfun "(")
@@ -582,6 +651,7 @@
       (wt "cl_object " *volatile* "env0 = cl_env_copy->function->cclosure.env;"))
     (wt-nl *volatile* "cl_object value0;")
     (when (>= (fun-debug fun) 2)
+      (setq *debug-fun* (fun-debug fun))
       (wt-nl "struct ihs_frame ihs;"))
     (when (policy-check-stack-overflow)
       (wt-nl "ecl_cs_check(cl_env_copy,value0);"))
@@ -693,6 +763,9 @@
 
 (defun output-cfuns (stream)
   (let ((n-cfuns (length *global-cfuns-array*)))
+    (wt-nl-h "/*")
+    (wt-nl-h " * Exported Lisp functions")
+    (wt-nl-h " */")
     (wt-nl-h "#define compiler_cfuns_size " n-cfuns)
     (if (zerop n-cfuns)
         (wt-nl-h "#define compiler_cfuns NULL")
@@ -700,13 +773,13 @@
           (format stream "~%static const struct ecl_cfun compiler_cfuns[] = {~
 ~%~t/*t,m,narg,padding,name,block,entry*/");
           (loop for (loc fname-loc fun) in (nreverse *global-cfuns-array*)
-             do (let* ((cfun (fun-cfun fun))
-                       (minarg (fun-minarg fun))
-                       (maxarg (fun-maxarg fun))
-                       (narg (if (= minarg maxarg) maxarg nil)))
-                  (format stream "~%{0,0,~D,0,MAKE_FIXNUM(~D),MAKE_FIXNUM(~D),(cl_objectfn)~A},"
-                          (or narg -1) (second loc) (second fname-loc)
-                          cfun)))
+                do (let* ((cfun (fun-cfun fun))
+                          (minarg (fun-minarg fun))
+                          (maxarg (fun-maxarg fun))
+                          (narg (if (= minarg maxarg) maxarg nil)))
+                     (format stream "~%{0,0,~D,0,MAKE_FIXNUM(~D),MAKE_FIXNUM(~D),(cl_objectfn)~A,Ct,MAKE_FIXNUM(~D)},"
+                             (or narg -1) (second loc) (second fname-loc)
+                             cfun (fun-file-position fun))))
           (format stream "~%};")))))
 
 ;;; ----------------------------------------------------------------------

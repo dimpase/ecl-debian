@@ -59,27 +59,28 @@ static int ARGC;
 static char **ARGV;
 static cl_fixnum option_values[ECL_OPT_LIMIT+1] = {
 #ifdef GBC_BOEHM_GENGC
-	1,	/* ECL_OPT_INCREMENTAL_GC */
+	1,		/* ECL_OPT_INCREMENTAL_GC */
 #else
-	0,	/* ECL_OPT_INCREMENTAL_GC */
+	0,		/* ECL_OPT_INCREMENTAL_GC */
 #endif
-	1,	/* ECL_OPT_TRAP_SIGSEGV */
-	1,	/* ECL_OPT_TRAP_SIGFPE */
-	1,	/* ECL_OPT_TRAP_SIGINT */
-	1,	/* ECL_OPT_TRAP_SIGILL */
-	1,	/* ECL_OPT_TRAP_SIGBUS */
-	0,	/* ECL_OPT_BOOTED */
-	8192,	/* ECL_OPT_BIND_STACK_SIZE */
-	128,	/* ECL_OPT_BIND_STACK_SAFETY_AREA */
-	2048,	/* ECL_OPT_FRAME_STACK_SIZE */
-	128,	/* ECL_OPT_FRAME_STACK_SAFETY_AREA */
-	32768,	/* ECL_OPT_LISP_STACK_SIZE */
-	128,	/* ECL_OPT_LISP_STACK_SAFETY_AREA */
-	131072,	/* ECL_OPT_C_STACK_SIZE */
-	4192,	/* ECL_OPT_C_STACK_SAFETY_AREA */
-	1,	/* ECL_OPT_SIGALTSTACK_SIZE */
-	128*1024*1024, /* ECL_OPT_HEAP_SIZE */
-	1024*1024, /* ECL_OPT_HEAP_SAFETY_AREA */
+	1,		/* ECL_OPT_TRAP_SIGSEGV */
+	1,		/* ECL_OPT_TRAP_SIGFPE */
+	1,		/* ECL_OPT_TRAP_SIGINT */
+	1,		/* ECL_OPT_TRAP_SIGILL */
+	1,		/* ECL_OPT_TRAP_SIGBUS */
+	0,		/* ECL_OPT_BOOTED */
+	8192,		/* ECL_OPT_BIND_STACK_SIZE */
+	128,		/* ECL_OPT_BIND_STACK_SAFETY_AREA */
+	2048,		/* ECL_OPT_FRAME_STACK_SIZE */
+	128,		/* ECL_OPT_FRAME_STACK_SAFETY_AREA */
+	32768,		/* ECL_OPT_LISP_STACK_SIZE */
+	128,		/* ECL_OPT_LISP_STACK_SAFETY_AREA */
+	4*1024*1024,	/* ECL_OPT_C_STACK_SIZE */
+	128*1024,	/* ECL_OPT_C_STACK_SAFETY_AREA */
+	1,		/* ECL_OPT_SIGALTSTACK_SIZE */
+	256*1024*1024, 	/* ECL_OPT_HEAP_SIZE */
+	1024*1024, 	/* ECL_OPT_HEAP_SAFETY_AREA */
+        0,		/* ECL_OPT_THREAD_INTERRUPT_SIGNAL */
 	0};
 
 #if !defined(GBC_BOEHM)
@@ -124,6 +125,7 @@ static const char *feature_names[] = {
 #endif
 #ifdef mingw32
 	"MINGW32",
+        "WIN32",
 #endif
 #ifdef _MSC_VER
 	"MSVC",
@@ -166,9 +168,8 @@ ecl_get_option(int option)
 {
 	if (option >= ECL_OPT_LIMIT || option < 0) {
 		FEerror("Invalid boot option ~D", 1, MAKE_FIXNUM(option));
-	} else {
-		return option_values[option];
 	}
+        return option_values[option];
 }
 
 void
@@ -189,7 +190,7 @@ ecl_set_option(int option, cl_fixnum value)
 void
 ecl_init_env(cl_env_ptr env)
 {
-	int i;
+	char i;
 
 	env->c_env = NULL;
 
@@ -214,7 +215,7 @@ ecl_init_env(cl_env_ptr env)
 	/* Rough estimate. Not very safe. We assume that cl_boot()
 	 * is invoked from the main() routine of the program.
 	 */
-	env->cs_org = (cl_object*)(&env);
+	env->cs_org = (char*)(&env);
 # endif /* THREADS */
 #endif /* !GBC_BOEHM */
 
@@ -233,6 +234,8 @@ ecl_init_env(cl_env_ptr env)
 #endif
 #endif
 	init_stacks(env, &i);
+
+        env->trap_fpe_bits = 0;
 }
 
 static const struct {
@@ -278,6 +281,17 @@ static const struct {
 	{NULL, -1}
 };
 
+void
+_ecl_dealloc_env(cl_env_ptr env)
+{
+#if defined(ECL_USE_MPROTECT)
+	if (munmap(env, sizeof(*env)))
+		ecl_internal_error("Unable to deallocate environment structure.");
+#else
+	ecl_dealloc(env);
+#endif
+}
+
 cl_env_ptr
 _ecl_alloc_env()
 {
@@ -298,7 +312,7 @@ _ecl_alloc_env()
 		/* We have not set up any environment. Hence, we cannot call ecl_alloc()
 		 * because it will need to stop interrupts and currently we rely on
 		 * the environment for that */
-		output = &first_env;
+		output = ecl_alloc_unprotected(sizeof(*output));
 	} else {
 		output = ecl_alloc(sizeof(*output));
 	}
@@ -311,10 +325,9 @@ _ecl_alloc_env()
 	return output;
 }
 
-int
+void
 cl_shutdown(void)
 {
-	const cl_env_ptr env = ecl_process_env();
 	if (ecl_get_option(ECL_OPT_BOOTED) > 0) {
 		cl_object l = ecl_symbol_value(@'si::*exit-hooks*');
 		cl_object form = cl_list(2, @'funcall', Cnil);
@@ -332,11 +345,10 @@ cl_shutdown(void)
 #endif
 	}
 	ecl_set_option(ECL_OPT_BOOTED, -1);
-	return 1;
 }
 
 #ifdef ECL_UNICODE
-static cl_object
+static void
 read_char_database()
 {
 	cl_object s = si_base_string_concatenate(2,
@@ -488,7 +500,7 @@ cl_boot(int argc, char **argv)
 	cl_export2(Ct, cl_core.lisp_package);
 
 	/* At exit, clean up */
-	atexit((void*)cl_shutdown);
+	atexit(cl_shutdown);
 
 	/* These must come _after_ the packages and NIL/T have been created */
 	init_all_symbols();

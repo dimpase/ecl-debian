@@ -39,34 +39,91 @@ _ecl_set_max_heap_size(cl_index new_size)
 	const cl_env_ptr the_env = ecl_process_env();
 	ecl_disable_interrupts_env(the_env);
 	GC_set_max_heap_size(cl_core.max_heap_size = new_size);
+	if (new_size == 0) {
+		cl_index size = ecl_get_option(ECL_OPT_HEAP_SAFETY_AREA);
+		cl_core.safety_region = ecl_alloc_atomic_unprotected(size);
+	} else if (cl_core.safety_region) {
+		GC_FREE(cl_core.safety_region);
+		cl_core.safety_region = 0;
+	}
 	ecl_enable_interrupts_env(the_env);
+}
+
+static int failure;
+static void *
+out_of_memory_check(size_t requested_bytes)
+{
+        failure = 1;
+        return 0;
 }
 
 static void
-out_of_memory(cl_env_ptr the_env)
+no_warnings(char *msg, void *arg)
 {
-	the_env->string_pool = Cnil;
-	_ecl_set_max_heap_size(cl_core.max_heap_size +
-			       ecl_get_option(ECL_OPT_HEAP_SAFETY_AREA));
-	cl_error(1, @'ext::storage-exhausted');
 }
 
-@(defun ext::heap-size (&optional (new_max_heap_size Cnil))
-	cl_index size;
-	cl_object output;
-@
-	ecl_disable_interrupts_env(the_env);
-	size = GC_get_heap_size();
-	ecl_enable_interrupts_env(the_env);
-	output = ecl_make_unsigned_integer(size);
-	if (!Null(new_max_heap_size)) {
-                cl_index new_size = fixnnint(new_max_heap_size);
-                if (new_size > size) {
-                        _ecl_set_max_heap_size(new_size);
+static void *
+out_of_memory(size_t requested_bytes)
+{
+	const cl_env_ptr the_env = ecl_process_env();
+        int interrupts = the_env->disable_interrupts;
+        int method = 0;
+        if (!interrupts)
+                ecl_disable_interrupts_env(the_env);
+#ifdef ECL_THREADS
+	/* The out of memory condition may happen in more than one thread */
+        /* But then we have to ensure the error has not been solved */
+	ERROR_HANDLER_LOCK();
+#endif
+        failure = 0;
+        GC_gcollect();
+        GC_oom_fn = out_of_memory_check;
+        {
+                void *output = GC_MALLOC(requested_bytes);
+                GC_oom_fn = out_of_memory;
+                if (output != 0 && failure == 0) {
+                        ERROR_HANDLER_UNLOCK();
+                        return output;
                 }
         }
-	@(return output);
-@)
+        if (cl_core.max_heap_size == 0) {
+                /* We did not set any limit in the amount of memory,
+                 * yet we failed, or we had some limits but we have
+                 * not reached them. */
+                if (cl_core.safety_region) {
+                        /* We can free some memory and try handling the error */
+                        GC_FREE(cl_core.safety_region);
+                        the_env->string_pool = Cnil;
+                        cl_core.safety_region = 0;
+                        method = 0;
+                } else {
+                        /* No possibility of continuing */
+                        method = 2;
+                }
+        } else {
+                cl_core.max_heap_size += ecl_get_option(ECL_OPT_HEAP_SAFETY_AREA);
+                GC_set_max_heap_size(cl_core.max_heap_size);
+                method = 1;
+        }
+	ERROR_HANDLER_UNLOCK();
+        ecl_enable_interrupts_env(the_env);
+        switch (method) {
+        case 0:	cl_error(1, @'ext::storage-exhausted');
+                break;
+        case 1: cl_cerror(2, make_constant_base_string("Extend heap size"),
+                          @'ext::storage-exhausted');
+                break;
+        default:
+                ecl_internal_error("Memory exhausted, quitting program.");
+                break;
+        }
+        if (!interrupts)
+                ecl_disable_interrupts_env(the_env);
+        GC_set_max_heap_size(cl_core.max_heap_size +=
+                             cl_core.max_heap_size / 2);
+        /* Default allocation. Note that we do not allocate atomic. */
+        return GC_MALLOC(requested_bytes);
+}
 
 #ifdef alloc_object
 #undef alloc_object
@@ -97,11 +154,8 @@ ecl_alloc_object(cl_type t)
 		ecl_disable_interrupts_env(the_env);
 		obj = (cl_object)GC_MALLOC_ATOMIC(type_size[t]);
 		ecl_enable_interrupts_env(the_env);
-		if (obj != NULL) {
-			obj->d.t = t;
-			return obj;
-		}
-		break;
+                obj->d.t = t;
+                return obj;
 	}
 	case t_bignum:
 	case t_ratio:
@@ -141,23 +195,14 @@ ecl_alloc_object(cl_type t)
 		ecl_disable_interrupts_env(the_env);
 		obj = (cl_object)GC_MALLOC(type_size[t]);
 		ecl_enable_interrupts_env(the_env);
-		if (obj != NULL) {
-			obj->d.t = t;
-			return obj;
-		}
-		break;
+                obj->d.t = t;
+                return obj;
 	}
 	default:
 		printf("\ttype = %d\n", t);
 		ecl_internal_error("alloc botch.");
 	}
-	out_of_memory(the_env);
-	return OBJNULL;
 }
-
-#ifdef make_cons
-#undef make_cons
-#endif
 
 cl_object
 ecl_cons(cl_object a, cl_object d)
@@ -167,7 +212,6 @@ ecl_cons(cl_object a, cl_object d)
 	ecl_disable_interrupts_env(the_env);
 	obj = GC_MALLOC(sizeof(struct ecl_cons));
 	ecl_enable_interrupts_env(the_env);
-	if (obj == NULL) out_of_memory(the_env);
 #ifdef ECL_SMALL_CONS
 	obj->car = a;
 	obj->cdr = d;
@@ -188,7 +232,6 @@ ecl_list1(cl_object a)
 	ecl_disable_interrupts_env(the_env);
 	obj = GC_MALLOC(sizeof(struct ecl_cons));
 	ecl_enable_interrupts_env(the_env);
-	if (obj == NULL) out_of_memory(the_env);
 #ifdef ECL_SMALL_CONS
 	obj->car = a;
 	obj->cdr = Cnil;
@@ -220,7 +263,6 @@ ecl_alloc_uncollectable(size_t size)
 	ecl_disable_interrupts_env(the_env);
 	output = GC_MALLOC_UNCOLLECTABLE(size);
 	ecl_enable_interrupts_env(the_env);
-	if (output == NULL) out_of_memory(the_env);
 	return output;
 }
 
@@ -234,14 +276,25 @@ ecl_free_uncollectable(void *pointer)
 }
 
 void *
+ecl_alloc_unprotected(cl_index n)
+{
+	return GC_MALLOC_IGNORE_OFF_PAGE(n);
+}
+
+void *
+ecl_alloc_atomic_unprotected(cl_index n)
+{
+	return GC_MALLOC_ATOMIC_IGNORE_OFF_PAGE(n);
+}
+
+void *
 ecl_alloc(cl_index n)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	void *output;
 	ecl_disable_interrupts_env(the_env);
-	output = GC_MALLOC_IGNORE_OFF_PAGE(n);
+	output = ecl_alloc_unprotected(n);
 	ecl_enable_interrupts_env(the_env);
-	if (output == NULL) out_of_memory(the_env);
 	return output;
 }
 
@@ -251,9 +304,8 @@ ecl_alloc_atomic(cl_index n)
 	const cl_env_ptr the_env = ecl_process_env();
 	void *output;
 	ecl_disable_interrupts_env(the_env);
-	output = GC_MALLOC_ATOMIC_IGNORE_OFF_PAGE(n);
+	output = ecl_alloc_atomic_unprotected(n);
 	ecl_enable_interrupts_env(the_env);
-	if (output == NULL) out_of_memory(the_env);
 	return output;
 }
 
@@ -304,6 +356,13 @@ init_alloc(void)
 	GC_clear_roots();
 	GC_disable();
 	GC_set_max_heap_size(cl_core.max_heap_size = ecl_get_option(ECL_OPT_HEAP_SIZE));
+        /* Save some memory for the case we get tight. */
+	if (cl_core.max_heap_size == 0) {
+		cl_index size = ecl_get_option(ECL_OPT_HEAP_SAFETY_AREA);
+		cl_core.safety_region = ecl_alloc_atomic_unprotected(size);
+	} else if (cl_core.safety_region) {
+		cl_core.safety_region = 0;
+	}
 
 #define init_tm(x,y,z) type_size[x] = (z)
 	for (i = 0; i < t_end; i++) {
@@ -357,6 +416,8 @@ init_alloc(void)
 	GC_push_other_roots = stacks_scanner;
 	GC_start_call_back = (void (*)())finalize_queued;
 	GC_java_finalization = 1;
+        GC_oom_fn = out_of_memory;
+        GC_set_warn_proc(no_warnings);
 	GC_enable();
 }
 
@@ -435,7 +496,7 @@ queueing_finalizer(cl_object o, cl_object finalizer)
 			   get executed as a consequence of these calls. */
 			volatile cl_object aux = ACONS(o, finalizer, Cnil);
 			cl_object l = cl_core.to_be_finalized;
-			if (ATOM(l)) {
+			if (Null(l)) {
 				const cl_env_ptr the_env = ecl_process_env();
 				GC_finalization_proc ofn;
 				void *odata;
@@ -444,7 +505,6 @@ queueing_finalizer(cl_object o, cl_object finalizer)
 				GC_register_finalizer_no_order(aux, (GC_finalization_proc*)group_finalizer, NULL, &ofn, &odata);
 				ecl_enable_interrupts_env(the_env);
 			} else {
-				ECL_RPLACD(aux, ECL_CONS_CDR(l));
 				ECL_RPLACD(l, aux);
 			}
 		}
@@ -520,7 +580,7 @@ si_gc_stats(cl_object enable)
 static void
 finalize_queued()
 {
-	cl_object l = cl_core.to_be_finalized;
+        cl_core.to_be_finalized = Cnil;
 	if (cl_core.gc_stats) {
 #ifdef WITH_GMP
 		/* Sorry, no gc stats if you do not use bignums */
@@ -551,9 +611,6 @@ finalize_queued()
 			   cl_core.gc_counter->big.big_num,
 			   1);
 #endif
-	}
-	if (l != Cnil) {
-		cl_core.to_be_finalized = Cnil;
 	}
 }
 

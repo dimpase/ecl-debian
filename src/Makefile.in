@@ -36,6 +36,7 @@ SHELL = @SHELL@
 INSTALL	= @INSTALL@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
+INSTALL_LIBRARY = $(INSTALL_SCRIPT)
 INSTALL_DATA = @INSTALL_DATA@
 mkinstalldirs = $(SHELL) $(top_srcdir)/gc/mkinstalldirs
 
@@ -75,7 +76,7 @@ ecl_min$(EXE): $(LIBRARIES) .gdbinit @LIBPREFIX@eclmin.@LIBEXT@
 	if [ -f CROSS-COMPILER ]; then \
 		touch $@; \
 	else \
-		$(CC) $(LDFLAGS) -o $@ cinit.o c/all_symbols.o -L./ @LIBPREFIX@eclmin.@LIBEXT@ $(CORE_LIBS) $(LIBS) $(FASL_LIBS);\
+		$(CC) $(LDFLAGS) -o $@ cinit.o c/all_symbols.o -L./ @LIBPREFIX@eclmin.@LIBEXT@ $(CORE_LIBS) $(FASL_LIBS) $(LIBS);\
 	fi
 
 .gdbinit: $(srcdir)/util/gdbinit
@@ -102,7 +103,6 @@ bin/ecl-config: bin/ecl-config.pre
 	test -d ecl/gc/private || mkdir ecl/gc/private
 	if (echo $(SUBDIRS) | grep gc); then \
 	  cd gc && $(MAKE) install && cd .. && \
-	  cp -rf $(srcdir)/gc/include/gc_{mark,inline}.h ecl/gc/ && \
 	  cp -rf $(srcdir)/gc/include/private/*.h ecl/gc/private/ && \
 	  mv @LIBPREFIX@gc.@LIBEXT@ @LIBPREFIX@eclgc.@LIBEXT@; \
 	fi
@@ -153,7 +153,7 @@ install-base:
 	done
 	for i in $(LSP_LIBRARIES) $(LIBRARIES); do \
 	  if test -s $$i ; then \
-	   $(INSTALL_PROGRAM) $$i $(DESTDIR)$(libdir); \
+	   $(INSTALL_LIBRARY) $$i $(DESTDIR)$(libdir); \
 	  fi \
 	done
 	if [ "x@SONAME@" != "x" -a -f "@SONAME@" ]; then \

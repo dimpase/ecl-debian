@@ -1705,7 +1705,8 @@ cl_symbols[] = {
 
 {"LOG1P","si_log1p"},
 
-{EXT_ "BC-FILE","si_bc_file"},
+{EXT_ "BC-FILE","si_compiled_function_file"},
+{EXT_ "COMPILED-FUNCTION-FILE","si_compiled_function_file"},
 
 {SYS_ "PROPERTY-LIST",NULL},
 
@@ -1717,6 +1718,7 @@ cl_symbols[] = {
 
 {EXT_ "INTERACTIVE-INTERRUPT",NULL},
 
+{EXT_ "STORAGE-EXHAUSTED",NULL},
 {EXT_ "STACK-OVERFLOW",NULL},
 {EXT_ "STACK-OVERFLOW-SIZE",NULL},
 {EXT_ "STACK-OVERFLOW-TYPE",NULL},
@@ -1724,6 +1726,7 @@ cl_symbols[] = {
 {EXT_ "FRAME-STACK",NULL},
 {EXT_ "LISP-STACK",NULL},
 {EXT_ "C-STACK",NULL},
+{EXT_ "HEAP-SIZE",NULL},
 {EXT_ "SET-LIMIT","si_set_limit"},
 {EXT_ "GET-LIMIT","si_get_limit"},
 {EXT_ "SEGMENTATION-VIOLATION",NULL},
@@ -1737,8 +1740,6 @@ cl_symbols[] = {
 {KEY_ "UTF-8",NULL},
 {KEY_ "UCS-2",NULL},
 {KEY_ "UCS-4",NULL},
-
-{EXT_ "STORAGE-EXHAUSTED",NULL},
 
 {EXT_ "CONSTANTLY-T",NULL},
 {EXT_ "CONSTANTLY-NIL",NULL},
@@ -1765,15 +1766,24 @@ cl_symbols[] = {
 
 {SYS_ "COPY-FILE","si_copy_file"},
 
-#ifdef GBC_BOEHM
-{EXT_ "HEAP-SIZE","si_heap_size"},
-#endif
-
 {EXT_ "FILL-ARRAY-WITH-ELT","si_fill_array_with_elt"},
 
 {EXT_ "+ECL-VERSION-NUMBER+",NULL},
 
 {EXT_ "*BYTECODES-COMPILER*",NULL},
+
+{EXT_ "SHORT-FLOAT-POSITIVE-INFINITY",NULL},
+{EXT_ "SINGLE-FLOAT-POSITIVE-INFINITY",NULL},
+{EXT_ "DOUBLE-FLOAT-POSITIVE-INFINITY",NULL},
+{EXT_ "LONG-FLOAT-POSITIVE-INFINITY",NULL},
+{EXT_ "SHORT-FLOAT-NEGATIVE-INFINITY",NULL},
+{EXT_ "SINGLE-FLOAT-NEGATIVE-INFINITY",NULL},
+{EXT_ "DOUBLE-FLOAT-NEGATIVE-INFINITY",NULL},
+{EXT_ "LONG-FLOAT-NEGATIVE-INFINITY",NULL},
+{EXT_ "FLOAT-NAN-P","si_float_nan_p"},
+{EXT_ "FLOAT-INFINITY-P","si_float_infinity_p"},
+
+{SYS_ "READ-OBJECT-OR-IGNORE","si_read_object_or_ignore"},
 
 /* Tag for end of list */
 {NULL,NULL}};

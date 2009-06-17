@@ -22,12 +22,9 @@
 	that know the representation of floating-point numbers.
 */
 
+#define ECL_INCLUDE_MATH_H
 #include <ecl/ecl.h>
 #include <float.h>
-#include <math.h>
-#ifdef _MSC_VER
-# undef complex
-#endif
 #ifndef HAVE_ISOC99
 # define floorf floor
 # define ceilf ceil
@@ -91,7 +88,7 @@ number_remainder(cl_object x, cl_object y, cl_object q)
 			x = ecl_make_doublefloat(ecl_to_double(x)); break;
 #ifdef ECL_LONG_FLOAT
 		case t_longfloat:
-			x = make_longfloat(ecl_to_long_double(x)); break;
+			x = ecl_make_longfloat(ecl_to_long_double(x)); break;
 #endif
 		default:
 			y = ecl_type_error(@'float',"prototype",y,@'float');
@@ -187,7 +184,7 @@ ecl_floor1(cl_object x)
 		long double d = ecl_long_float(x);
 		long double y = floorl(d);
 		v0 = long_double_to_integer(y);
-		v1 = make_longfloat(d - y);
+		v1 = ecl_make_longfloat(d - y);
 		break;
 	}
 #endif
@@ -279,7 +276,7 @@ ecl_floor2(cl_object x, cl_object y)
 		  long double p = fix(x) / n;
 		  long double q = floorl(p);
 		  v0 = long_double_to_integer(q);
-		  v1 = make_longfloat((p - q)*n);
+		  v1 = ecl_make_longfloat((p - q)*n);
 		  break;
 		}
 #endif
@@ -353,7 +350,7 @@ ecl_floor2(cl_object x, cl_object y)
 		  long double p = big_to_double(x) / n;
 		  long double q = floorl(p);
 		  v0 = long_double_to_integer(q);
-		  v1 = make_longfloat((p - q)*n);
+		  v1 = ecl_make_longfloat((p - q)*n);
 		  break;
 		}
 #endif
@@ -408,7 +405,7 @@ ecl_floor2(cl_object x, cl_object y)
 		long double p = ecl_long_float(x)/n;
 		long double q = floorl(p);
 		v0 = long_double_to_integer(q);
-		v1 = make_longfloat(p*n - q*n);
+		v1 = ecl_make_longfloat(p*n - q*n);
 		break;
 	}
 #endif
@@ -472,7 +469,7 @@ ecl_ceiling1(cl_object x)
 		long double d = ecl_long_float(x);
 		long double y = ceill(d);
 		v0 = long_double_to_integer(y);
-		v1 = make_longfloat(d - y);
+		v1 = ecl_make_longfloat(d - y);
 		break;
 	}
 #endif
@@ -564,7 +561,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  long double p = fix(x)/n;
 		  long double q = ceill(p);
 		  v0 = long_double_to_integer(q);
-		  v1 = make_longfloat(p*n - q*n);
+		  v1 = ecl_make_longfloat(p*n - q*n);
 		  break;
 		}
 #endif
@@ -638,7 +635,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  long double p = big_to_double(x)/n;
 		  long double q = ceill(p);
 		  v0 = long_double_to_integer(q);
-		  v1 = make_longfloat(p*n - q*n);
+		  v1 = ecl_make_longfloat(p*n - q*n);
 		  break;
 		}
 #endif
@@ -690,7 +687,7 @@ ecl_ceiling2(cl_object x, cl_object y)
 		long double p = ecl_long_float(x)/n;
 		long double q = ceill(p);
 		v0 = long_double_to_integer(q);
-		v1 = make_longfloat(p*n - q*n);
+		v1 = ecl_make_longfloat(p*n - q*n);
 		break;
 	}
 #endif
@@ -754,7 +751,7 @@ ecl_truncate1(cl_object x)
 		long double d = ecl_long_float(x);
 		long double y = d > 0? floorl(d) : ceill(d);
 		v0 = long_double_to_integer(y);
-		v1 = make_longfloat(d - y);
+		v1 = ecl_make_longfloat(d - y);
 		break;
 	}
 #endif
@@ -864,7 +861,7 @@ ecl_round1(cl_object x)
 		long double d = ecl_long_float(x);
 		long double q = round_long_double(d);
 		v0 = long_double_to_integer(q);
-		v1 = make_longfloat(d - q);
+		v1 = ecl_make_longfloat(d - q);
 		break;
 	}
 #endif
@@ -990,7 +987,7 @@ cl_decode_float(cl_object x)
 			s = 0;
 		}
 		d = frexpl(d, &e);
-		x = make_longfloat(d);
+		x = ecl_make_longfloat(d);
 		break;
 	}
 #endif
@@ -1027,7 +1024,7 @@ cl_scale_float(cl_object x, cl_object y)
 		break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		x = make_longfloat(ldexpl(ecl_long_float(x), k));
+		x = ecl_make_longfloat(ldexpl(ecl_long_float(x), k));
 		break;
 #endif
 	default:
@@ -1096,7 +1093,7 @@ cl_float_radix(cl_object x)
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
 		long double f = ecl_long_float(y);
-		x = make_longfloat(negativep? -fabsl(f) : fabsl(f));
+		x = ecl_make_longfloat(negativep? -fabsl(f) : fabsl(f));
 		break;
 	}
 #endif
@@ -1139,12 +1136,11 @@ cl_float_precision(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	int precision;
-	float f; double d;
  AGAIN:
 	switch (type_of(x)) {
 #ifdef ECL_SHORT_FLOAT
 	case t_shortfloat: {
-		f = ecl_short_float(x);
+		float f = ecl_short_float(x);
 		if (f == 0.0) {
 			precision = 0;
 		} else {
@@ -1160,7 +1156,7 @@ cl_float_precision(cl_object x)
 	}
 #endif
 	case t_singlefloat: {
-		f = sf(x);
+		float f = sf(x);
 		if (f == 0.0) {
 			precision = 0;
 		} else {

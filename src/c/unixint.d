@@ -20,23 +20,10 @@
 #include <stdio.h>
 #include <ecl/ecl.h>
 #if defined(HAVE_FENV_H) && !defined(ECL_AVOID_FENV_H)
-# define _GNU_SOURCE
+# ifndef _GNU_SOURCE
+#  define _GNU_SOURCE
+# endif
 # include <fenv.h>
-# ifndef FE_UNDERFLOW
-#  define FE_UNDERFLOW 0
-# endif
-# ifndef FE_OVERFLOW
-#  define FE_OVERFLOW 0
-# endif
-# ifndef FE_INVALID
-#  define FE_INVALID 0
-# endif
-# ifndef FE_DIVBYZERO
-#  define FE_DIVBYZERO 0
-# endif
-# ifndef FE_INEXACT
-#  define FE_INEXACT 0
-# endif
 #endif
 #include <signal.h>
 #ifdef ECL_USE_MPROTECT
@@ -52,6 +39,7 @@ void handle_fpe_signal(int,int);
 #if !defined(_MSC_VER)
 # include <unistd.h>
 #endif
+#define ECL_DEFINE_FENV_CONSTANTS
 #include <ecl/internal.h>
 
 static struct {
@@ -160,12 +148,12 @@ static struct {
 /******************************* ------- ******************************/
 
 #ifdef HAVE_SIGPROCMASK
-# define define_handler(name, sig, info, aux) name(sig, info, aux)
+# define handler_fn_protype(name, sig, info, aux) name(sig, info, aux)
 # define call_handler(name, sig, info, aux) name(sig, info, aux)
 # define reinstall_signal(x,y)
 # define copy_siginfo(x,y) memcpy(x, y, sizeof(struct sigaction))
 static void
-mysignal(int code, void *handler)
+mysignal(int code, void (*handler)(int, siginfo_t *, void*))
 {
 	struct sigaction new_action, old_action;
 #ifdef SA_SIGINFO
@@ -183,7 +171,7 @@ mysignal(int code, void *handler)
 	sigaction(code, &new_action, &old_action);
 }
 #else /* HAVE_SIGPROCMASK */
-# define define_handler(name, sig, info, aux) name(sig)
+# define handler_fn_protype(name, sig, info, aux) name(sig)
 # define call_handler(name, sig, info, aux) name(sig)
 # define mysignal(x,y) signal(x,y)
 # define reinstall_signal(x,y) signal(x,y)
@@ -215,15 +203,16 @@ jump_to_sigsegv_handler(cl_env_ptr the_env)
 }
 
 static void
-define_handler(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
+handler_fn_protype(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
 {
 	cl_env_ptr the_env = &cl_env;
-	switch (sig) {
 #if defined(ECL_THREADS) && !defined(_MSC_VER) && !defined(mingw32)
-	case SIGUSR1:
+        if (sig == ecl_get_option(ECL_OPT_THREAD_INTERRUPT_SIGNAL)) {
 		funcall(1, the_env->own_process->process.interrupt);
-		break;
+                return;
+        }
 #endif
+	switch (sig) {
 	case SIGINT:
 		funcall(2, @'si::terminal-interrupt', Ct);
 		break;
@@ -233,14 +222,14 @@ define_handler(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
 		int bits = fetestexcept(FE_ALL_EXCEPT);
 		if (bits & FE_DIVBYZERO)
 			condition = @'division-by-zero';
-		if (bits & FE_OVERFLOW)
-			condition = @'floating-point-overflow';
-		if (bits & FE_UNDERFLOW)
-			condition = @'floating-point-underflow';
-		if (bits & FE_INEXACT)
-			condition = @'floating-point-inexact';
-		if (bits & FE_INVALID)
+		else if (bits & FE_INVALID)
 			condition = @'floating-point-invalid-operation';
+		else if (bits & FE_OVERFLOW)
+			condition = @'floating-point-overflow';
+		else if (bits & FE_UNDERFLOW)
+			condition = @'floating-point-underflow';
+		else if (bits & FE_INEXACT)
+			condition = @'floating-point-inexact';
 #endif
 #ifdef SA_SIGINFO
 		if (info) {
@@ -250,29 +239,21 @@ define_handler(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
 				condition = @'floating-point-overflow';
 			if (info->si_code == FPE_FLTUND)
 				condition = @'floating-point-underflow';
+			if (info->si_code == FPE_FLTRES)
+				condition = @'floating-point-inexact';
+			if (info->si_code == FPE_FLTINV)
+				condition = @'floating-point-invalid-operation';
 		}
 #endif
 		si_trap_fpe(@'last', Ct);
 		cl_error(1, condition);
 		break;
 	}
-	case SIGSEGV: {
-		ecl_frame_ptr destination = frs_sch(OBJNULL);
-		if (destination) {
-			the_env->nvalues = 0;
-			ecl_unwind(the_env, destination);
-		}
-		ecl_internal_error("SIGSEGV without handler to jump to.");
-	}
+	case SIGSEGV:
+                cl_error(1, @'ext::segmentation-violation');
 #ifdef SIGBUS
-	case SIGBUS: {
-		ecl_frame_ptr destination = frs_sch(OBJNULL);
-		if (destination) {
-			the_env->nvalues = 0;
-			ecl_unwind(the_env, destination);
-		}
-		ecl_internal_error("SIGSEGV without handler to jump to.");
-	}
+	case SIGBUS:
+                cl_error(1, @'ext::segmentation-violation');
 #endif
 	default:
 		FEerror("Serious signal ~D caught.", 1, MAKE_FIXNUM(sig));
@@ -299,7 +280,7 @@ unblock_signal(int signal)
 #endif
 
 static void
-define_handler(handle_signal_now, int sig, siginfo_t *info, void *aux)
+handler_fn_protype(handle_signal_now, int sig, siginfo_t *info, void *aux)
 {
 #if defined (_MSC_VER)
 	if (sig == SIGFPE) {
@@ -310,10 +291,10 @@ define_handler(handle_signal_now, int sig, siginfo_t *info, void *aux)
 	call_handler(lisp_signal_handler, sig, info, aux);
 }
 
-static void define_handler(sigsegv_handler, int sig, siginfo_t *info, void *aux);
+static void handler_fn_protype(sigsegv_handler, int sig, siginfo_t *info, void *aux);
 
 static void
-define_handler(non_evil_signal_handler, int sig, siginfo_t *siginfo, void *data)
+handler_fn_protype(non_evil_signal_handler, int sig, siginfo_t *siginfo, void *data)
 {
 	int old_errno = errno;
 	cl_env_ptr the_env;
@@ -368,7 +349,7 @@ define_handler(non_evil_signal_handler, int sig, siginfo_t *siginfo, void *data)
 }
 
 static void
-define_handler(sigsegv_handler, int sig, siginfo_t *info, void *aux)
+handler_fn_protype(sigsegv_handler, int sig, siginfo_t *info, void *aux)
 {
 	cl_env_ptr the_env = ecl_process_env();
 	if (!ecl_get_option(ECL_OPT_BOOTED)) {
@@ -378,14 +359,16 @@ define_handler(sigsegv_handler, int sig, siginfo_t *info, void *aux)
 	the_env = ecl_process_env();
 #ifdef HAVE_SIGPROCMASK
 # ifdef ECL_DOWN_STACK
-	if ((cl_fixnum*)info->si_addr > the_env->cs_barrier &&
-	    (cl_fixnum*)info->si_addr <= the_env->cs_org) {
-		return jump_to_sigsegv_handler(the_env);
+	if ((char*)info->si_addr > the_env->cs_barrier &&
+	    (char*)info->si_addr <= the_env->cs_org) {
+		jump_to_sigsegv_handler(the_env);
+                return;
 	}
 # else
-	if ((cl_fixnum*)info->si_addr < the_env->cs_barrier &&
-	    (cl_fixnum*)info->si_addr >= the_env->cs_org) {
-		return jump_to_sigsegv_handler(the_env);
+	if ((char*)info->si_addr < the_env->cs_barrier &&
+	    (char*)info->si_addr >= the_env->cs_org) {
+		jump_to_sigsegv_handler(the_env);
+                return;
 	}
 # endif
 	if (interrupts_disabled_by_lisp(the_env)) {
@@ -420,20 +403,21 @@ define_handler(sigsegv_handler, int sig, siginfo_t *info, void *aux)
 
 #ifdef SIGBUS
 static void
-define_handler(sigbus_handler, int sig, siginfo_t *info, void *aux)
+handler_fn_protype(sigbus_handler, int sig, siginfo_t *info, void *aux)
 {
 	cl_env_ptr the_env = &cl_env;
 #if defined(SA_SIGINFO) && defined(ECL_USE_MPROTECT)
 	/* We access the environment when it was protected. That
 	 * means there was a pending signal. */
-	if (the_env == info->si_addr) {
+	if ((void*)the_env == (void*)info->si_addr) {
 		int signal = the_env->interrupt_pending;
 		siginfo_t info = *(siginfo_t*)(the_env->interrupt_info);
 		mprotect(the_env, sizeof(*the_env), PROT_READ | PROT_WRITE);
 		the_env->interrupt_pending = 0;
 		the_env->disable_interrupts = 0;
 		unblock_signal(sig);
-		return handle_signal_now(signal, &info, aux);
+		handle_signal_now(signal, &info, aux);
+                return;
 	}
 #endif
 	call_handler(handle_signal_now, sig, info, aux);
@@ -467,21 +451,21 @@ si_catch_signal(cl_object code, cl_object boolean)
 	int code_int = fixnnint(code);
 	int i;
 #ifdef GBC_BOEHM
-	int error = 0;
-#ifdef SIGSEGV
+# ifdef SIGSEGV
 	if ((code_int == SIGSEGV) && ecl_get_option(ECL_OPT_INCREMENTAL_GC))
 		FEerror("It is not allowed to change the behavior of SIGSEGV.",
 			0);
-#endif
-#ifdef SIGBUS
+# endif
+# ifdef SIGBUS
 	if (code_int == SIGBUS)
 		FEerror("It is not allowed to change the behavior of SIGBUS.",
 			0);
-#endif
+# endif
 #endif
 #if defined(ECL_THREADS) && !defined(_MSC_VER) && !defined(mingw32)
-	if (code_int == SIGUSR1) {
-		FEerror("It is not allowed to change the behavior of SIGUSR1", 0);
+	if (code_int == ecl_get_option(ECL_OPT_THREAD_INTERRUPT_SIGNAL)) {
+		FEerror("It is not allowed to change the behavior of ~D", 1,
+                        MAKE_FIXNUM(code_int));
 	}
 #endif
 	for (i = 0; known_signals[i].code >= 0; i++) {
@@ -544,6 +528,9 @@ void handle_fpe_signal(int sig, int num)
 	cl_object condition = @'arithmetic-error';
 
 	switch (num) {
+	case _FPE_INVALID:
+		condition = @'floating-point-invalid-operation';
+		break;
 	case _FPE_OVERFLOW:
 		condition = @'floating-point-overflow';
 		break;
@@ -574,34 +561,50 @@ BOOL WINAPI W32_console_ctrl_handler(DWORD type)
 cl_object
 si_trap_fpe(cl_object condition, cl_object flag)
 {
-#if (defined(HAVE_FENV_H) && defined(HAVE_FEENABLEEXCEPT) && !defined(ECL_AVOID_FENV_H)) || defined(_MSC_VER) || defined(mingw32)
-	static int last_bits = 0;
+        cl_env_ptr the_env = ecl_process_env();
+#ifndef FE_ALL_EXCEPT
+# define FE_ALL_EXCEPT FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID
+#endif
+        const int all = FE_ALL_EXCEPT;
 	int bits = 0;
-	if (condition == @'division-by-zero')
-		bits = FE_DIVBYZERO;
-	else if (condition == @'floating-point-overflow')
-		bits = FE_OVERFLOW;
-	else if (condition == @'floating-point-underflow')
-		bits = FE_UNDERFLOW;
-	else if (condition == Ct)
-		bits = FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW;
-	else if (condition == @'last')
-		bits = last_bits;
-#if defined(_MSC_VER) || defined(mingw32)
+        if (condition == @'last') {
+		bits = the_env->trap_fpe_bits;
+        } else {
+                if (condition == @'division-by-zero')
+                        bits = FE_DIVBYZERO;
+                else if (condition == @'floating-point-overflow')
+                        bits = FE_OVERFLOW;
+                else if (condition == @'floating-point-underflow')
+                        bits = FE_UNDERFLOW;
+                else if (condition == @'floating-point-invalid-operation')
+                        bits = FE_INVALID;
+                else if (condition == @'floating-point-inexact')
+                        bits = FE_INEXACT;
+                else if (condition == Ct)
+                        bits = FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID;
+		else if (FIXNUMP(condition))
+			bits = fix(condition) & all;
+                if (flag == Cnil) {
+                        bits = the_env->trap_fpe_bits & ~bits;
+                } else {
+                        bits = the_env->trap_fpe_bits | bits;
+                }
+        }
+#if !defined(ECL_AVOID_FPE_H)
+# ifdef HAVE_FENV_H
+        feclearexcept(all);
+# endif
+# if defined(_MSC_VER) || defined(mingw32)
 	_fpreset();
+# endif
+# ifdef HAVE_FEENABLEEXCEPT
+        fedisableexcept(all & ~bits);
+        feenableexcept(all & bits);
+# endif
 #endif
-	if (bits) {
-		if (flag == Cnil) {
-			fedisableexcept(bits);
-			last_bits &= ~bits;
-		} else {
-			feenableexcept(bits);
-			last_bits |= bits;
-		}
-	}
-#endif
-	@(return flag)
-}	
+        the_env->trap_fpe_bits = bits;
+	@(return MAKE_FIXNUM(bits))
+}
 
 void
 init_unixint(int pass)
@@ -622,8 +625,21 @@ init_unixint(int pass)
 			mysignal(SIGINT, non_evil_signal_handler);
 		}
 #endif
+#ifdef SIGRTMIN
+# define DEFAULT_THREAD_INTERRUPT_SIGNAL SIGRTMIN + 2
+#else
+# define DEFAULT_THREAD_INTERRUPT_SIGNAL SIGUSR1
+#endif
 #if defined(ECL_THREADS) && !defined(_MSC_VER) && !defined(mingw32)
-		mysignal(SIGUSR1, non_evil_signal_handler);
+                {
+                        int signal = ecl_get_option(ECL_OPT_THREAD_INTERRUPT_SIGNAL);
+                        if (signal == 0) {
+                                signal = DEFAULT_THREAD_INTERRUPT_SIGNAL;
+                                ecl_set_option(ECL_OPT_THREAD_INTERRUPT_SIGNAL,
+                                               signal);
+                        }
+                        mysignal(signal, non_evil_signal_handler);
+                }
 #endif
 #ifdef _MSC_VER
 		SetUnhandledExceptionFilter(W32_exception_filter);
@@ -642,6 +658,12 @@ init_unixint(int pass)
 		if (ecl_get_option(ECL_OPT_TRAP_SIGFPE)) {
 			mysignal(SIGFPE, non_evil_signal_handler);
 			si_trap_fpe(Ct, Ct);
+# ifdef ECL_IEEE_FP
+                        /* By default deactivate errors and accept
+                         * denormals in floating point computations */
+                        si_trap_fpe(@'floating-point-invalid-operation', Cnil);
+                        si_trap_fpe(@'division-by-zero', Cnil);
+# endif
 		}
 #endif
 		ecl_process_env()->disable_interrupts = 0;

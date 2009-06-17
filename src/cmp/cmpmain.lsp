@@ -28,11 +28,11 @@
 	      string result))
     result))
 
-(defun compile-file-pathname (name &key (output-file name) (type nil type-supplied-p)
+(defun compile-file-pathname (name &key (output-file T) (type nil type-supplied-p)
                               verbose print c-file h-file data-file shared-data-file
                               system-p load)
-  (let ((format '())
-	(extension '()))
+  (let* ((format '())
+         (extension '()))
     (unless type-supplied-p
       (setf type (if system-p :object :fasl)))
     (case type
@@ -47,10 +47,12 @@
       #+msvc
       (:import-library (setf extension "implib"))
       ((:fasl :fas) (setf extension "fas")))
-    (if format
-	(merge-pathnames (format nil format (pathname-name output-file))
-			 output-file)
-	(make-pathname :type extension :defaults output-file))))
+    (cond ((not (member output-file '(T NIL)))
+	   output-file)
+	  (format
+	   (merge-pathnames (format nil format (pathname-name name)) name))
+	  (t
+	   (make-pathname :type extension :defaults name)))))
 
 #+msvc
 (defun delete-msvc-generated-files (output-pathname)
@@ -465,13 +467,7 @@ static cl_object VV[VM];
   #+dlopen
   (apply #'builder :shared-library args))
 
-(eval-when (compile eval)
-  (defmacro get-output-pathname (input-file output-file ext)
-    `(compile-file-pathname ,input-file
-      :output-file (if (member ,output-file '(T NIL)) ,input-file ,output-file)
-      :type ,ext)))
-
-(defun compile-file (input-pathname
+(defun compile-file (input-pathname &rest args
                       &key
 		      ((:verbose *compile-verbose*) *compile-verbose*)
 		      ((:print *compile-print*) *compile-print*)
@@ -481,7 +477,7 @@ static cl_object VV[VM];
 		      (shared-data-file nil)
 		      (system-p nil)
 		      (load nil)
-		      (output-file 'T output-file-p)
+		      output-file
                       &aux (*standard-output* *standard-output*)
                            (*error-output* *error-output*)
                            (*compiler-in-use* *compiler-in-use*)
@@ -515,7 +511,7 @@ compiled successfully, returns the pathname of the compiled file"
 ~%;;; Therefore, COMPILE-FILE without :SYSTEM-P T is unsupported.~
 ~%;;;"))
 
-  (setq *compile-file-pathname* input-pathname)
+  (setq *compile-file-pathname* (pathname (merge-pathnames input-pathname)))
   (unless (probe-file *compile-file-pathname*)
     (if (pathname-type input-pathname)
 	(error 'file-error :pathname input-pathname)
@@ -524,10 +520,9 @@ compiled successfully, returns the pathname of the compiled file"
 	  (setq *compile-file-pathname* (make-pathname :type ext :defaults input-pathname))
 	  (when (probe-file *compile-file-pathname*)
 	    (return)))))
-  (setq *compile-file-truename* (truename *compile-file-pathname*))
+  (setq input-file (truename *compile-file-pathname*)
+        *compile-file-truename* input-file)
 
-  (when (eq output-file 'T)
-    (setf output-file *compile-file-truename*))
   (when (and system-p load)
     (error "Cannot load system files."))
 
@@ -536,18 +531,22 @@ compiled successfully, returns the pathname of the compiled file"
   (let* ((eof '(NIL))
 	 (*compiler-in-use* *compiler-in-use*)
 	 (*load-time-values* nil) ;; Load time values are compiled
-	 (o-pathname (compile-file-pathname output-file :type :object))
-	 (so-pathname (compile-file-pathname output-file :type :fasl))
-         (c-pathname (get-output-pathname o-pathname c-file :c))
-         (h-pathname (get-output-pathname o-pathname h-file :h))
-         (data-pathname (get-output-pathname o-pathname data-file :data))
-	 (shared-data-pathname (get-output-pathname o-pathname shared-data-file
-						    :sdata))
-	 (compiler-conditions nil))
+         (output-file (apply #'compile-file-pathname input-file args))
+         (c-pathname (apply #'compile-file-pathname output-file :output-file c-file
+                            :type :c args))
+         (h-pathname (apply #'compile-file-pathname output-file :output-file h-file
+                            :type :h args))
+         (data-pathname (apply #'compile-file-pathname output-file
+                               :output-file data-file :type :data args))
+	 (shared-data-pathname (apply #'compile-file-pathname output-file
+                                      :output-file shared-data-file :type :sdata args))
+	 (compiler-conditions nil)
+         (to-delete (nconc (unless c-file (list c-pathname))
+                           (unless h-file (list h-pathname))
+                           (unless (or data-file shared-data-file)
+                             (list data-pathname)))))
 
     (with-compiler-env (compiler-conditions)
-
-      (setf output-file (if system-p o-pathname so-pathname))
 
       (print-compiler-info)
 
@@ -562,46 +561,49 @@ compiled successfully, returns the pathname of the compiled file"
 	  (data-init))
 
       (with-open-file (*compiler-input* *compile-file-pathname*)
-	(do ((ext:*source-location* (cons *compile-file-pathname* 0))
-	     (form (read *compiler-input* nil eof)
-		   (read *compiler-input* nil eof))
-	     (*compile-file-position* 0 (1+ *compile-file-position*)))
+	(do* ((ext:*source-location* (cons *compile-file-pathname* 0))
+              (*compile-file-position* 0 (file-position *compiler-input*))
+              (form (si::read-object-or-ignore *compiler-input* eof)
+                    (si::read-object-or-ignore *compiler-input* eof)))
 	    ((eq form eof))
-	  (t1expr form)
-	  (incf (cdr ext:*source-location*))))
+          (when form
+            (setf (cdr ext:*source-location*) *compile-file-position*)
+            (t1expr form))))
 
       (cmpprogress "~&;;; End of Pass 1.")
       (setf init-name (compute-init-name output-file :kind
 					 (if system-p :object :fasl)))
       (compiler-pass2 c-pathname h-pathname data-pathname system-p
 		      init-name
-		      shared-data-file)
-    
+		      shared-data-file
+                      :input-designator (namestring input-pathname))
+
       (if shared-data-file
 	  (data-dump shared-data-pathname t)
 	  (data-dump data-pathname))
-      
-      (when output-file
-	(compiler-cc c-pathname o-pathname)
-	#+dlopen
-	(unless system-p (bundle-cc (si::coerce-to-filename so-pathname)
-				    init-name
-				    (si::coerce-to-filename o-pathname)))
-	(unless (setf output-file (probe-file output-file))
-	  (cmperr "The C compiler failed to compile the intermediate file.")))
-      (cmpprogress "~&;;; Finished compiling ~a.~%" (namestring input-pathname))
+
+      (let ((o-pathname (if system-p
+                            output-file
+                            (compile-file-pathname output-file :type :object))))
+        (compiler-cc c-pathname o-pathname)
+        #+dlopen
+        (unless system-p
+          (push o-pathname to-delete)
+          (bundle-cc (si::coerce-to-filename output-file)
+                     init-name
+                     (si::coerce-to-filename o-pathname))))
+
+      (if (setf output-file (probe-file output-file))
+          (cmpprogress "~&;;; Finished compiling ~a.~%" (namestring input-pathname))
+          (cmperr "The C compiler failed to compile the intermediate file."))
+
+      (mapc #'cmp-delete-file to-delete)
 
       (when (and load output-file (not system-p))
 	(load output-file :verbose *compile-verbose*))
 
       ) ; with-compiler-env
 
-    (unless c-file (cmp-delete-file c-pathname))
-    (unless h-file (cmp-delete-file h-pathname))
-    (unless (or data-file shared-data-file)
-      (cmp-delete-file data-pathname))
-    #+dlopen
-    (unless system-p (cmp-delete-file o-pathname))
     (compiler-output-values output-file compiler-conditions)))
 
 (defun compiler-output-values (main-value conditions)
@@ -700,7 +702,8 @@ the environment variable TMPDIR to a different value." template)
       (cmpprogress "~&;;; End of Pass 1.")
       (let (#+(or mingw32 msvc cygwin)(*self-destructing-fasl* t))
 	(compiler-pass2 c-pathname h-pathname data-pathname nil
-			init-name nil))
+			init-name nil
+                        :input-designator (format nil "~A" def)))
       (setf *compiler-constants* (data-dump data-pathname))
 
       (compiler-cc c-pathname o-pathname)
@@ -796,8 +799,15 @@ from the C language code.  NIL means \"do not create the file\"."
   nil)
 
 (defun compiler-pass2 (c-pathname h-pathname data-pathname system-p init-name
-		       shared-data)
+		       shared-data &key input-designator)
   (with-open-file (*compiler-output1* c-pathname :direction :output)
+    (wt-comment-nl "Compiler: ~A ~A" (lisp-implementation-type) (lisp-implementation-version))
+    #-ecl-min
+    (multiple-value-bind (second minute hour day month year)
+        (get-decoded-time)
+      (wt-comment-nl "Date: ~D/~D/~D ~2,'0D:~2,'0D (yyyy/mm/dd)" year month day hour minute)
+      (wt-comment-nl "Machine: ~A ~A ~A" (software-type) (software-version) (machine-type)))
+    (wt-comment-nl "Source: ~A" input-designator)
     (with-open-file (*compiler-output2* h-pathname :direction :output)
       (wt-nl1 "#include " *cmpinclude*)
       (catch *cmperr-tag* (ctop-write init-name

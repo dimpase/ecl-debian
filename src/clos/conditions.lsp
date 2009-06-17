@@ -225,7 +225,7 @@ strings."
 		      (with-condition-restarts ,condition-var
 			(first *restart-clusters*)
 			,(if (eq name 'CERROR)
-			     `(cerror ,(second expression2) condition-var)
+			     `(cerror ,(second expression2) ,condition-var)
 			     (list name condition-var)))))
 	      ))))
       `(block ,block-tag
@@ -538,7 +538,11 @@ returns with NIL."
 
 (define-condition storage-condition (serious-condition) ())
 
-(define-condition ext:segmentation-violation (storage-condition) ())
+(define-condition ext:segmentation-violation (storage-condition)
+  ()
+  (:REPORT
+   (lambda (condition stream)
+     (format stream "Detected access to an invalid or protected memory address."))))
 
 (define-condition ext:stack-overflow (storage-condition)
   ((size :initarg :size :initform 0 :reader ext:stack-overflow-size)
@@ -557,7 +561,8 @@ or return to an outer frame, undoing all the function calls so far."
 (define-condition ext:storage-exhausted (storage-condition) ()
   (:REPORT
    (lambda (condition stream)
-     (format stream "Memory limit reached. Please jump to an outer point or quit program."))))
+     (format stream "Memory limit reached. Please jump to an outer pointer, quit program and enlarge the
+memory limits before executing the program again."))))
 
 (define-condition type-error (error)
   ((datum :INITARG :DATUM :READER type-error-datum)
@@ -766,9 +771,6 @@ or return to an outer frame, undoing all the function calls so far."
 (defun use-value (value &optional c)
   (let ((restart (find-restart 'USE-VALUE c)))
     (and restart (invoke-restart restart value))))
-
-#-ecl-min
-(package-lock "COMMON-LISP" t)
 
 #|
 ;;; ----------------------------------------------------------------------

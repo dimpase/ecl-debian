@@ -76,7 +76,7 @@ CEerror(cl_object c, const char *err, int narg, ...)
 void
 FEprogram_error(const char *s, int narg, ...)
 {
-	cl_object form, real_args, text;
+	cl_object real_args, text;
 	cl_va_list args;
 	cl_va_start(args, narg, narg, 0);
 	text = make_constant_base_string(s);
@@ -306,5 +306,5 @@ FEwin32_error(const char *msg, int narg, ...)
 void
 init_error(void)
 {
-	cl_def_c_function_va(@'si::universal-error-handler', universal_error_handler);
+	ecl_def_c_function_va(@'si::universal-error-handler', universal_error_handler);
 }
