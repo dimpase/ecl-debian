@@ -173,8 +173,6 @@ asm_end(cl_env_ptr env, cl_index beginning) {
 	bytecodes->bytecodes.data_size = data_size;
 	bytecodes->bytecodes.code = ecl_alloc_atomic(code_size * sizeof(cl_opcode));
 	bytecodes->bytecodes.data = (cl_object*)ecl_alloc(data_size * sizeof(cl_object));
-	bytecodes->bytecodes.file = (file == OBJNULL)? Cnil : file;
-	bytecodes->bytecodes.file_position = (position == OBJNULL)? Cnil : position;
 	for (i = 0, code = (cl_opcode *)bytecodes->bytecodes.code; i < code_size; i++) {
 		code[i] = (cl_opcode)(cl_fixnum)(env->stack[beginning+i]);
 	}
@@ -183,6 +181,8 @@ asm_end(cl_env_ptr env, cl_index beginning) {
 		c_env->constants = ECL_CONS_CDR(c_env->constants);
 	}
         bytecodes->bytecodes.entry =  _ecl_bytecodes_dispatch_vararg;
+        ecl_set_function_source_file_info(bytecodes, (file == OBJNULL)? Cnil : file,
+                                          (file == OBJNULL)? Cnil : position);
 	asm_clear(env, beginning);
 	return bytecodes;
 }
@@ -495,9 +495,11 @@ c_register_var(cl_env_ptr env, cl_object var, bool special, bool bound)
 	}
 }
 
-static cl_object
+static void
 guess_environment(cl_env_ptr env, cl_object interpreter_env)
 {
+        if (!LISTP(interpreter_env))
+                return;
 	/*
 	 * Given the environment of an interpreted function, we guess a
 	 * suitable compiler enviroment to compile forms that access the
@@ -569,7 +571,7 @@ static cl_object
 c_tag_ref(cl_env_ptr env, cl_object the_tag, cl_object the_type)
 {
 	cl_fixnum n = 0;
-	cl_object l, type, name;
+	cl_object l;
         const cl_compiler_ptr c_env = env->c_env;
 	for (l = c_env->variables; CONSP(l); l = ECL_CONS_CDR(l)) {
 		cl_object type, name, record = ECL_CONS_CAR(l);
@@ -902,7 +904,6 @@ static int
 c_call(cl_env_ptr env, cl_object args, int flags) {
 	cl_object name;
 	cl_index nargs;
-	bool push = flags & FLAG_PUSH;
 
 	name = pop(&args);
 	nargs = c_arguments(env, args);
@@ -2260,7 +2261,6 @@ compile_body(cl_env_ptr env, cl_object body, int flags) {
 static int
 c_cons(cl_env_ptr env, cl_object args, int flags)
 {
-	cl_object car, cdr;
 	if (ecl_length(args) != 2) {
 		FEprogram_error("CONS: Wrong number of arguments", 0);
 	}
@@ -2657,7 +2657,6 @@ cl_object
 ecl_make_lambda(cl_env_ptr env, cl_object name, cl_object lambda) {
 	cl_object reqs, opts, rest, key, keys, auxs, allow_other_keys;
 	cl_object specials, doc, decl, body, output;
-	int nopts, nkeys;
 	cl_index handle;
 	struct cl_compiler_env *old_c_env, new_c_env;
 
@@ -2822,7 +2821,6 @@ si_make_lambda(cl_object name, cl_object rest)
 	volatile cl_compiler_env_ptr old_c_env;
 	struct cl_compiler_env new_c_env;
 	volatile cl_index handle;
-	struct ihs_frame ihs;
 	cl_object bytecodes, interpreter_env, compiler_env;
 @
 	/*
@@ -2858,7 +2856,6 @@ si_make_lambda(cl_object name, cl_object rest)
 	/*
 	 * Interpret using the given lexical environment.
 	 */
-	ecl_ihs_push(the_env, &ihs, bytecodes, Cnil);
 	VALUES(0) = Cnil;
 	NVALUES = 0;
 	{
@@ -2874,7 +2871,6 @@ si_make_lambda(cl_object name, cl_object rest)
                 GC_free(bytecodes->bytecodes.data);
                 GC_free(bytecodes);
 #endif
-                ecl_ihs_pop(the_env);
                 return output;
 	}
 @)

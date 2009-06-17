@@ -169,7 +169,7 @@ static cl_opcode *
 disassemble(cl_object bytecodes, cl_opcode *vector) {
 	const char *string;
 	cl_object o;
-	cl_fixnum n, m, env_index;
+	cl_fixnum n, m;
 	cl_object line_format;
 	cl_object *data = bytecodes->bytecodes.data;
 	cl_object line_no;
@@ -454,8 +454,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	case OP_JEQL:		string = "JEQL\t";
 				goto JEQL;
 	case OP_JNEQL:		string = "JNEQL\t";
-	JEQL: {			cl_oparg jmp;
-				GET_DATA(o, vector, data);
+	JEQL: {			GET_DATA(o, vector, data);
 				GET_OPARG(m, vector);
 				n = vector + m - OPARG_SIZE - base;
 				goto OPARG_ARG;
@@ -631,18 +630,4 @@ si_bc_split(cl_object b)
 	data = ecl_alloc_simple_vector(b->bytecodes.data_size, aet_object);
 	data->vector.self.t = b->bytecodes.data;
 	@(return lex vector data)
-}
-
-cl_object
-si_bc_file(cl_object b)
-{
-	cl_env_ptr the_env = ecl_process_env();
-	if (type_of(b) == t_bclosure) {
-		b = b->bclosure.code;
-	}
-	if (type_of(b) != t_bytecodes) {
-		@(return Cnil Cnil);
-	} else {
-		@(return b->bytecodes.file b->bytecodes.file_position);
-	}
 }

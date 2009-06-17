@@ -15,21 +15,19 @@
     See file '../Copyright' for full details.
 */
 
+#define ECL_INCLUDE_MATH_H
 #include <ecl/ecl.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <float.h>
-#include <math.h>
-#ifdef _MSC_VER
-# undef complex
-#endif
 #ifndef _MSC_VER
 #include <unistd.h>
 #endif
 #if defined(HAVE_FENV_H)
 # include <fenv.h>
 #endif
+#define ECL_DEFINE_FENV_CONSTANTS
 #include <ecl/internal.h>
 #include <ecl/bytecodes.h>
 
@@ -399,6 +397,44 @@ write_str(const char *s, cl_object stream)
 }
 
 static void
+write_readable_pathname(cl_object path, cl_object stream)
+{
+        cl_object l =
+                cl_list(15, @'make-pathname',
+                        @':host', path->pathname.host,
+                        @':device', path->pathname.device,
+                        @':directory',
+                        cl_funcall(2, @'ext::maybe-quote', path->pathname.directory),
+                        @':name', path->pathname.name,
+                        @':type', path->pathname.type,
+                        @':version', path->pathname.version,
+                        @':defaults', Cnil);
+        write_str("#.", stream);
+        si_write_object_recursive(l, stream);
+}
+
+static void
+write_pathname(cl_object path, cl_object stream)
+{
+        cl_object namestring = ecl_namestring(path, 0);
+        bool readably = ecl_print_readably();
+        if (namestring == Cnil) {
+                if (readably) {
+                        write_readable_pathname(path, stream);
+                        return;
+                }
+                namestring = ecl_namestring(path, 1);
+                if (namestring == Cnil) {
+                        write_str("#<Unprintable pathname>", stream);
+                        return;
+                }
+        }
+        if (readably || ecl_print_escape())
+                write_str("#P", stream);
+        si_write_ugly_object(namestring, stream);
+}
+
+static void
 write_positive_fixnum(cl_index i, int base, cl_index len, cl_object stream)
 {
 	/* The maximum number of digits is achieved for base 2 and it
@@ -504,7 +540,7 @@ extern long double strtold(const char *nptr, char **endptr);
 
 int edit_double(int n, DBL_TYPE d, int *sp, char *s, int *ep)
 {
-	char *exponent, *p, buff[DBL_SIZE + 1];
+	char *exponent, buff[DBL_SIZE + 1];
 	int length;
 #if defined(HAVE_FENV_H) || defined(_MSC_VER) || defined(mingw32)
 	fenv_t env;
@@ -560,24 +596,43 @@ int edit_double(int n, DBL_TYPE d, int *sp, char *s, int *ep)
 	}
 	s[n] = '\0';
 #if defined(HAVE_FENV_H) || defined(_MSC_VER) || defined(mingw32)
-	fesetenv(&env);
+	feupdateenv(&env);
 #endif
 	return length;
 }
 
 static void
-write_double(DBL_TYPE d, int e, int n, cl_object stream)
+write_double(DBL_TYPE d, int e, int n, cl_object stream, const char *type_name)
 {
 	int exp;
 #if defined(HAVE_FENV_H) || defined(_MSC_VER) || defined(mingw32)
 	fenv_t env;
 	feholdexcept(&env);
 #endif
+        if (isnan(d)) {
+                if (ecl_print_readably())
+# ifdef ECL_LONG_FLOAT
+                        FEprint_not_readable(ecl_make_longfloat(d));
+# else
+	                FEprint_not_readable(ecl_make_doublefloat(d));
+# endif
+                write_str("#<", stream);
+                write_str(type_name, stream);
+                write_str(" quiet NaN>", stream);
+                return;
+        }
+        if (!isfinite(d)) {
+                write_str("#.EXT:", stream);
+                write_str(type_name, stream);
+                write_str(signbit(d)? "-NEGATIVE-INFINITY" : "-POSITIVE-INFINITY",
+                          stream);
+                return;
+        }
 	if (d < 0) {
 		write_ch('-', stream);
 		d = -d;
 	}
-	if (d == 0.0) {
+        if (d == 0.0) {
 #if defined(ECL_SIGNED_ZERO) && defined(signbit)
 		if (signbit(d))
 			write_str("-0.0", stream);
@@ -637,7 +692,7 @@ write_double(DBL_TYPE d, int e, int n, cl_object stream)
 		write_decimal(exp, stream);
 	}
 #if defined(HAVE_FENV_H) || defined(_MSC_VER) || defined(mingw32)
-	fesetenv(&env);
+	feupdateenv(&env);
 #endif
 }
 
@@ -745,7 +800,6 @@ static bool
 needs_to_be_escaped(cl_object s, cl_object readtable, cl_object print_case)
 {
 	int action = readtable->readtable.read_case;
-	bool all_dots;
 	cl_index i;
 	if (potential_number_p(s, ecl_print_base()))
 		return 1;
@@ -1023,7 +1077,7 @@ cl_object
 si_write_ugly_object(cl_object x, cl_object stream)
 {
 	cl_object r, y;
-	cl_fixnum i, j;
+	cl_fixnum i;
 	cl_index ndx, k;
 
 	if (x == OBJNULL) {
@@ -1094,31 +1148,37 @@ si_write_ugly_object(cl_object x, cl_object stream)
 #ifdef ECL_SHORT_FLOAT
 	case t_shortfloat:
 		r = ecl_symbol_value(@'*read-default-float-format*');
-		write_double(ecl_short_float(x), (r == @'short-float')? 0 : 'f', FLT_SIG, stream);
+		write_double(ecl_short_float(x), (r == @'short-float')? 0 : 'f',
+                             FLT_SIG, stream, "SHORT-FLOAT");
 		break;
 	case t_singlefloat:
 		r = ecl_symbol_value(@'*read-default-float-format*');
-		write_double(sf(x), (r == @'single-float')? 0 : 's', FLT_SIG, stream);
+		write_double(sf(x), (r == @'single-float')? 0 : 's',
+                             FLT_SIG, stream, "SINGLE-FLOAT");
 		break;
 #else
 	case t_singlefloat:
 		r = ecl_symbol_value(@'*read-default-float-format*');
-		write_double(sf(x), (r == @'single-float' || r == @'short-float')? 0 : 's', FLT_SIG, stream);
+		write_double(sf(x), (r == @'single-float' || r == @'short-float')? 0 : 's',
+                             FLT_SIG, stream, "SINGLE-FLOAT");
 		break;
 #endif
 #ifdef ECL_LONG_FLOAT
 	case t_doublefloat:
 		r = ecl_symbol_value(@'*read-default-float-format*');
-		write_double(df(x), (r == @'double-float')? 0 : 'd', DBL_SIG, stream);
+		write_double(df(x), (r == @'double-float')? 0 : 'd', DBL_SIG, stream,
+                             "DOUBLE-FLOAT");
 		break;
 	case t_longfloat:
 		r = ecl_symbol_value(@'*read-default-float-format*');
-		write_double(ecl_long_float(x), (r == @'long-float')? 0 : 'l', LDBL_SIG, stream);
+		write_double(ecl_long_float(x), (r == @'long-float')? 0 : 'l',
+                             LDBL_SIG, stream, "LONG-FLOAT");
 		break;
 #else
 	case t_doublefloat:
 		r = ecl_symbol_value(@'*read-default-float-format*');
-		write_double(df(x), (r == @'double-float' || r == @'long-float')? 0 : 'd', DBL_SIG, stream);
+		write_double(df(x), (r == @'double-float' || r == @'long-float')? 0 : 'd',
+                             DBL_SIG, stream, "DOUBLE-FLOAT");
 		break;
 #endif
 	case t_complex:
@@ -1465,24 +1525,12 @@ si_write_ugly_object(cl_object x, cl_object stream)
 		write_ch('>', stream);
 		break;
 
-	case t_pathname: {
-		cl_object namestring = ecl_namestring(x, 0);
-		if (namestring == Cnil) {
-			if (ecl_print_readably())
-				FEprint_not_readable(x);
-			namestring = ecl_namestring(x, 1);
-			if (namestring == Cnil) {
-				write_str("#<Unprintable pathname>", stream);
-				break;
-			}
-		}
-		if (ecl_print_escape() || ecl_print_readably())
-			write_str("#P", stream);
-		si_write_ugly_object(namestring, stream);
-		break;
-	}
+	case t_pathname:
+                write_pathname(x, stream);
+                break;
+
 	case t_bclosure:
-                if ( ecl_print_readably() ) {
+                if (ecl_print_readably()) {
 	                cl_index i;
 			cl_object lex = x->bclosure.lex;
                         cl_object code_l=Cnil, data_l=Cnil;
@@ -1499,7 +1547,16 @@ si_write_ugly_object(cl_object x, cl_object stream)
 				    code_l, data_l),
 			    stream);
 			break;
+                } else {
+                        cl_object name = x->bytecodes.name;
+                        write_str("#<bytecompiled-closure ", stream);
+                        if (name != Cnil)
+                             si_write_ugly_object(name, stream);
+                        else
+                             write_addr(x, stream);
+                        write_ch('>', stream);
                 }
+                break;
 	case t_bytecodes:
                 if ( ecl_print_readably() ) {
 	                cl_index i;
@@ -1635,7 +1692,6 @@ si_write_object_recursive(cl_object x, cl_object stream)
 	{
 		cl_object circle_counter;
 		cl_fixnum code;
-		bool print;
 		circle_counter = ecl_symbol_value(@'si::*circle-counter*');
 		if (circle_counter == Cnil) {
 			cl_env_ptr env = ecl_process_env();

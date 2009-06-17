@@ -183,6 +183,10 @@
 			;;; We only register direct calls, not calls via object.
   (child-funs nil)	;;; List of local functions defined here.
   (debug 0)		;;; Debug quality
+  (file *compile-file-truename*)
+			;;; Source file or NIL
+  (file-position *compile-file-position*)
+			;;; Top-level form number in source file
   )
 
 (defstruct (blk (:include ref))
@@ -260,7 +264,7 @@
 ;;; Variables and constants for error handling
 ;;;
 (defvar *current-form* '|compiler preprocess|)
-(defvar *compile-file-position* nil)
+(defvar *compile-file-position* -1)
 (defvar *first-error* t)
 (defconstant *cmperr-tag* (cons nil nil))
 
@@ -271,11 +275,11 @@
 (defvar *compiler-conditions* '()
   "This variable determines whether conditions are printed or just accumulated.")
 
-(defvar *compile-print* t
+(defvar *compile-print* nil
   "This variable controls whether the compiler displays messages about
 each form it processes. The default value is NIL.")
 
-(defvar *compile-verbose* t
+(defvar *compile-verbose* nil
   "This variable controls whether the compiler should display messages about its
 progress. The default value is T.")
 
@@ -341,6 +345,8 @@ progress. The default value is T.")
 
 (defvar *next-cmacro* 0)	; holds the last cmacro number used.
 (defvar *next-cfun* 0)		; holds the last cfun used.
+
+(defvar *debug-fun* 0)		; Level of debugging of functions
 
 ;;;
 ;;; *tail-recursion-info* holds NIL, if tail recursion is impossible.
@@ -451,15 +457,15 @@ coprocessor).")
                     #+msvc "~A ~A ~:[~*~;~A~] -I\"~A\" -w -c \"~A\" -Fo\"~A\"")
 
 #-dlopen
-(defvar *ld-flags* "@LDFLAGS@ -lecl @CORE_LIBS@ @LIBS@ @FASL_LIBS@")
+(defvar *ld-flags* "@LDFLAGS@ -lecl @CORE_LIBS@ @FASL_LIBS@ @LIBS@")
 #+dlopen
-(defvar *ld-flags* #-msvc "@LDFLAGS@ -lecl @LIBS@ @FASL_LIBS@"
+(defvar *ld-flags* #-msvc "@LDFLAGS@ -lecl @FASL_LIBS@ @LIBS@"
                    #+msvc "@LDFLAGS@ ecl.lib @CLIBS@")
 #+dlopen
-(defvar *ld-shared-flags* #-msvc "@SHARED_LDFLAGS@ @LDFLAGS@ -lecl @LIBS@ @FASL_LIBS@"
+(defvar *ld-shared-flags* #-msvc "@SHARED_LDFLAGS@ @LDFLAGS@ -lecl @FASL_LIBS@ @LIBS@"
                           #+msvc "@SHARED_LDFLAGS@ @LDFLAGS@ ecl.lib @CLIBS@")
 #+dlopen
-(defvar *ld-bundle-flags* #-msvc "@BUNDLE_LDFLAGS@ @LDFLAGS@ -lecl @LIBS@ @FASL_LIBS@"
+(defvar *ld-bundle-flags* #-msvc "@BUNDLE_LDFLAGS@ @LDFLAGS@ -lecl @FASL_LIBS@ @LIBS@"
                           #+msvc "@BUNDLE_LDFLAGS@ @LDFLAGS@ ecl.lib @CLIBS@")
 
 (defvar +shared-library-prefix+ "@SHAREDPREFIX@")
@@ -504,6 +510,11 @@ lines are inserted, but the order is preserved")
 (defvar *load-time-values* nil)		; holds { ( vv-index form ) }*,
 ;;;  where each vv-index should be given an object before
 ;;;  defining the current function during loading process.
+
+(defvar *use-static-constants-p* nil)   ; T/NIL flag to determine whether one may
+                                        ; generate lisp constant values as C structs
+(defvar *static-constants* nil)		; constants that can be built as C values
+                                        ; holds { ( object c-variable constant ) }*
 
 (defvar *compiler-constants* nil)	; a vector with all constants
 					; only used in COMPILE

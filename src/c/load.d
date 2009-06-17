@@ -17,9 +17,7 @@
 #include <ecl/ecl.h>
 #include <string.h>
 #include <stdio.h>
-#include <ecl/ecl-inl.h>
-#include <ecl/internal.h>
-
+#include <unistd.h>
 #ifdef ENABLE_DLOPEN
 # ifdef HAVE_DLFCN_H
 #  include <dlfcn.h>
@@ -47,6 +45,8 @@
 #  define INIT_PREFIX "init_fas_"
 # endif
 #endif
+#include <ecl/ecl-inl.h>
+#include <ecl/internal.h>
 
 #ifndef HAVE_LSTAT
 static void
@@ -59,18 +59,19 @@ static cl_object
 copy_object_file(cl_object original)
 {
 	int err;
-	cl_object s, copy = make_constant_base_string("TMP:ECL");
+	cl_object copy = make_constant_base_string("TMP:ECL");
 	copy = si_coerce_to_filename(si_mkstemp(copy));
 	ecl_disable_interrupts();
-#ifdef HAVE_LSTAT
-	err = unlink(copy->base_string.self) ||
-		symlink(original->base_string.self, copy->base_string.self);
-#else
+        /*
+         * We either have to make a full copy to convince the loader to load this object
+         * file again, or we want to retain the possibility of overwriting the object
+         * file we load later on (case of Windows, which locks files that are loaded).
+         * The symlinks do not seem to work in latest versions of Linux.
+         */
 #if defined(mingw32) || defined(_MSC_VER)
 	err = !CopyFile(original->base_string.self, copy->base_string.self, 0);
 #else
 	err = Null(si_copy_file(original, copy));
-#endif
 #endif
 	ecl_enable_interrupts();
 	if (err) {
@@ -112,7 +113,6 @@ cl_object
 ecl_library_open(cl_object filename, bool force_reload) {
 	cl_object block;
 	bool self_destruct = 0;
-	cl_index i;
 	char *filename_string;
 
 	/* Coerces to a file name but does not merge with cwd */
@@ -163,6 +163,7 @@ ecl_library_open(cl_object filename, bool force_reload) {
 	block->cblock.links = Cnil;
 	block->cblock.cfuns_size = 0;
 	block->cblock.cfuns = NULL;
+        block->cblock.source = Cnil;
 	filename_string = (char*)filename->base_string.self;
 
 	ecl_disable_interrupts();
@@ -314,8 +315,6 @@ void
 ecl_library_close(cl_object block) {
 	const char *filename;
 	bool verbose = ecl_symbol_value(@'si::*gc-verbose*') != Cnil;
-	cl_object l;
-	int i;
 
 	if (Null(block->cblock.name))
 		filename = "<anonymous>";
@@ -440,16 +439,18 @@ si_load_source(cl_object source, cl_object verbose, cl_object print)
 		cl_object location = CONS(source, form_index);
 		ecl_bds_bind(the_env, @'ext::*source-location*', location);
 		for (;;) {
-			x = cl_read(3, strm, Cnil, OBJNULL);
+                        form_index = ecl_file_position(strm);
+                        ECL_RPLACD(location, form_index);
+			x = si_read_object_or_ignore(strm, OBJNULL);
 			if (x == OBJNULL)
 				break;
-			si_eval_with_env(1, x);
-			if (print != Cnil) {
-				@write(1, x);
-				@terpri(0);
-			}
-			form_index = ecl_plus(MAKE_FIXNUM(1),form_index);
-			ECL_RPLACD(location, form_index);
+                        if (the_env->nvalues) {
+                                si_eval_with_env(1, x);
+                                if (print != Cnil) {
+                                        @write(1, x);
+                                        @terpri(0);
+                                }
+                        }
 		}
 		ecl_bds_unwind1(the_env);
 	} CL_UNWIND_PROTECT_EXIT {

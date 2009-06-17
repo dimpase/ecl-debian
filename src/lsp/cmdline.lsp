@@ -26,6 +26,7 @@
 (defvar *help-message* "
 Usage: ecl [-? | --help]
            [-dir dir] [-load file] [-shell file] [-eval expr] [-rc | -norc] [-hp | -nohp]
+           [--c-stack size] [--lisp-stack size] [--heap-size size] [--frame-stack size]
            [[-o ofile] [-c [cfile]] [-h [hfile]] [-data [datafile]] [-s] [-q]
             -compile file]
            [[-o ofile] -link file+]
@@ -57,6 +58,12 @@ Usage: ecl [-? | --help]
     ("-load" 1 (load 1 :verbose verbose))
     ("-dir" 1 (setf (logical-pathname-translations "SYS")
 	       `(("**;*.*" ,(merge-pathnames "**/*.*" (truename 1))))))
+    ("--heap-size" 1 (ext:set-limit 'ext:heap-size (read-from-string 1)))
+    ("--lisp-stack" 1 (ext:set-limit 'ext:lisp-stack (read-from-string 1)))
+    ("--frame-stack" 1 (ext:set-limit 'ext:frame-stack (read-from-string 1)))
+    ("--c-stack" 1 (ext:set-limit 'ext:c-stack (read-from-string 1)))
+    ("--trap-fpe" 0 (si::trap-fpe t t))
+    ("--no-trap-fpe" 0 (si::trap-fpe t nil))
     ("-compile" 1
      (progn
        (setq quit

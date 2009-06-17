@@ -92,7 +92,8 @@
 	    (setf last-location new-loc)))
      finally (return (max num-slots (1+ last-location)))))
 
-(defmethod allocate-instance ((class class) &key)
+(defmethod allocate-instance ((class class) &rest initargs)
+  (declare (ignore initargs))
   ;; FIXME! Inefficient! We should keep a list of dependent classes.
   (unless (class-finalized-p class)
     (finalize-inheritance class))
@@ -101,6 +102,9 @@
     x))
 
 (defmethod make-instance ((class class) &rest initargs)
+  ;; Without finalization we can not find initargs.
+  (unless (class-finalized-p class)
+    (finalize-inheritance class))
   ;; We add the default-initargs first, because one of these initargs might
   ;; be (:allow-other-keys t), which disables the checking of the arguments.
   ;; (Paul Dietz's ANSI test suite, test CLASS-24.4)
@@ -112,7 +116,7 @@
 			   #'initialize-instance (list (class-prototype class)))
 			  (compute-applicable-methods
 			   #'shared-initialize (list (class-prototype class) t))))
-  (let ((instance (allocate-instance class)))
+  (let ((instance (apply #'allocate-instance class initargs)))
     (apply #'initialize-instance instance initargs)
     instance))
 
@@ -141,23 +145,27 @@
 
 (defmethod initialize-instance ((class class) &rest initargs
 				&key sealedp direct-superclasses direct-slots)
+  ;; convert the slots from lists to direct slots
+  (setf direct-slots (loop for s in direct-slots
+                        collect (canonical-slot-to-direct-slot class s)))
 
-  ;; this sets up all the slots of the class
-  (call-next-method)
+  ;; verify that the inheritance list makes sense
+  (setf direct-superclasses
+        (check-direct-superclasses class direct-superclasses))
 
-  ;; the list of direct slots is converted to direct-slot-definitions
-  (setf (class-direct-slots class)
-	(loop for s in direct-slots
-	      collect (canonical-slot-to-direct-slot class s)))
+  (apply #'call-next-method class
+         :direct-slots direct-slots
+         :direct-superclasses direct-superclasses
+         initargs)
 
-  ;; set up inheritance checking that it makes sense
-  (dolist (l (setf (class-direct-superclasses class)
-		   (check-direct-superclasses class direct-superclasses)))
+  ;; record the inheritance in parents
+  (dolist (l (setf direct-superclasses (class-direct-superclasses class)))
     (add-direct-subclass l class))
-  (if (find-if #'forward-referenced-class-p (class-direct-superclasses class))
-      (find-if #'forward-referenced-class-p (class-direct-superclasses class))
+
+  (unless (find-if #'forward-referenced-class-p direct-superclasses)
       (finalize-inheritance class))
-)
+
+  class)
 
 (defmethod shared-initialize :after ((class standard-class) slot-names &rest initargs &key
 				     (optimize-slot-access (list *optimize-slot-access*))
@@ -319,7 +327,7 @@ because it contains a reference to the undefined class~%  ~A"
 				  :test-not #'eq))
 	      output)))))
 
-(defun slot-definition-to-list (slotd)
+(defun slot-definition-to-plist (slotd)
   (list :name (slot-definition-name slotd)
 	:initform (slot-definition-initform slotd)
 	:initfunction (slot-definition-initfunction slotd)
@@ -340,7 +348,7 @@ because it contains a reference to the undefined class~%  ~A"
   (flet ((direct-to-effective (old-slot)
 	   (if (consp old-slot)
 	       (copy-list old-slot)
-	       (let ((initargs (slot-definition-to-list old-slot)))
+	       (let ((initargs (slot-definition-to-plist old-slot)))
 		 (apply #'make-instance
 			(apply #'effective-slot-definition-class class initargs)
 			initargs))))
@@ -354,7 +362,7 @@ because it contains a reference to the undefined class~%  ~A"
 		   (unless (eql loc1 loc2)
 		     (error 'simple-error
 			    :format-control "You have specified two conflicting slot locations:~%~D and ~F~%for slot ~A"
-			    :format-args (list loc1 loc2 name)))
+			    :format-arguments (list loc1 loc2 name)))
 		   (progn
 		     #+(or)
 		     (format t "~%Assigning a default location ~D for ~A in ~A."
@@ -680,7 +688,7 @@ because it contains a reference to the undefined class~%  ~A"
 
 (defun check-initargs (class initargs &optional methods
 		       (slots (class-slots class)))
-  ;; First get all initiargs which have been declared in the given
+  ;; First get all initargs which have been declared in the given
   ;; methods, then check the list of initargs declared in the slots
   ;; of the class.
   (multiple-value-bind (method-initargs allow-other-keys)

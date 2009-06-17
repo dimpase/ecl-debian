@@ -66,9 +66,9 @@ struct cl_env_struct {
 	 * memory. They will eventually disappear, because most operating
 	 * systems already take care of this.
 	 */
-	cl_fixnum *cs_org;
-	cl_fixnum *cs_limit;
-	cl_fixnum *cs_barrier;
+	char *cs_org;
+	char *cs_limit;
+	char *cs_barrier;
 	cl_index cs_size;
 
 	/* Private variables used by different parts of ECL: */
@@ -120,6 +120,9 @@ struct cl_env_struct {
 	/* Alternative stack for processing signals */
 	void *altstack;
 	cl_index altstack_size;
+
+        /* Floating point interrupts which are trapped */
+        int trap_fpe_bits;
 };
 
 #ifndef __GNUC__
@@ -206,6 +209,9 @@ struct cl_core_struct {
 	cl_object gc_counter;
 	bool gc_stats;
 	int path_max;
+#ifdef GBC_BOEHM
+        char *safety_region;
+#endif
 
 #ifdef ECL_UNICODE
 	cl_object unicode_database;
@@ -224,10 +230,11 @@ extern ECL_API cl_object ecl_alloc_instance(cl_index slots);
 extern ECL_API cl_object ecl_cons(cl_object a, cl_object d);
 extern ECL_API cl_object ecl_list1(cl_object a);
 #ifdef GBC_BOEHM
-extern ECL_API cl_object si_heap_size _ARGS((cl_narg narg, ...));
 extern ECL_API cl_object si_gc(cl_object area);
 extern ECL_API cl_object si_gc_dump(void);
 extern ECL_API cl_object si_gc_stats(cl_object enable);
+extern ECL_API void *ecl_alloc_unprotected(cl_index n);
+extern ECL_API void *ecl_alloc_atomic_unprotected(cl_index n);
 extern ECL_API void *ecl_alloc(cl_index n);
 extern ECL_API void *ecl_alloc_atomic(cl_index n);
 extern ECL_API void *ecl_alloc_uncollectable(size_t size);
@@ -356,13 +363,16 @@ extern ECL_API double big_to_double(cl_object x);
 extern ECL_API cl_object si_compiled_function_name(cl_object fun);
 extern ECL_API cl_object si_compiled_function_block(cl_object fun);
 extern ECL_API cl_object cl_function_lambda_expression(cl_object fun);
+extern ECL_API cl_object si_compiled_function_file(cl_object fun);
 
-extern ECL_API cl_object cl_make_cfun(void *c_function, cl_object name, cl_object block, int narg);
-extern ECL_API cl_object cl_make_cfun_va(void *c_function, cl_object name, cl_object block);
-extern ECL_API cl_object cl_make_cclosure_va(void *c_function, cl_object env, cl_object block);
-extern ECL_API void cl_def_c_function(cl_object sym, void *c_function, int narg);
-extern ECL_API void cl_def_c_macro(cl_object sym, void *c_function, int narg);
-extern ECL_API void cl_def_c_function_va(cl_object sym, void *c_function);
+extern ECL_API cl_object ecl_make_cfun(cl_objectfn_fixed c_function, cl_object name, cl_object block, int narg);
+extern ECL_API cl_object ecl_make_cfun_va(cl_objectfn c_function, cl_object name, cl_object block);
+extern ECL_API cl_object ecl_make_cclosure_va(cl_objectfn c_function, cl_object env, cl_object block);
+extern ECL_API void ecl_def_c_function(cl_object sym, cl_objectfn_fixed c_function, int narg);
+extern ECL_API void ecl_def_c_macro(cl_object sym, cl_objectfn_fixed c_function, int narg);
+extern ECL_API void ecl_def_c_macro_va(cl_object sym, cl_objectfn c_function);
+extern ECL_API void ecl_def_c_function_va(cl_object sym, cl_objectfn c_function);
+extern ECL_API cl_object ecl_set_function_source_file_info(cl_object fun, cl_object source, cl_object position);
 extern ECL_API void ecl_cmp_defmacro(cl_object data);
 extern ECL_API void ecl_cmp_defun(cl_object data);
 
@@ -399,6 +409,7 @@ extern ECL_API cl_object cl_lower_case_p(cl_object c);
 extern ECL_API cl_object cl_name_char(cl_object s);
 extern ECL_API cl_object cl_standard_char_p(cl_object c);
 extern ECL_API cl_object cl_upper_case_p(cl_object c);
+extern ECL_API int ecl_string_case(cl_object s);
 
 extern ECL_API bool ecl_alpha_char_p(ecl_character c);
 extern ECL_API bool ecl_alphanumericp(ecl_character c);
@@ -483,7 +494,6 @@ extern ECL_API cl_object _ecl_bclosure_dispatch(cl_narg narg, ...);
 
 extern ECL_API cl_object si_bc_disassemble(cl_object v);
 extern ECL_API cl_object si_bc_split(cl_object v);
-extern ECL_API cl_object si_bc_file(cl_object v);
 
 /* error.c */
 
@@ -878,6 +888,7 @@ typedef enum {
 	ECL_OPT_SIGALTSTACK_SIZE,
 	ECL_OPT_HEAP_SIZE,
 	ECL_OPT_HEAP_SAFETY_AREA,
+        ECL_OPT_THREAD_INTERRUPT_SIGNAL,
 	ECL_OPT_LIMIT
 } ecl_option;
 
@@ -885,7 +896,7 @@ extern ECL_API const char *ecl_self;
 extern ECL_API void ecl_set_option(int option, cl_fixnum value);
 extern ECL_API cl_fixnum ecl_get_option(int option);
 extern ECL_API int cl_boot(int argc, char **argv);
-extern ECL_API int cl_shutdown(void);
+extern ECL_API void cl_shutdown(void);
 #if defined(_MSC_VER) || defined(mingw32)
 extern ECL_API void ecl_get_commandline_args(int* argc, char*** argv);
 #endif
@@ -995,12 +1006,12 @@ extern ECL_API cl_object cl_rational(cl_object x);
 extern ECL_API double ecl_to_double(cl_object x);
 #define number_to_float(x) ((float)ecl_to_double(x))
 #ifdef ECL_SHORT_FLOAT
-extern ECL_API cl_object make_shortfloat(float f);
+extern ECL_API cl_object ecl_make_shortfloat(float f);
 extern ECL_API float ecl_short_float(cl_object o);
 #endif
 #ifdef ECL_LONG_FLOAT
 extern ECL_API long double ecl_to_long_double(cl_object x);
-extern ECL_API cl_object make_longfloat(long double f);
+extern ECL_API cl_object ecl_make_longfloat(long double f);
 #endif
 extern ECL_API cl_object double_to_integer(double d);
 extern ECL_API cl_object float_to_integer(float d);
@@ -1104,12 +1115,16 @@ extern ECL_API cl_object cl_plusp(cl_object x);
 extern ECL_API cl_object cl_minusp(cl_object x);
 extern ECL_API cl_object cl_oddp(cl_object x);
 extern ECL_API cl_object cl_evenp(cl_object x);
+extern ECL_API cl_object si_float_nan_p(cl_object x);
+extern ECL_API cl_object si_float_infinity_p(cl_object x);
 
 extern ECL_API int ecl_zerop(cl_object x);
 extern ECL_API int ecl_plusp(cl_object x);
 extern ECL_API int ecl_minusp(cl_object x);
 extern ECL_API int ecl_oddp(cl_object x);
 extern ECL_API int ecl_evenp(cl_object x);
+extern ECL_API bool ecl_float_nan_p(cl_object x);
+extern ECL_API bool ecl_float_infinity_p(cl_object x);
 
 
 /* num_rand.c */
@@ -1334,6 +1349,7 @@ extern ECL_API cl_object cl_get_macro_character _ARGS((cl_narg narg, cl_object c
 extern ECL_API cl_object cl_make_dispatch_macro_character _ARGS((cl_narg narg, cl_object chr, ...));
 extern ECL_API cl_object cl_set_dispatch_macro_character _ARGS((cl_narg narg, cl_object dspchr, cl_object subchr, cl_object fnc, ...));
 extern ECL_API cl_object cl_get_dispatch_macro_character _ARGS((cl_narg narg, cl_object dspchr, cl_object subchr, ...));
+extern ECL_API cl_object si_read_object_or_ignore(cl_object stream, cl_object eof);
 
 extern ECL_API int ecl_readtable_get(cl_object rdtbl, int c, cl_object *macro);
 extern ECL_API void ecl_readtable_set(cl_object rdtbl, int c, enum ecl_chattrib cat, cl_object macro_or_table);
@@ -1378,7 +1394,7 @@ extern ECL_API cl_fixnum ecl_length(cl_object x);
 
 /* stacks.c */
 
-extern ECL_API cl_object si_ihs_top(cl_object arg);
+extern ECL_API cl_object si_ihs_top(void);
 extern ECL_API cl_object si_ihs_fun(cl_object arg);
 extern ECL_API cl_object si_ihs_env(cl_object arg);
 extern ECL_API cl_object si_ihs_next(cl_object arg);
@@ -1537,6 +1553,7 @@ extern ECL_API cl_object mp_condition_variable_wait(cl_object cv, cl_object lock
 extern ECL_API cl_object mp_condition_variable_timedwait(cl_object cv, cl_object lock, cl_object seconds);
 extern ECL_API cl_object mp_condition_variable_signal(cl_object cv);
 extern ECL_API cl_object mp_condition_variable_broadcast(cl_object cv);
+extern ECL_API cl_object mp_current_process(void);
 
 extern ECL_API void ecl_import_current_thread(cl_object process_name, cl_object process_binding);
 extern ECL_API void ecl_release_current_thread(void);
@@ -1872,6 +1889,23 @@ extern ECL_API cl_object clos_standard_instance_set _ARGS((cl_narg narg, cl_obje
 #endif
 
 #endif
+
+/*
+ * LEGACY
+ */
+#define make_shortfloat(x) ecl_make_shortfloat(x);
+#define cl_def_c_function_va(sym,function) ecl_def_c_function_va(sym,function)
+#define cl_def_c_function(sym,function,narg) ecl_def_c_function(sym,function,narg)
+#define cl_def_c_macro(sym,function,narg) {                     \
+                int n = (narg);                                 \
+                if (n < 0)                                      \
+                        ecl_def_c_macro_va((sym),(function));   \
+                else                                            \
+                        ecl_def_c_macro((sym),(function),n); }
+#define cl_make_cfun(fun,name,block,narg) ecl_make_cfun(fun,name,block,narg)
+#define cl_make_cfun_va(fun,name,block) ecl_make_cfun_va(fun,name,block)
+#define cl_make_cclosure_va(fun,name,block) ecl_make_cclosure_va(fun,name,block)
+#define si_bc_file(o) si_compiled_function_file(o)
 
 #ifdef __cplusplus
 }

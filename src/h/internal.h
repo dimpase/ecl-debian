@@ -39,7 +39,7 @@ extern void init_GC(void);
 extern void init_macros(void);
 extern void init_number(void);
 extern void init_read(void);
-extern void init_stacks(cl_env_ptr, int *);
+extern void init_stacks(cl_env_ptr, char *);
 extern void init_unixint(int pass);
 extern void init_unixtime(void);
 #ifdef mingw32
@@ -52,6 +52,7 @@ extern void ecl_init_env(cl_env_ptr);
 extern void init_lib_LSP(cl_object);
 
 extern cl_env_ptr _ecl_alloc_env(void);
+extern void _ecl_dealloc_env(cl_env_ptr);
 
 /* alloc.d/alloc_2.d */
 
@@ -281,6 +282,8 @@ extern void cl_write_object(cl_object x, cl_object stream);
 # define PACKAGE_UNLOCK(p) if (pthread_mutex_unlock(&(p)->pack.lock)) ecl_internal_error("")
 # define PACKAGE_OP_UNLOCK() if (pthread_mutex_unlock(&cl_core.global_lock)) ecl_internal_error("")
 # define THREAD_OP_UNLOCK() if (pthread_mutex_unlock(&cl_core.global_lock)) ecl_internal_error("")
+# define ERROR_HANDLER_LOCK() THREAD_OP_LOCK()
+# define ERROR_HANDLER_UNLOCK() THREAD_OP_UNLOCK()
 #else
 # define HASH_TABLE_LOCK(h)
 # define HASH_TABLE_UNLOCK(h)
@@ -288,6 +291,8 @@ extern void cl_write_object(cl_object x, cl_object stream);
 # define PACKAGE_UNLOCK(p)
 # define PACKAGE_OP_LOCK()
 # define PACKAGE_OP_UNLOCK()
+# define ERROR_HANDLER_LOCK()
+# define ERROR_HANDLER_UNLOCK()
 #endif /* ECL_THREADS */
 
 
@@ -305,26 +310,40 @@ extern cl_fixnum ecl_runtime(void);
 
 /* unixint.d */
 
-#if defined(_MSC_VER) || defined(mingw32)
-# include <float.h>
-# if defined(_MSC_VER)
+#ifdef ECL_DEFINE_FENV_CONSTANTS
+# if defined(_MSC_VER) || defined(mingw32)
+#  define HAVE_FEENABLEEXCEPT
+#  include <float.h>
+#  if defined(_MSC_VER)
 #   define FE_DIVBYZERO EM_ZERODIVIDE
 #   define FE_OVERFLOW  EM_OVERFLOW
 #   define FE_UNDERFLOW EM_UNDERFLOW
+#   define FE_INVALID   EM_INVALID
+#   define FE_INEXACT   EM_INEXACT
 typedef int fenv_t;
-# else
+#  else
 #   ifdef _MCW_EM
 #    define MCW_EM _MCW_EM
 #   else
 #    define MCW_EM 0x0008001F
 #   endif
 #   define fenv_t int
-# endif
-# define feenableexcept(bits) { int cw = _controlfp(0,0); cw &= ~(bits); _controlfp(cw,MCW_EM); }
-# define fedisableexcept(bits) { int cw = _controlfp(0,0); cw |= (bits); _controlfp(cw,MCW_EM); }
-# define feholdexcept(bits) { *(bits) = _controlfp(0,0); _controlfp(0xffffffff, MCW_EM); }
-# define fesetenv(bits) _controlfp(*(bits), MCW_EM)
-#endif
+#  endif
+#  define feenableexcept(bits) { int cw = _controlfp(0,0); cw &= ~(bits); _controlfp(cw,MCW_EM); }
+#  define fedisableexcept(bits) { int cw = _controlfp(0,0); cw |= (bits); _controlfp(cw,MCW_EM); }
+#  define feholdexcept(bits) { *(bits) = _controlfp(0,0); _controlfp(0xffffffff, MCW_EM); }
+#  define fesetenv(bits) _controlfp(*(bits), MCW_EM)
+#  define feupdateenv(bits) fesetenv(bits)
+# else /* !_MSC_VER */
+#  ifndef HAVE_FENV_H
+#   define FE_INVALID 1
+#   define FE_DIVBYZERO 2
+#   define FE_INEXACT 0
+#   define FE_OVERFLOW 0
+#   define FE_UNDERFLOW 0
+#  endif /* !HAVE_FENV_H */
+# endif /* !_MSC_VER */
+#endif /* !ECL_DEFINE_FENV_CONSTANTS */
 
 #define ECL_PI_D 3.14159265358979323846264338327950288
 #define ECL_PI_L 3.14159265358979323846264338327950288l

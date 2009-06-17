@@ -1,11 +1,132 @@
-ECL 9.4.1:
-==========
+ECL 9.6:
+========
+
+* MOP:
+
+ - CALL-METHOD has only one required argument. Affects only calls to this
+   macro inside nonstandard method combinations.
+
+* Visible changes:
+
+ - Physical pathnames do not always have a namestring from which they can be
+   reconstructed. This is the case of directory pathnames with version numbers,
+   for instance. Formerly ECL would refuse to print those pathnames if
+   *PRINT-READABLY* was true, but now it uses instead a #. form.
+    > (write (make-pathname :directory '(:relative)
+                            :name nil :type nil :version :newest)
+             :readably t))
+    #.(MAKE-PATHNAME :HOST NIL :DEVICE NIL :DIRECTORY '(:RELATIVE) :NAME NIL
+                     :TYPE NIL :VERSION :NEWEST :DEFAULTS NIL)
+
+ - WITH-CSTRING automatically coerces extended strings to base strings,
+   signalling an error when this is not possible.
+
+ - New command line arguments, --heap-size, --lisp-stack, --frame-stack and
+   --c-stack control the different memory limits.
+
+ - The stack size is now measured in bytes, not in lisp words.
+
+ - The out of memory error (ext:storage-exhausted) can now be recovered.
+   By default a correctable error is signaled and the user is given the
+   chance to increase the heap size.
+
+* Function names:
+
+ - Added a new section in external.h for defining compatibility macros
+   for functions that changed name.
+
+ - make_longfloat() is renamed ecl_make_longfloat().
+
+ - Some functions got new names: ecl_make_cfun, ecl_make_cfun_va,
+   ecl_make_cclosure_va, ecl_def_c_function, ecl_def_c_function_va.
+
+* Numerics:
+
+ - A new configuration flag --with-ieee-fp adds support for NaN's, infinities
+   and signed zeros, disabling certain floating point exceptions by default.
+   In addition, when this is set, functions like LOG or ATAN will not
+   signal errors when their arguments are not valid, but rather return NaN's
+   (LOG 0) => -infinity, (ATAN 0.0 0.0) => NaN
+
+ - A new command line option --trap-fpe / --no-trap-fpe tells whether ECL
+   should ignore floating point exceptions and produce NaNs and infinities
+   or either use the condition system to produce the associated errors.
+
+ - Two new functions, EXT:FLOAT-NAN-P and EXT:FLOAT-INFINITY-P.
+
+ - Eight new constants for the eight possible infinities
+   EXT:{SHORT,SINGLE,DOUBLE,LONG}-FLOAT-{POSITIVE,NEGATIVE}-INFINITY
+
+* Interrupt handling:
+
+ - Under Mac OS/X, ECL now uses its own modified version of the Boehm-Weiser
+   garbage collector that allows both --enable-gengc and our optimized
+   code for signal handling.
+
+ - New condition EXT:SEGMENTATION-VIOLATION signaled by SIGSEGV and SIGBUS
+   events.
+
+ - Added support for the floating point exception FE_INVALID, which is
+   signalled when trying to do 0/0 or sqrt(-1) (A. Gavrilov)
+
+ - SI:TRAP-FPE always returns an integer denoting the new active / inactive
+   floating point traps. In particular, (SI:TRAP-FPE 'LAST T) returns the
+   currently active traps. This value can be passed to SI:TRAP-FPE as first
+   argument again. This is useful for performing a computation without traps
+	(let* (( (si::trap-fpe 'last nil)))
+	  (prog1 (/ 0.0 0.0) (si::trap-fpe bits t)))
+
+ - A new configurable option ECL_OPT_THREAD_INTERRUPT_SIGNAL determines
+   which Unix interrupt type is used to communicate between threads.
+
+* Debugger:
+
+ - Compiled functions now carry information about their source file
+   (based on patches by Jean-Claude Beaudoin)
+
+ - The compiler can now generate some Lisp constants as static C expressions
+   (based on patches by JCB)
+
+ - The debugger is now fit for multithreaded environments (JCB)
+
+ - Compiled functions with DEBUG=3 now produce information about their
+   arguments and variables, that can be inspected in the debugger
+   (evolved from patches by JCB).
+
+ - ECL records the file position of a compiled form / function instead of
+   the form number in that file.
 
 * Bugs fixed:
 
- - Symbol NIL was not exported from the GRAY package.
+ - Remove an obsolete #if statement for Solaris that broke current builds
+   with Solaris 10.
 
- - GRAY:STREAM-PEEK-CHAR was not used at all by ECL.
+ - The mechanism for checking the existence of [u]int{16,32,64}_t or other
+   replacement types was not used for [u]int8_t.
+
+ - When COMPILE-FILE is invoked with a non-nil value of :OUTPUT-FILE, ECL
+   now honors the file type supplied by the user, instead of overriding it
+   with "fas" or "fasl". The same applies to COMPILE-FILE-PATHNAME.
+
+ - When building ECL's C preprocessor (dpp), the value of CPPFLAGS was
+   not used.
+
+ - A wrong order in the list of libraries (-lpthread -lgc) prevented ECL
+   from having multithread support in FreeBSD, OpenBSD and NetBSD.
+
+ - Removed a shell command from src/Makefile.in The command used braces {}
+   which FreeBSD does not understand.
+
+ - Changed the way in which threads are created and registered with ECL to
+   avoid certain race conditions and data loss when it takes a long time
+   betwee calls to mp:make-proceess and mp:process-enable
+
+ - ecl_import_current_thread() now properly stores the thread handle in
+   the process object and can be called multiple times for the same thread.
+
+ - When performing unoptimized function calls, the interpreter did not save
+   actual value of the lexical environment, thus preventing the debugger from
+   inspecting it (fixed by JCB).
 
 ;;; Local Variables: ***
 ;;; mode:text ***

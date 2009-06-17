@@ -22,19 +22,21 @@
   (setf (slot-value instance 'system-p) t))
 
 (defmethod output-files ((o compile-op) (c cl-source-file))
-  (list (compile-file-pathname (component-pathname c) :type :object)))
+  (list (compile-file-pathname (component-pathname c) :type :object)
+        (compile-file-pathname (component-pathname c) :type :fasl)))
 
 (defmethod perform :after ((o compile-op) (c cl-source-file))
   ;; Note how we use OUTPUT-FILES to find the binary locations
   ;; This allows the user to override the names.
   (let* ((input (output-files o c))
 	 (output (compile-file-pathname (first input) :type :fasl)))
-    (c:build-fasl output :lisp-files input)))
+    (c:build-fasl output :lisp-files (remove "fas" input :key #'pathname-type :test #'string=))))
 
 (defmethod perform ((o load-op) (c cl-source-file))
   (loop for i in (input-files o c)
-	collect (let ((output (compile-file-pathname i)))
-		  (load output))))
+       unless (string= (pathname-type i) "fas")
+       collect (let ((output (compile-file-pathname i)))
+                 (load output))))
 
 #+nil
 (defmethod output-files ((o load-op) (c cl-source-file))
@@ -178,10 +180,10 @@
   t)
 
 (defmethod perform ((o bundle-op) (c system))
-  (let* ((object-files (input-files o c))
-	 (output (first (output-files o c))))
-    (ensure-directories-exist output)
-    (apply #'c::builder (bundle-op-type o) output :lisp-files object-files
+  (let* ((object-files (remove "fas" (input-files o c) :key #'pathname-type :test #'string=))
+	 (output (output-files o c)))
+    (ensure-directories-exist (first output))
+    (apply #'c::builder (bundle-op-type o) (first output) :lisp-files object-files
 	   (bundle-op-build-args o))))
 
 (defun select-operation (monolithic type)

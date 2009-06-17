@@ -15,14 +15,11 @@
     See file '../Copyright' for full details.
 */
 
+#define ECL_INCLUDE_MATH_H
 #include <ecl/ecl.h>
 #include <stdio.h>
 #include <limits.h>
 #include <float.h>
-#include <math.h>
-#ifdef _MSC_VER
-# undef complex
-#endif
 #include <string.h>
 #include <stdlib.h>
 #include <ecl/internal.h>
@@ -48,6 +45,9 @@ static cl_object dispatch_macro_character(cl_object table, cl_object strm, int c
 # define TOKEN_STRING_CHAR_SET(s,n,c) ((s)->base_string.self[n]=(c))
 # define TOKEN_STRING_CHAR_CMP(s,n,c) ((s)->base_string.self[n]==(c))
 #endif
+
+#define ECL_READ_ONLY_TOKEN 1
+#define ECL_READ_RETURN_IGNORABLE 3
 
 cl_object
 si_get_buffer_string()
@@ -112,7 +112,7 @@ ecl_read_object_non_recursive(cl_object in)
 	if (!Null(ECL_SYM_VAL(env, @'si::*sharp-eq-context*')))
 		x = patch_sharp(x);
 	ecl_bds_unwind_n(env, 2);
-	return(x);
+	return x;
 }
 
 /*
@@ -126,7 +126,6 @@ static void
 invert_buffer_case(cl_object x, cl_object escape_list, int sign)
 {
 	cl_fixnum high_limit, low_limit;
-	cl_object escape_interval;
 	cl_fixnum i = TOKEN_STRING_FILLP(x);
 	do {
 		if (escape_list != Cnil) {
@@ -155,7 +154,8 @@ invert_buffer_case(cl_object x, cl_object escape_list, int sign)
 }
 
 static cl_object
-ecl_read_object_with_delimiter(cl_object in, int delimiter, bool only_token, enum ecl_chattrib a)
+ecl_read_object_with_delimiter(cl_object in, int delimiter, int flags,
+                               enum ecl_chattrib a)
 {
 	cl_object x, token;
 	int c, base;
@@ -163,6 +163,7 @@ ecl_read_object_with_delimiter(cl_object in, int delimiter, bool only_token, enu
 	cl_index length, i;
 	int colon, intern_flag;
 	bool external_symbol;
+        cl_env_ptr the_env = ecl_process_env();
 	cl_object rtbl = ecl_current_readtable();
 	enum ecl_readtable_case read_case = rtbl->readtable.read_case;
 	cl_object escape_list; /* intervals of escaped characters */
@@ -176,22 +177,31 @@ ecl_read_object_with_delimiter(cl_object in, int delimiter, bool only_token, enu
 BEGIN:
 	do {
 		c = ecl_read_char(in);
-		if (c == delimiter)
+		if (c == delimiter) {
+                        the_env->nvalues = 0;
 			return OBJNULL;
+                }
 		if (c == EOF)
 			FEend_of_file(in);
 		a = ecl_readtable_get(rtbl, c, &x);
 	} while (a == cat_whitespace);
-	if ((a == cat_terminating || a == cat_non_terminating) && !only_token) {
+	if ((a == cat_terminating || a == cat_non_terminating) &&
+            (flags != ECL_READ_ONLY_TOKEN)) {
 		cl_object o;
 		if (type_of(x) == t_hashtable) {
 			o = dispatch_macro_character(x, in, c);
 		} else {
 			o = funcall(3, x, in, CODE_CHAR(c));
 		}
-		if (NVALUES == 0) goto BEGIN;
-		if (NVALUES > 1) FEerror("The readmacro ~S returned ~D values.",
-					 2, x, MAKE_FIXNUM(i));
+		if (the_env->nvalues == 0) {
+                        if (flags == ECL_READ_RETURN_IGNORABLE)
+                                return Cnil;
+                        goto BEGIN;
+                }
+		if (the_env->nvalues > 1) {
+                        FEerror("The readmacro ~S returned ~D values.",
+                                2, x, MAKE_FIXNUM(i));
+                }
 		return o;
 	}
 LOOP:
@@ -200,7 +210,8 @@ LOOP:
 	external_symbol = colon = 0;
 	token = si_get_buffer_string();
 	for (;;) {
-		if (c == ':' && !only_token && a == cat_constituent) {
+		if (c == ':' && (flags != ECL_READ_ONLY_TOKEN) &&
+                    a == cat_constituent) {
 			colon++;
 			goto NEXT;
 		}
@@ -321,7 +332,8 @@ LOOP:
 	}
 
 	/* If there are some escaped characters, it must be a symbol */
-	if (only_token || p != Cnil || escape_list != Cnil || length == 0)
+	if ((flags == ECL_READ_ONLY_TOKEN) || p != Cnil ||
+            escape_list != Cnil || length == 0)
 		goto SYMBOL;
 
 	/* The case in which the buffer is full of dots has to be especial cased */
@@ -357,7 +369,8 @@ LOOP:
 			invert_buffer_case(token, escape_list, +1);
 		}
 	}
-	if (only_token) {
+	if (flags == ECL_READ_ONLY_TOKEN) {
+                the_env->nvalues = 1;
 		return token;
 	} else if (external_symbol) {
 		x = ecl_find_symbol(token, p, &intern_flag);
@@ -374,6 +387,7 @@ LOOP:
 	}
  OUTPUT:
 	si_put_buffer_string(token);
+        the_env->nvalues = 1;
 	return x;
 }
 
@@ -385,6 +399,27 @@ cl_object
 ecl_read_object(cl_object in)
 {
 	return ecl_read_object_with_delimiter(in, EOF, 0, cat_constituent);
+}
+
+cl_object
+si_read_object_or_ignore(cl_object in, cl_object eof)
+{
+	cl_object x;
+	const cl_env_ptr env = ecl_process_env();
+
+	ecl_bds_bind(env, @'si::*sharp-eq-context*', Cnil);
+	ecl_bds_bind(env, @'si::*backq-level*', MAKE_FIXNUM(0));
+        x = ecl_read_object_with_delimiter(in, EOF, ECL_READ_RETURN_IGNORABLE, 
+                                           cat_constituent);
+        if (x == OBJNULL) {
+                NVALUES = 1;
+                x = eof;
+        } else if (env->nvalues != 0) {
+                if (!Null(ECL_SYM_VAL(env, @'si::*sharp-eq-context*')))
+                        x = patch_sharp(x);
+        }
+	ecl_bds_unwind_n(env, 2);
+	return x;
 }
 
 #define	ecl_exponent_marker_p(i)	\
@@ -527,7 +562,7 @@ ecl_parse_number(cl_object str, cl_index start, cl_index end,
 			break;
 		case 'l':  case 'L':
 #ifdef ECL_LONG_FLOAT
-			output = make_longfloat(d);
+			output = ecl_make_longfloat(d);
 			break;
 #endif
 		case 'd':  case 'D':
@@ -809,14 +844,15 @@ static cl_object
 sharp_backslash_reader(cl_object in, cl_object c, cl_object d)
 {
 	const cl_env_ptr env = ecl_process_env();
-	cl_object nc, token;
+	cl_object token;
 	if (d != Cnil && !read_suppress)
 		if (!FIXNUMP(d) ||
 		    fix(d) != 0)
 			FEreader_error("~S is an illegal CHAR-FONT.", in, 1, d);
 			/*  assuming that CHAR-FONT-LIMIT is 1  */
 	ecl_bds_bind(env, @'*readtable*', cl_core.standard_readtable);
-	token = ecl_read_object_with_delimiter(in, EOF, 1, cat_single_escape);
+	token = ecl_read_object_with_delimiter(in, EOF, ECL_READ_ONLY_TOKEN,
+                                               cat_single_escape);
 	ecl_bds_unwind1(env);
 	if (token == Cnil) {
 		c = Cnil;
@@ -832,7 +868,6 @@ sharp_backslash_reader(cl_object in, cl_object c, cl_object d)
 		}
 		c = nc;
 	}
- OUTPUT:
 	si_put_buffer_string(token);
 	@(return c)
 }
@@ -1149,9 +1184,6 @@ sharp_O_reader(cl_object in, cl_object c, cl_object d)
 static cl_object
 sharp_X_reader(cl_object in, cl_object c, cl_object d)
 {
-	cl_index i;
-	cl_object x;
-
 	if(d != Cnil && !read_suppress)
 		extra_argument('X', in, d);
 	@(return (read_number(in, 16, CODE_CHAR('X'))))
@@ -1958,7 +1990,7 @@ ecl_invalid_character_p(int c)
 
 @(defun get_macro_character (c &optional readtable)
 	enum ecl_chattrib cat;
-	cl_object dispatch, non_terminating_p;
+	cl_object dispatch;
 @
 	if (Null(readtable))
 		readtable = cl_core.standard_readtable;
@@ -1972,7 +2004,7 @@ ecl_invalid_character_p(int c)
 	&optional non_terminating_p (readtable ecl_current_readtable()))
 	enum ecl_chattrib cat;
 	cl_object table;
-	int i, c;
+	int c;
 @
 	assert_type_readtable(readtable);
 	c = ecl_char_code(chr);
@@ -2071,8 +2103,8 @@ extra_argument(int c, cl_object stream, cl_object d)
 }
 
 
-#define	make_cf2(f)	cl_make_cfun((f), Cnil, NULL, 2)
-#define	make_cf3(f)	cl_make_cfun((f), Cnil, NULL, 3)
+#define	make_cf2(f)	ecl_make_cfun((f), Cnil, NULL, 2)
+#define	make_cf3(f)	ecl_make_cfun((f), Cnil, NULL, 3)
 
 void
 init_read(void)
@@ -2219,6 +2251,7 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 		block->cblock.links = Cnil;
 		block->cblock.cfuns_size = 0;
 		block->cblock.cfuns = NULL;
+                block->cblock.source = Cnil;
 		si_set_finalizer(block, Ct);
 	}
 	block->cblock.entry = entry_point;
@@ -2284,10 +2317,18 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 			cl_index fname_location = fix(prototype->block);
 			cl_object fname = VV[fname_location];
 			cl_index location = fix(prototype->name);
+                        cl_object source = prototype->file;
+                        cl_object position = prototype->file_position;
 			int narg = prototype->narg;
 			VV[location] = narg<0?
-				cl_make_cfun_va(prototype->entry, fname, block) :
-				cl_make_cfun(prototype->entry, fname, block, narg);
+				ecl_make_cfun_va(prototype->entry, fname, block) :
+				ecl_make_cfun(prototype->entry, fname, block, narg);
+                        /* Add source file info */
+                        if (position != MAKE_FIXNUM(-1)) {
+                                ecl_set_function_source_file_info(VV[location],
+                                                                  block->cblock.source,
+                                                                  position);
+                        }
 		}
 		/* Execute top-level code */
 		(*entry_point)(MAKE_FIXNUM(0));
