@@ -124,6 +124,9 @@ install: build-arch
 	   xargs -0 chrpath -d
 	chrpath -d $(CURDIR)/debian/ecl/usr/lib/ecl/ecl-original
 
+	cp debian/overrides.ecl $(TARGET)/usr/share/lintian/overrides/ecl
+
+
 # Build architecture-independent files here.
 binary-indep: build-indep
 	dh_testdir -i
