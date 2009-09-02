@@ -178,6 +178,7 @@ struct ecl_fficall {
 };
 
 extern enum ecl_ffi_tag ecl_foreign_type_code(cl_object type);
+#ifdef ECL_DYNAMIC_FFI
 extern enum ecl_ffi_calling_convention ecl_foreign_cc_code(cl_object cc_type);
 extern void ecl_fficall_prepare(cl_object return_type, cl_object arg_types, cl_object cc_type);
 extern void ecl_fficall_push_bytes(void *data, size_t bytes);
@@ -189,6 +190,7 @@ extern void ecl_fficall_push_arg(union ecl_ffi_values *data, enum ecl_ffi_tag ty
 extern void ecl_fficall_execute(void *f_ptr, struct ecl_fficall *fficall, enum ecl_ffi_tag return_type);
 extern void ecl_dynamic_callback_call(cl_object callback_info, char* buffer);
 extern void* ecl_dynamic_callback_make(cl_object data, enum ecl_ffi_calling_convention cc_type);
+#endif
 
 /* file.d */
 
@@ -270,9 +272,6 @@ extern void cl_write_object(cl_object x, cl_object stream);
 #  define pthread_mutex_unlock(x) (ReleaseMutex(*(HANDLE*)(x)) == 0)
 # else
 #  include <pthread.h>
-#  if defined(__APPLE__) || defined(freebsd)
-#   define PTHREAD_MUTEX_ERROR_CHECK_NP PTHREAD_MUTEX_ERROR_CHECK_NP
-#  endif
 # endif
 # define HASH_TABLE_LOCK(h) if ((h)->hash.lockable) if (pthread_mutex_lock(&(h)->hash.lock)) ecl_internal_error("")
 # define PACKAGE_LOCK(p) if (pthread_mutex_lock(&(p)->pack.lock)) ecl_internal_error("")
@@ -349,6 +348,8 @@ typedef int fenv_t;
 #define ECL_PI_L 3.14159265358979323846264338327950288l
 #define ECL_PI2_D 1.57079632679489661923132169163975144
 #define ECL_PI2_L 1.57079632679489661923132169163975144l
+
+void ecl_deliver_fpe(void);
 
 /*
  * Fake several ISO C99 mathematical functions

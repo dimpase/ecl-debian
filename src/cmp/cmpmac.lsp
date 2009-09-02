@@ -33,7 +33,7 @@
   `(if ,condition (cmperr ,string ,@args)))
 
 (defmacro cmpassert (condition string &rest args)
-  `(unless ,condition (error ,string ,@args)))
+  `(unless ,condition (cmperr ,string ,@args)))
 
 ;;; from cmpwt.lsp
 (defmacro wt (&rest forms &aux (fl nil))
@@ -78,6 +78,7 @@
   (name nil)
   (parent nil)
   (args '())
+  (form nil)
   (file nil)
   (file-position 0))
 
@@ -89,6 +90,7 @@
 			      :type (info-type subform)
 			      :sp-change (info-sp-change subform)
 			      :volatile (info-volatile subform)
+                              :form *current-form*
                               :file *compile-file-truename*
                               :file-position *compile-file-position*)))
     (c1form-add-info form args)
@@ -109,6 +111,9 @@
 	       (setf info-args (list* key (second l) info-args)
 		     l (cdr l))))))
     (let ((form (apply #'do-make-c1form :name name :args form-args
+                       :form *current-form*
+                       :file *compile-file-truename*
+                       :file-position *compile-file-position*
 		       info-args)))
       (c1form-add-info form form-args)
       form)))
@@ -135,17 +140,7 @@
   (if (c1form-volatile form) "volatile " ""))
 
 (defun c1form-primary-type (form)
-  (let ((type (c1form-type form)))
-    (when (and (consp type) (eq (first type) 'VALUES))
-      (let ((subtype (second type)))
-	(when (or (eq subtype '&optional)	(eq subtype '&rest))
-	  (setf subtype (third (c1form-type form)))
-	  (when (eq subtype '&optional)
-	    (cmperr "Syntax error in type expression ~S" type)))
-	(when (eq subtype '&rest)
-	  (cmperr "Syntax error in type expression ~S" type))
-	(setf type subtype)))
-    type))
+  (values-type-primary-type (c1form-type form)))
 
 (defun find-node-in-list (home-node list)
   (flet ((parent-node-p (node presumed-child)

@@ -1,132 +1,141 @@
-ECL 9.6:
-========
-
-* MOP:
-
- - CALL-METHOD has only one required argument. Affects only calls to this
-   macro inside nonstandard method combinations.
-
-* Visible changes:
-
- - Physical pathnames do not always have a namestring from which they can be
-   reconstructed. This is the case of directory pathnames with version numbers,
-   for instance. Formerly ECL would refuse to print those pathnames if
-   *PRINT-READABLY* was true, but now it uses instead a #. form.
-    > (write (make-pathname :directory '(:relative)
-                            :name nil :type nil :version :newest)
-             :readably t))
-    #.(MAKE-PATHNAME :HOST NIL :DEVICE NIL :DIRECTORY '(:RELATIVE) :NAME NIL
-                     :TYPE NIL :VERSION :NEWEST :DEFAULTS NIL)
-
- - WITH-CSTRING automatically coerces extended strings to base strings,
-   signalling an error when this is not possible.
-
- - New command line arguments, --heap-size, --lisp-stack, --frame-stack and
-   --c-stack control the different memory limits.
-
- - The stack size is now measured in bytes, not in lisp words.
-
- - The out of memory error (ext:storage-exhausted) can now be recovered.
-   By default a correctable error is signaled and the user is given the
-   chance to increase the heap size.
-
-* Function names:
-
- - Added a new section in external.h for defining compatibility macros
-   for functions that changed name.
-
- - make_longfloat() is renamed ecl_make_longfloat().
-
- - Some functions got new names: ecl_make_cfun, ecl_make_cfun_va,
-   ecl_make_cclosure_va, ecl_def_c_function, ecl_def_c_function_va.
-
-* Numerics:
-
- - A new configuration flag --with-ieee-fp adds support for NaN's, infinities
-   and signed zeros, disabling certain floating point exceptions by default.
-   In addition, when this is set, functions like LOG or ATAN will not
-   signal errors when their arguments are not valid, but rather return NaN's
-   (LOG 0) => -infinity, (ATAN 0.0 0.0) => NaN
-
- - A new command line option --trap-fpe / --no-trap-fpe tells whether ECL
-   should ignore floating point exceptions and produce NaNs and infinities
-   or either use the condition system to produce the associated errors.
-
- - Two new functions, EXT:FLOAT-NAN-P and EXT:FLOAT-INFINITY-P.
-
- - Eight new constants for the eight possible infinities
-   EXT:{SHORT,SINGLE,DOUBLE,LONG}-FLOAT-{POSITIVE,NEGATIVE}-INFINITY
-
-* Interrupt handling:
-
- - Under Mac OS/X, ECL now uses its own modified version of the Boehm-Weiser
-   garbage collector that allows both --enable-gengc and our optimized
-   code for signal handling.
-
- - New condition EXT:SEGMENTATION-VIOLATION signaled by SIGSEGV and SIGBUS
-   events.
-
- - Added support for the floating point exception FE_INVALID, which is
-   signalled when trying to do 0/0 or sqrt(-1) (A. Gavrilov)
-
- - SI:TRAP-FPE always returns an integer denoting the new active / inactive
-   floating point traps. In particular, (SI:TRAP-FPE 'LAST T) returns the
-   currently active traps. This value can be passed to SI:TRAP-FPE as first
-   argument again. This is useful for performing a computation without traps
-	(let* (( (si::trap-fpe 'last nil)))
-	  (prog1 (/ 0.0 0.0) (si::trap-fpe bits t)))
-
- - A new configurable option ECL_OPT_THREAD_INTERRUPT_SIGNAL determines
-   which Unix interrupt type is used to communicate between threads.
-
-* Debugger:
-
- - Compiled functions now carry information about their source file
-   (based on patches by Jean-Claude Beaudoin)
-
- - The compiler can now generate some Lisp constants as static C expressions
-   (based on patches by JCB)
-
- - The debugger is now fit for multithreaded environments (JCB)
-
- - Compiled functions with DEBUG=3 now produce information about their
-   arguments and variables, that can be inspected in the debugger
-   (evolved from patches by JCB).
-
- - ECL records the file position of a compiled form / function instead of
-   the form number in that file.
+ECL 9.8.4:
+==========
 
 * Bugs fixed:
 
- - Remove an obsolete #if statement for Solaris that broke current builds
-   with Solaris 10.
+ - si_{set,get}_finalizer were not exported from ecl.dll and thus the library
+   TRIVIAL-GARBAGE failed to build in Windows
 
- - The mechanism for checking the existence of [u]int{16,32,64}_t or other
-   replacement types was not used for [u]int8_t.
+ - The MSVC port did not define @ECL_LDRPATH@ and failed to build ecl.dll
 
- - When COMPILE-FILE is invoked with a non-nil value of :OUTPUT-FILE, ECL
-   now honors the file type supplied by the user, instead of overriding it
-   with "fas" or "fasl". The same applies to COMPILE-FILE-PATHNAME.
+ - The sequence functions did not understand the newest specialized array types.
 
- - When building ECL's C preprocessor (dpp), the value of CPPFLAGS was
-   not used.
+* Visible changes:
 
- - A wrong order in the list of libraries (-lpthread -lgc) prevented ECL
-   from having multithread support in FreeBSD, OpenBSD and NetBSD.
+ - The configuration flag --with-__thread now defaults to NO because many
+   platforms do not support it and GCC does not complain, making reliable
+   detection impossible.
 
- - Removed a shell command from src/Makefile.in The command used braces {}
-   which FreeBSD does not understand.
+ - For further compatibility with SBCL, ECL now supports two additional
+   buffer types :FULL and :LINE which are compatible with :FULLY-BUFFERED
+   and :LINE-BUFFERED (Thanks to Matthew Mondor)
 
- - Changed the way in which threads are created and registered with ECL to
-   avoid certain race conditions and data loss when it takes a long time
-   betwee calls to mp:make-proceess and mp:process-enable
+ - The sockets library can now be loaded using either (REQUIRE 'SOCKETS)
+   or (REQUIRE 'SB-BSD-SOCKETS).
 
- - ecl_import_current_thread() now properly stores the thread handle in
-   the process object and can be called multiple times for the same thread.
+ECL 9.8.3:
+==========
 
- - When performing unoptimized function calls, the interpreter did not save
-   actual value of the lexical environment, thus preventing the debugger from
-   inspecting it (fixed by JCB).
+* Bugs fixed:
+
+ - FLOAT-SIGN ignored the second argument.
+
+ECL 9.8.2:
+==========
+
+* Bugs fixed:
+
+ - The C inline expansion for sin, cos, and tan were wrong due to three
+   recently introduced typos.
+
+ - The C inline form of SQRT did not work when ECL was built with
+   --enable-longdouble.
+
+ - When building FASL files, the output file name was not surrounded by
+   double quotes, thus breaking when the file name had spaces (only
+   mingw32).
+
+* Visible changes:
+
+ - A new configuration flag, --enable-rpath, allows hardcoding in ECL the
+   location of its shared library. This is not needed in Windows, it should
+   work on all supported platforms and its purpose is to simplify the
+   installation of ECL in nonstandard locations.
+
+
+ECL 9.8.1:
+==========
+
+* Important notes:
+
+ - The GMP library had to be patched to build with latest versions of GCC.
+   Since our patch only covers the main header and there might be some corners
+   left, it is recommended to build ECL against a better maintained version of
+   the library, such as MPIR or the versions supplied by your operating system.
+
+ - ECL now builds properly on a large number of platforms, including Windows
+   with and without Microsoft compilers. However, not always are all the
+   configuration options available or well supported. The fault is not always
+   ECL's, but also the libraries it depends on. Some of these problems are
+   detailed below, some are to be found. As a guide, the minimally supported
+   flags for each platform are those use for the automated testing process
+       http://ecls.sourceforge.net/logs.html
+
+* Ports:
+
+ - The Windows/MSVC port now boots also when built without support for Unicode.
+
+ - The Windows/mingw32 port builds without threads. For multithreading, the
+   user will have to build version 7.2-alpha2 of the garbage collector
+   manually and build ECL with it.
+
+ - The NetBSD port builds with default values using the garbage collector
+   in the pkgsrc distribution.
+
+ - The Solaris port (Intel and Sparc) now builds with the given libraries (GMP
+   and Boehm).
+
+* Compiler:
+
+ - The compiler now understands FFI types :[u]int{8,16,32,64}-t.
+
+ - The FFI code emitted to convert from a lisp type to :uint or :unsigned-int
+   rejected bignum inputs, even if they were in the range from 0 to UINT_MAX.
+   Similar problem with :int
+
+* Visible changes:
+
+ - New functions ecl_make_[u]int(), ecl_make_[u]long(), ecl_to_[u]int(),
+   ecl_to_[u]long(), ecl_to_bool(), ecl_make_bool(), convert between C types
+   and cl_object.
+
+ - The C structures ecl_array, ecl_vector, ecl_base_string and ecl_string have
+   changed. Instead of using bitfields for hasfillp and adjustable we now
+   use a single integer field, and handle the bits manually. See the
+   new macros ECL_ADJUSTABLE_ARRAY_P and ECL_ARRAY_HAS_FILL_POINTER_P.
+
+ - Four new command-line arguments, --encoding, --input-encoding,
+   --output-encoding and --error-encoding, allow the user to change the 
+   external formats of the default streams.
+
+ - For places defined with the simple form of DEFSETF, SETF now produces
+   a simpler expansion, without a surrounding LET* form.
+
+ - The dynamic FFI is now implemented using libffi. This extends the portability
+   and removes the previous, error prone implementation.
+
+ - A new function, (SI:SAFE-EVAL form env &optional error-value), can be used
+   to evaluate lisp forms in a safe way. If supplied three values, when an
+   error happens, it returns ERROR-VALUE; otherwise it will invoke a debugger.
+
+ - Two new functions, ecl_read_from_cstring(s) and
+   ecl_read_from_cstring_safe(s,v) read an object from a C string (char *). The
+   first one is unsafe and will enter a debugger when there is a syntax
+   error. The second one will return V when an error happens.
+
+ - Modules which are loaded with REQUIRE, but which belong to ECL, are now
+   registered with ASDF and can be used in dependencies.
+
+* Bugs fixed:
+
+ - SI:GET-LIBRARY-PATHNAME did not work properly in Windows.
+
+ - STEP did not work properly because the bytecompiler introduced an extra
+   opcode after STEPCALL.
+
+ - --enable-slow-config works again.
+
+ - EXT:CHDIR got broken when using Unicode.
 
 ;;; Local Variables: ***
 ;;; mode:text ***

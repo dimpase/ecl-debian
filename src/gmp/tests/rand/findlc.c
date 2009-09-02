@@ -30,7 +30,7 @@ MA 02110-1301, USA.
 #define RCSID(msg) \
 static /**/const char *const rcsid[] = { (char *)rcsid, "\100(#)" msg }
 
-RCSID("$Id: findlc.c,v 1.5 2007/01/20 12:29:23 jgarcia Exp $");
+RCSID("$Id$");
 
 int g_debug = 0;
 

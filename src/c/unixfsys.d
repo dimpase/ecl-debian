@@ -260,14 +260,26 @@ cl_truename(cl_object orig_pathname)
 									Cnil, Cnil, Cnil));
 #endif
 		} else {
-			filename = OBJNULL;
+                        /* If the pathname is a directory but we have supplied
+                           a file name, correct the type by appending a directory
+                           separator and re-parsing again the namestring */
+                        if (kind == @':directory' &&
+                            (pathname->pathname.name != Cnil ||
+                             pathname->pathname.type != Cnil)) {
+                                pathname = si_base_string_concatenate
+                                        (2, filename,
+                                         make_constant_base_string("/"));
+                                pathname = cl_pathname(pathname);
+                                goto BEGIN;
+                        }
+                        filename = OBJNULL;
 		}
 		change_drive(pathname);
 		for (dir = pathname->pathname.directory;
 		     !Null(dir);
 		     dir = CDR(dir))
 		{
-			cl_object part = CAR(dir);
+			volatile cl_object part = CAR(dir);
 			if (type_of(part) == t_base_string) {
 				if (safe_chdir((char*)part->base_string.self) < 0) {
 ERROR:					FElibc_error("Can't change the current directory to ~S",
@@ -293,7 +305,23 @@ ERROR:					FElibc_error("Can't change the current directory to ~S",
 			goto BEGIN;
 		}
 #endif
-		pathname = ecl_merge_pathnames(si_getcwd(0), pathname, @':newest');
+                {
+                        /* ECL does not contemplate version numbers
+                           in directory pathnames */
+                        cl_object version = @':newest';
+                        if (pathname->pathname.name == Cnil &&
+                            pathname->pathname.type == Cnil) {
+                                version = Cnil;
+                                /* We have to destructively change the
+                                 * pathname version here. Otherwise
+                                 * merge_pathnames will not do it. It is
+                                 * safe because coerce_to_file_pathname
+                                 * created a copy. */
+                                pathname->pathname.version = version;
+                        }
+                        pathname = ecl_merge_pathnames(si_getcwd(0), pathname,
+                                                       version);
+                }
 	} CL_UNWIND_PROTECT_EXIT {
 		safe_chdir((char*)previous->base_string.self);
 	} CL_UNWIND_PROTECT_END;
@@ -877,14 +905,23 @@ dir_recursive(cl_object pathname, cl_object directory)
 cl_object
 si_get_library_pathname(void)
 {
-	const char *v = getenv("ECLDIR");
-	if (v) return make_constant_base_string(v);
+        cl_object s = cl_core.library_pathname;
+        if (!Null(s)) {
+                goto OUTPUT_UNCHANGED;
+        } else {
+                const char *v = getenv("ECLDIR");
+                if (v) {
+                        s = make_constant_base_string(v);
+                        goto OUTPUT;
+                }
+        }
 #if defined(_MSC_VER) || defined(mingw32)
 	{
-	cl_object s = cl_alloc_adjustable_base_string(cl_core.path_max);
-	char *buffer = (char*)s->base_string.self;
+        char *buffer;
 	HMODULE hnd;
 	cl_index len, ep;
+        s = cl_alloc_adjustable_base_string(cl_core.path_max);
+        buffer = (char*)s->base_string.self;
 	ecl_disable_interrupts();
 	hnd = GetModuleHandle("ecl.dll");
 	len = GetModuleFileName(hnd, buffer, cl_core.path_max-1);
@@ -894,11 +931,29 @@ si_get_library_pathname(void)
 			1, MAKE_FIXNUM(GetLastError()));
 	}
 	s->base_string.fillp = len;
-	return ecl_parse_namestring(s, 0, len, &ep, Cnil);
+	printf("%s\n", s->base_string.self);
+        /* GetModuleFileName returns a file name. We have to strip
+         * the directory component. */
+        s = cl_make_pathname(8, @':name', Cnil, @':type', Cnil,
+			     @':version', Cnil,
+                             @':defaults', s);
+        s = ecl_namestring(s, ECL_NAMESTRING_FORCE_BASE_STRING);
 	}
 #else
-	return make_constant_base_string(ECLDIR "/");
+        s = make_constant_base_string(ECLDIR "/");
 #endif
+ OUTPUT:
+        {
+                cl_object true_pathname = cl_probe_file(s);
+                if (Null(true_pathname)) {
+                        ecl_internal_error("Cannot find ECL's directory");
+                }
+                /* Produce a string */
+                s = ecl_namestring(s, ECL_NAMESTRING_FORCE_BASE_STRING);
+        }
+        cl_core.library_pathname = s;
+ OUTPUT_UNCHANGED:
+        @(return s);
 }
 
 @(defun ext::chdir (directory &optional (change_d_p_d Ct))
@@ -910,7 +965,9 @@ si_get_library_pathname(void)
 	if (directory->pathname.name != Cnil ||
 	    directory->pathname.type != Cnil)
 		FEerror("~A is not a directory pathname.", 1, directory);
-	namestring = cl_namestring(directory);
+	namestring = ecl_namestring(directory,
+                                    ECL_NAMESTRING_TRUNCATE_IF_ERROR |
+                                    ECL_NAMESTRING_FORCE_BASE_STRING);
 	if (safe_chdir((char*)namestring->base_string.self) <0)
 		FElibc_error("Can't change the current directory to ~A",
 			     1, namestring);
@@ -962,7 +1019,7 @@ si_mkstemp(cl_object template)
 	                       @':name', Cnil,
 	                       @':version', Cnil,
 	                       @':defaults', phys);
-	dir = cl_namestring(dir);
+	dir = si_coerce_to_filename(dir);
 	file = cl_file_namestring(phys);
 	
 	l = dir->base_string.fillp;

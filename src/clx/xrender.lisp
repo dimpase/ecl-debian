@@ -3,7 +3,7 @@
 ;;;     Title: The X Render Extension
 ;;;   Created: 2002-08-03
 ;;;    Author: Gilbert Baumann <unk6@rz.uni-karlsruhe.de>
-;;;       $Id: xrender.lisp,v 1.20 2009/04/03 17:43:02 jjgarcia Exp $
+;;;       $Id: xrender.lisp,v 1.5 2004/12/06 11:48:57 csr21 Exp $
 ;;; ---------------------------------------------------------------------------
 ;;;
 ;;; (c) copyright 2002, 2003 by Gilbert Baumann

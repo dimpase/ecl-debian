@@ -183,7 +183,7 @@ AC_SUBST(SOFTWARE_TYPE)dnl	Type of operating system
 AC_SUBST(SOFTWARE_VERSION)dnl	Version number of operating system
 AC_SUBST(MACHINE_VERSION)dnl	Version of the machine
 
-AC_SUBST(LDRPATH)dnl	Sometimes the path for finding DLLs must be hardcoded.
+AC_SUBST(ECL_LDRPATH)dnl	Sometimes the path for finding DLLs must be hardcoded.
 AC_SUBST(LIBPREFIX)dnl	Name components of a statically linked library
 AC_SUBST(LIBEXT)
 AC_SUBST(SHAREDEXT)dnl	Name components of a dynamically linked library
@@ -192,7 +192,7 @@ AC_SUBST(OBJEXT)dnl	These are set by autoconf
 AC_SUBST(EXEEXT)
 AC_SUBST(INSTALL_TARGET)dnl Which type of installation: flat directory or unix like.
 AC_SUBST(thehost)
-LDRPATH='~*'
+ECL_LDRPATH=''
 SHAREDEXT='so'
 SHAREDPREFIX='lib'
 LIBPREFIX='lib'
@@ -214,7 +214,7 @@ case "${host_os}" in
 		THREAD_LIBS='-lpthread'
 		SHARED_LDFLAGS="-shared ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
-		LDRPATH='-Wl,--rpath,~A'
+		ECL_LDRPATH='-Wl,--rpath,~A'
 		clibs="-ldl"
 		# Maybe CFLAGS="-D_ISOC99_SOURCE ${CFLAGS}" ???
 		CFLAGS="-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 ${CFLAGS}"
@@ -227,7 +227,7 @@ case "${host_os}" in
 		THREAD_LIBS='-lpthread'
 		SHARED_LDFLAGS="-shared ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
-		LDRPATH='-Wl,--rpath,~A'
+		ECL_LDRPATH='-Wl,--rpath,~A'
 		clibs="-ldl"
 		CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
 		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
@@ -239,7 +239,7 @@ case "${host_os}" in
 		THREAD_LIBS='-lpthread'
 		SHARED_LDFLAGS="-shared ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
-		LDRPATH='-Wl,--rpath,~A'
+		ECL_LDRPATH='-Wl,--rpath,~A'
 		clibs="-ldl"
 		CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
 		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
@@ -250,7 +250,7 @@ case "${host_os}" in
 		THREAD_LIBS='-lpthread'
 		SHARED_LDFLAGS="-shared ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
-		LDRPATH="-Wl,--rpath,~A"
+		ECL_LDRPATH="-Wl,--rpath,~A"
 		clibs=""
 		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
 		SONAME_LDFLAGS="-Wl,-soname,SONAME"
@@ -260,7 +260,7 @@ case "${host_os}" in
 		THREAD_LIBS='-lpthread'
 		SHARED_LDFLAGS="-shared ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
-		LDRPATH="-Wl,--rpath,~A"
+		ECL_LDRPATH="-Wl,--rpath,~A"
 		clibs=""
 		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
 		SONAME_LDFLAGS="-Wl,-soname,SONAME"
@@ -268,11 +268,11 @@ case "${host_os}" in
 	openbsd*)
 		thehost='openbsd'
 		THREAD_CFLAGS=''
-		THREAD_LIBS='-lpthread'
+		THREAD_LIBS=''
 		SHARED_LDFLAGS="-shared ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
-		LDRPATH="-Wl,--rpath,~A"
-		clibs=""
+		ECL_LDRPATH="-Wl,--rpath,~A"
+		clibs="-lpthread -lm"
 		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
 		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
@@ -280,9 +280,10 @@ case "${host_os}" in
 		thehost='sun4sol2'
 		SHARED_LDFLAGS="-dy -G ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-dy -G ${LDFLAGS}"
-		LDRPATH='-Wl,-R,~A'
+		ECL_LDRPATH='-Wl,-R,~A'
 		TCPLIBS='-lsocket -lnsl -lintl'
 		clibs='-ldl'
+		CFLAGS="${CFLAGS} -std=gnu99"
 		;;
 	cygwin*)
 		thehost='cygwin'
@@ -316,7 +317,7 @@ case "${host_os}" in
 		PICFLAG='-fPIC -fno-common'
 		SHARED_LDFLAGS="-dynamiclib -flat_namespace -undefined suppress ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-bundle ${LDFLAGS}"
-		LDRPATH=''
+		ECL_LDRPATH=''
 		THREAD_CFLAGS='-D_THREAD_SAFE'
 		THREAD_LIBS='-lpthread'
 		# The GMP library has not yet been ported to Intel-OSX
@@ -341,7 +342,7 @@ case "${host_os}" in
 		THREAD_CFLAGS='-spthread'
 		SHARED_LDFLAGS="-shared ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
-		LDRPATH='-Wld=\"-rld_l ~A\"'
+		ECL_LDRPATH='-Wld=\"-rld_l ~A\"'
 		clibs="-Wld=-lrld"
 		;;
 	*)
@@ -605,6 +606,8 @@ AC_SUBST(CL_FIXNUM_TYPE)
 AC_SUBST(CL_FIXNUM_BITS)
 AC_SUBST(CL_FIXNUM_MAX)
 AC_SUBST(CL_FIXNUM_MIN)
+AC_SUBST(CL_INT_BITS)
+AC_SUBST(CL_LONG_BITS)
 AC_MSG_CHECKING(appropiate type for fixnums)
 if test -z "${CL_FIXNUM_TYPE}" ; then
   AC_RUN_IFELSE([AC_LANG_SOURCE([[#include <stdio.h>
@@ -641,10 +644,25 @@ int main() {
     fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
     fprintf(f,"CL_FIXNUM_MAX='%ld';",-l);
 #endif
-  } else
+  } else {
     exit(1);
+  }
   fprintf(f,"CL_FIXNUM_TYPE='%s';",int_type);
-  fprintf(f,"CL_FIXNUM_BITS='%d'",bits);
+  fprintf(f,"CL_FIXNUM_BITS='%d';",bits);
+  {
+    unsigned int x = 1;
+    for (bits = 0; x; bits++) {
+      x <<= 1;
+    }
+    fprintf(f,"CL_INT_BITS='%d';",bits);
+  }
+  {
+    unsigned long x = 1;
+    for (bits = 0; x; bits++) {
+      x <<= 1;
+    }
+    fprintf(f,"CL_LONG_BITS='%d'",bits);
+  }
   exit(0);
 }]])],[eval "`cat conftestval`"],[],[])
 fi
@@ -724,12 +742,12 @@ AC_MSG_CHECKING([Using the GMP library to guess good compiler/linker flags])
  ${aux}/configure --srcdir=${aux} --prefix=${builddir} >/dev/null 2>&1)
 GMP_CFLAGS=`grep '^s,@CFLAGS@' tmp/config.status| sed 's&s,@CFLAGS@,\(.*\),;t t&\1&'`
 GMP_LDFLAGS=`grep '^s,@GMP_LDFLAGS@' tmp/config.status| sed 's&s,@GMP_LDFLAGS@,\(.*\),;t t&\1&'`;
-rm -rf tmp
 # Notice that GMP_LDFLAGS is designed to be passed to libtool, and therefore
 # some options could be prefixed by -Wc, which means "flag for the compiler".
-LDFLAGS=`grep '^s,@LDFLAGS@' config.status| sed 's&s,@LDFLAGS@,\(.*\),;t t&\1&'`;
-LDFLAGS=`echo ${LDFLAGS} ${GMP_LDFLAGS} | sed 's%-Wc,%%'`
-CFLAGS="${CFLAGS} ${GMP_CFLAGS}"
+LDFLAGS=`echo ${LDFLAGS} ${GMP_LDFLAGS} | sed 's%-Wc,%%g'`
+CFLAGS=`echo ${CFLAGS} ${GMP_CFLAGS} | sed 's%-Wc,%%g'`
+GMP_CFLAGS=""
+GMP_LDFLAGS=""
 #host=`grep '^s,@host@' config.status | sed 's&s,@host@,\(.*\),;t t&\1&'`
 AC_MSG_CHECKING([C/C++ compiler flags])
 AC_MSG_RESULT([${CFLAGS}])

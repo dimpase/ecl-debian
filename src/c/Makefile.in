@@ -9,7 +9,8 @@ VPATH	= @srcdir@
 #
 TRUE_CC = @CC@
 CC	= @CC@
-CFLAGS	= -c -DECL_API -I. -I@true_builddir@ -I$(srcdir) -I../ecl/gc @CPPFLAGS@ @CFLAGS@ @ECL_CFLAGS@ \
+CFLAGS	= -I. -I@true_builddir@ -I$(srcdir) -I../ecl/gc -DECL_API \
+	  @CPPFLAGS@ @CFLAGS@ @ECL_CFLAGS@ -c \
 #	  -Wall -W -Wfloat-equal -Wundef -Wendif-labels -Wpointer-arith -Wcast-align \
 #	  -Wwrite-strings -Wconversion -Wsign-compare -Wmissing-prototypes -Wredundant-decls \
 #	  -Wunreachable-code -Winline
@@ -50,23 +51,32 @@ OBJS	= main.o symbol.o package.o list.o\
 	structure.o load.o unixfsys.o unixsys.o \
 	ffi.o @EXTRA_OBJS@
 
-.SUFFIXES: .c .o .d
+.SUFFIXES: .c .o .d .s
 .PHONY: all
 
 all:	$(DPP) ../libeclmin.a ../cinit.o
 
+.d.c: $(DPP)
+	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< $@ ; else $(DPP) $< $@ ; fi
 .c.s: $(HFILES)
 	$(CC) -DECLDIR="\"@ecldir@\"" $(CFLAGS) -S -o $@ $<
 .c.o: $(HFILES)
 	$(CC) -DECLDIR="\"@ecldir@\"" $(CFLAGS) -o $@ $<
-.d.c: $(DPP)
-	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< $@ ; else $(DPP) $< $@ ; fi
-apply_x86.c: arch/apply_x86.d $(DPP) $(HFILES)
-	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< $@ ; else $(DPP) $< $@ ; fi
-ffi_x86.c: arch/ffi_x86.d $(DPP) $(HFILES)
-	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< $@ ; else $(DPP) $< $@ ; fi
-ffi_x86_64.c: arch/ffi_x86_64.d $(DPP) $(HFILES)
-	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< $@ ; else $(DPP) $< $@ ; fi
+apply_x86.c: $(srcdir)/arch/apply_x86.d $(DPP) $(HFILES)
+	if test -f ../CROSS-DPP ; then \
+	  ../CROSS-DPP $(srcdir)/arch/apply_x86.d $@ ; \
+	else $(DPP) $(srcdir)/arch/apply_x86.d  $@ ; \
+	fi
+ffi_x86.c: $(srcdir)/arch/ffi_x86.d $(DPP) $(HFILES)
+	if test -f ../CROSS-DPP ; then \
+	  ../CROSS-DPP $(srcdir)/arch/ffi_x86.d $@ ; \
+	else $(DPP) $(srcdir)/arch/ffi_x86.d  $@ ; \
+	fi
+ffi_x86_64.c: $(srcdir)/arch/ffi_x86_64.d $(DPP) $(HFILES)
+	if test -f ../CROSS-DPP ; then \
+	  ../CROSS-DPP $(srcdir)/arch/ffi_x86_64.d $@ ; \
+	else $(DPP) $(srcdir)/arch/ffi_x86_64.d  $@ ; \
+	fi
 
 ../libeclmin.a: $(OBJS) all_symbols.o all_symbols2.o
 	$(RM) $@
@@ -80,7 +90,7 @@ clean:
 
 $(DPP): $(srcdir)/dpp.c $(srcdir)/symbols_list2.h
 	if test -f ../CROSS-DPP; then touch dpp; else \
-	$(TRUE_CC) @CPPFLAGS@ @CFLAGS@ @ECL_CFLAGS@ -I$(srcdir) -I@true_builddir@ -I./ $(srcdir)/dpp.c  -o $@ ; \
+	$(TRUE_CC) -I$(srcdir) -I@true_builddir@ -I./ $(srcdir)/dpp.c @CPPFLAGS@ @CFLAGS@ @ECL_CFLAGS@ -o $@ ; \
 	fi
 $(srcdir)/symbols_list2.h: $(srcdir)/symbols_list.h Makefile
 	cat $(srcdir)/symbols_list.h | \
@@ -93,8 +103,6 @@ $(srcdir)/symbols_list2.h: $(srcdir)/symbols_list.h Makefile
 #
 gbc.o: gbc.c $(HFILES)
 	$(CC) $(CFLAGS) -O0 gbc.c -o $@
-ffi_x86.o: ffi_x86.c $(HFILES)
-	$(CC) $(CFLAGS) -O0 ffi_x86.c -o $@
 #
 # This reduces the overhead of jumping to other functions
 #

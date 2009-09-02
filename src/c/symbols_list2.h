@@ -1101,6 +1101,7 @@ cl_symbols[] = {
 {SYS_ "FILE-COLUMN","si_file_column"},
 {SYS_ "FILE-KIND","si_file_kind"},
 {SYS_ "FILL-POINTER-SET","si_fill_pointer_set"},
+{SYS_ "FILE-STREAM-FD","si_file_stream_fd"},
 {SYS_ "FIXNUMP","si_fixnump"},
 {SYS_ "FORMAT-ERROR",NULL},
 #ifdef ECL_CMU_FORMAT
@@ -1185,7 +1186,7 @@ cl_symbols[] = {
 {SYS_ "STANDARD-READTABLE","si_standard_readtable"},
 {SYS_ "STEPPER","OBJNULL"},
 {SYS_ "BASE-STRING-CONCATENATE","si_base_string_concatenate"},
-{SYS_ "STRING-TO-OBJECT","si_string_to_object"},
+{SYS_ "STRING-TO-OBJECT","ECL_NAME(si_string_to_object)"},
 {SYS_ "STRUCTURE-NAME","si_structure_name"},
 {SYS_ "STRUCTURE-PRINT-FUNCTION",NULL},
 {SYS_ "STRUCTURE-REF","si_structure_ref"},
@@ -1616,7 +1617,7 @@ cl_symbols[] = {
 
 {SYS_ "*CODE-WALKER*",NULL},
 
-#ifdef ECL_DYNAMIC_FFI
+#if defined(HAVE_LIBFFI) || defined(ECL_DYNAMIC_FFI)
 {SYS_ "CALL-CFUN","si_call_cfun"},
 {KEY_ "CALLBACK",NULL},
 {SYS_ "MAKE-DYNAMIC-CALLBACK","si_make_dynamic_callback"},
@@ -1629,8 +1630,11 @@ cl_symbols[] = {
 {SYS_ "*ACTION-ON-UNDEFINED-VARIABLE*",NULL},
 
 {SYS_ "SET-BUFFERING-MODE","si_set_buffering_mode"},
+{KEY_ "NONE",NULL},
 {KEY_ "LINE-BUFFERED",NULL},
 {KEY_ "FULLY-BUFFERED",NULL},
+{KEY_ "LINE",NULL},
+{KEY_ "FULL",NULL},
 
 {SYS_ "CMP-ENV-REGISTER-MACROLET",NULL},
 
@@ -1784,6 +1788,20 @@ cl_symbols[] = {
 {EXT_ "FLOAT-INFINITY-P","si_float_infinity_p"},
 
 {SYS_ "READ-OBJECT-OR-IGNORE","si_read_object_or_ignore"},
+
+{EXT_ "OUTPUT-FLOAT-NAN",NULL},
+{EXT_ "OUTPUT-FLOAT-INFINITY",NULL},
+
+{EXT_ "READTABLE-LOCK","si_readtable_lock"},
+
+{SYS_ "+IO-SYNTAX-PROGV-LIST+",NULL},
+{SYS_ "+ECL-SYNTAX-PROGV-LIST+",NULL},
+{SYS_ "WITH-ECL-IO-SYNTAX",NULL},
+
+{SYS_ "STREAM-EXTERNAL-FORMAT-SET","si_stream_external_format_set"},
+
+{KEY_ "SYSV",NULL},
+{KEY_ "UNIX64",NULL},
 
 /* Tag for end of list */
 {NULL,NULL}};

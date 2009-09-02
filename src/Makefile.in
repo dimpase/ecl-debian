@@ -153,7 +153,11 @@ install-base:
 	done
 	for i in $(LSP_LIBRARIES) $(LIBRARIES); do \
 	  if test -s $$i ; then \
-	   $(INSTALL_LIBRARY) $$i $(DESTDIR)$(libdir); \
+	   if echo $$i | grep dll; then \
+	    $(INSTALL_LIBRARY) $$i $(DESTDIR)$(bindir); \
+	   else \
+	    $(INSTALL_LIBRARY) $$i $(DESTDIR)$(libdir); \
+	   fi \
 	  fi \
 	done
 	if [ "x@SONAME@" != "x" -a -f "@SONAME@" ]; then \
@@ -163,6 +167,7 @@ install-base:
 	    $(LN_S) @SONAME3@ @SONAME1@ && \
 	    $(LN_S) @SONAME3@ @SONAME@ ) \
 	fi
+	-for i in *.asd; do $(INSTALL_DATA) $${i} $(DESTDIR)$(ecldir); done
 	for i in c/dpp$(EXE) ecl_min$(EXE) `cat MODULES`; do \
 	  case $$i in \
 	    *.fas) $(INSTALL_PROGRAM) $$i $(DESTDIR)$(ecldir);; \
@@ -185,11 +190,13 @@ uninstall:
 doc: $(TARGETS)
 	cd doc; $(MAKE)
 
-clean: clean_lisp
+clean: mostlyclean
+	$(RM) -r *
+mostlyclean: clean_lisp
 	for i in $(SUBDIRS); do (cd $$i; $(MAKE) clean); done
 	$(RM) ecl_min$(EXE) bin/ecl$(EXE) help.doc core a.out
 	$(RM) config.version config.log config.cache
-	$(RM) *.c *.o *.a *.h *.data *.fas
+	$(RM) *.c *.o *.a *.h *.data *.fas *.dat *.la *.so *.dylib
 clean_lisp:
 	for i in lsp cmp clos clx tk ext; do $(RM) lib$$i.a $$i/?*.{o,data,c,sdat,h,fas}; done
 	$(RM) help.doc

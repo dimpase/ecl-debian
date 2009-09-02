@@ -110,7 +110,11 @@
                            ))))))
 
 (defun c2expr (form)
-  (let* ((name (c1form-name form))
+  (let* ((*file* (c1form-file form))
+         (*file-position* (c1form-file form))
+         (*current-form* (c1form-form form))
+         (*current-c2form* form)
+         (name (c1form-name form))
          (args (c1form-args form))
          (dispatch (get-sysprop name 'C2)))
     (if (or (eq name 'LET) (eq name 'LET*))
@@ -151,7 +155,6 @@
       ;; Since PROGN does not have tags, any transfer of control means
       ;; leaving the current PROGN statement.
       (when (or (eq name 'GO) (eq name 'RETURN-FROM))
-	(cmpnote "Eliminating unreachable code")
 	(return)))))
 
 (defun c1args* (forms)

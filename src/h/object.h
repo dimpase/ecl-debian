@@ -117,6 +117,9 @@ typedef cl_object (*cl_objectfn_fixed)();
 #define IMMEDIATE(o)		((cl_fixnum)(o) & 3)
 #define IMMEDIATE_TAG		3
 
+#define ecl_to_bool(x) ((x)!=Cnil)
+#define ecl_make_bool(x) ((x)? Ct : Cnil)
+
 /* Immediate fixnums:		*/
 #define FIXNUM_TAG		t_fixnum
 #define MAKE_FIXNUM(n)		((cl_object)(((cl_fixnum)(n) << 2) | FIXNUM_TAG))
@@ -144,28 +147,26 @@ typedef cl_object (*cl_objectfn_fixed)();
 #define ECL_NUMBER_TYPE_P(t)	(t >= t_fixnum && t <= t_complex)
 #define REAL_TYPE(t)		(t >= t_fixnum && t < t_complex)
 #define ARRAY_TYPE(t)		(t >= t_array && t <= t_bitvector)
-#define ARRAYP(x)		((IMMEDIATE(x) == 0) && (x)->d.t >= t_array && (x)->d.t <= t_bitvector)
-#define VECTORP(x)		((IMMEDIATE(x) == 0) && (x)->d.t >= t_vector && (x)->d.t <= t_bitvector)
+#define ECL_ARRAYP(x)		((IMMEDIATE(x) == 0) && (x)->d.t >= t_array && (x)->d.t <= t_bitvector)
+#define ECL_VECTORP(x)		((IMMEDIATE(x) == 0) && (x)->d.t >= t_vector && (x)->d.t <= t_bitvector)
 
 #define HEADER			int8_t t, m, padding[2]
 #define HEADER1(field)		int8_t t, m, field, padding
 #define HEADER2(field1,field2)	int8_t t, m, field1, field2
-#define HEADER3(field1,flag2,flag3) int8_t t, m, field1; unsigned flag2:4, flag3:4
-#define HEADER4(field1,flag2,flag3,flag4) int8_t t, m, field1; unsigned flag2:4, flag3:2, flag4:2
 
 struct ecl_singlefloat {
 	HEADER;
 	float SFVAL;	/*  singlefloat value  */
 };
 #define	sf(obje)	(obje)->SF.SFVAL
-#define ecl_single_float(o) ((o)->singlefloat.value)
+#define ecl_single_float(o) ((o)->SF.value)
 
 struct ecl_doublefloat {
 	HEADER;
 	double DFVAL;	/*  doublefloat value  */
 };
 #define	df(obje)	(obje)->DF.DFVAL
-#define ecl_double_float(o) ((o)->doublefloat.value)
+#define ecl_double_float(o) ((o)->DF.value)
 
 #ifdef ECL_LONG_FLOAT
 struct ecl_long_float {
@@ -229,9 +230,11 @@ enum ecl_stype {		/*  symbol type  */
 #define ECL_UNBOUND		((cl_object)(cl_symbols+2))
 #define ECL_PROTECT_TAG		((cl_object)(cl_symbols+3))
 
+#define ECL_FLAG_MACRO        1
+#define ECLF_LAG_SPECIAL_VAR  4
+
 struct ecl_symbol {
-	HEADER4(stype, mflag, isform, dynamic);
-				/*  symbol type and whether it names a macro */
+	HEADER2(stype, dynamic);/*  symbol type, special-variable-p */
 	cl_object value;	/*  global value of the symbol  */
 				/*  Coincides with cons.car  */
 	cl_object gfdef;	/*  global function definition  */
@@ -409,36 +412,40 @@ union ecl_array_data {
 	byte          *bit;
 };
 
+#define ECL_FLAG_HAS_FILL_POINTER 1
+#define ECL_FLAG_ADJUSTABLE       2
+#define ECL_ADJUSTABLE_ARRAY_P(x) ((x)->array.flags & ECL_FLAG_ADJUSTABLE)
+#define ECL_ARRAY_HAS_FILL_POINTER_P(x) ((x)->array.flags & ECL_FLAG_HAS_FILL_POINTER)
+
 struct ecl_array {		/*  array header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
-	HEADER2(adjustable,rank);
+	HEADER2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
 	cl_object displaced;	/*  displaced  */
 	cl_index dim;		/*  dimension  */
 	cl_index *dims;		/*  table of dimensions  */
 	union ecl_array_data self;	/*  pointer to the array  */
-	byte	elttype;	/*  element type  */
 	byte	offset;		/*  bitvector offset  */
+        byte    rank;		/*  rank of array = # of dimensions  */
 };
 
 struct ecl_vector {		/*  vector header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
-	HEADER2(adjustable,hasfillp);
+	HEADER2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
 	cl_object displaced;	/*  displaced  */
 	cl_index dim;		/*  dimension  */
 	cl_index fillp;		/*  fill pointer  */
 				/*  For simple vectors,  */
 				/*  v_fillp is equal to v_dim.  */
 	union ecl_array_data self;	/*  pointer to the vector  */
-	byte	elttype;	/*  element type  */
 	byte	offset;
 };
 
 struct ecl_base_string {	/*  string header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
-	HEADER2(adjustable,hasfillp);
+	HEADER2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
 	cl_object displaced;	/*  displaced  */
 	cl_index dim;       	/*  dimension  */
 				/*  string length  */
@@ -452,7 +459,7 @@ struct ecl_base_string {	/*  string header  */
 struct ecl_string {		/*  string header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
-	HEADER2(adjustable,hasfillp);
+	HEADER2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
 	cl_object displaced;	/*  displaced  */
 	cl_index dim;       	/*  dimension  */
 				/*  string length  */
@@ -626,7 +633,7 @@ enum ecl_readtable_case {
 };
 
 struct ecl_readtable {		/*  read table  */
-	HEADER;
+	HEADER1(locked);
 	enum ecl_readtable_case read_case; /*  readtable-case  */
 	struct ecl_readtable_entry *table; /*  read table itself  */
 #ifdef ECL_UNICODE

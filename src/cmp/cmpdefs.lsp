@@ -230,6 +230,7 @@
   )
 
 (defstruct (inline-info)
+  name			;;; Function name
   arg-rep-types		;;; List of representation types for the arguments
   return-rep-type	;;; Representation type for the output
   arg-types		;;; List of lisp types for the arguments
@@ -264,6 +265,7 @@
 ;;; Variables and constants for error handling
 ;;;
 (defvar *current-form* '|compiler preprocess|)
+(defvar *current-c2form* nil)
 (defvar *compile-file-position* -1)
 (defvar *first-error* t)
 (defconstant *cmperr-tag* (cons nil nil))
@@ -283,13 +285,13 @@ each form it processes. The default value is NIL.")
   "This variable controls whether the compiler should display messages about its
 progress. The default value is T.")
 
-(defvar *suppress-compiler-messages* nil
+(defvar *suppress-compiler-messages* 'compiler-debug-note
   "A type denoting which compiler messages and conditions are _not_ displayed.")
 
 (defvar *suppress-compiler-notes* nil) ; Deprecated
 (defvar *suppress-compiler-warnings* nil) ; Deprecated
 
-(defvar *compiler-break-enable* t)
+(defvar *compiler-break-enable* nil)
 
 (defvar *compiler-in-use* nil)
 (defvar *compiler-input*)
@@ -450,11 +452,11 @@ coprocessor).")
 (defvar *cc-optimize* #-msvc "-O"
                       #+msvc "@CFLAGS_OPTIMIZE@")
 
-(defvar *ld-format* #-msvc "~A -o ~S -L~S ~{~S ~} ~@?"
-                    #+msvc "~A -Fe~S~* ~{~S ~} ~@?")
+(defvar *ld-format* #-msvc "~A -o ~S -L~S ~{~S ~} ~@[~S~] ~A"
+                    #+msvc "~A -Fe~S~* ~{~S ~} ~@[~S~] ~A")
 
-(defvar *cc-format* #-msvc "~A ~A ~:[~*~;~A~] \"-I~A\" -w -c \"~A\" -o \"~A\""
-                    #+msvc "~A ~A ~:[~*~;~A~] -I\"~A\" -w -c \"~A\" -Fo\"~A\"")
+(defvar *cc-format* #-msvc "~A \"-I~A\" ~A ~:[~*~;~A~] -w -c \"~A\" -o \"~A\""
+                    #+msvc "~A -I\"~A\" ~A ~:[~*~;~A~] -w -c \"~A\" -Fo\"~A\"")
 
 #-dlopen
 (defvar *ld-flags* "@LDFLAGS@ -lecl @CORE_LIBS@ @FASL_LIBS@ @LIBS@")
@@ -480,12 +482,20 @@ coprocessor).")
 (defvar *ecl-include-directory* @includedir\@)
 (defvar *ecl-library-directory* @libdir\@)
 
+(defvar *ld-rpath*
+  (let ((x "@ECL_LDRPATH@"))
+    (and (plusp (length x))
+         (format nil x *ecl-library-directory*))))
+
 ;;;
 ;;; Compiler program and flags.
 ;;;
 
 ;;; --cmptop.lsp--
 ;;;
+(defvar *do-type-propagation* nil
+  "Flag for switching on the type propagation phase. Use with care, experimental.")
+
 (defvar *compiler-phase* nil)
 
 (defvar *volatile*)

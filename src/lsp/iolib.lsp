@@ -76,6 +76,11 @@ object's representation."
         (values (read stream eof-error-p eof-value)
                 (file-position stream)))))
 
+(defun si::string-to-object (string &optional (err-value nil err-value-p))
+  (if err-value-p
+      (si::safe-eval `(read-from-string ,string) nil err-value)
+      (si::safe-eval `(read-from-string ,string) nil)))
+
 (defun write-to-string (object &rest rest
                         &aux (stream (make-string-output-stream)))
   "Args: (object &key (escape *print-escape*) (radix *print-radix*)
@@ -233,30 +238,20 @@ is not given, ends the recording."
 
 (defmacro with-standard-io-syntax (&body body)
   "Syntax: ({forms}*)
-The forms of the body are executed in a print environment that corresponds to
+The forms of the body are executed in a print envirtoponment that corresponds to
 the one defined in the ANSI standard. *print-base* is 10, *print-array* is t,
 *package* is \"CL-USER\", etc."
-  `(let*((*package* (find-package :cl-user))
-	 (*print-array* t)
-	 (*print-base* 10)
-	 (*print-case* :upcase)
-	 (*print-circle* nil)
-	 (*print-escape* t)
-	 (*print-gensym* t)
-	 (*print-length* nil)
-	 (*print-level* nil)
-	 (*print-lines* nil)
-	 (*print-miser-width* nil)
-	 (*print-pretty* nil)
-	 (*print-radix* nil)
-	 (*print-readably* t)
-	 (*print-right-margin* nil)
-	 (*read-base* 10)
-	 (*read-default-float-format* 'single-float)
-	 (*read-eval* t)
-	 (*read-suppress* nil)
-	 (*readtable* (copy-readtable (si::standard-readtable))))
-    ,@body))
+  `(progv (car +io-syntax-progv-list+)
+       (cdr +io-syntax-progv-list+)
+     ,@body))
+
+(defmacro with-ecl-io-syntax (&body body)
+  "Syntax: ({forms}*)
+The forms of the body are executed in a print envirtoponment that corresponds to
+the one used internally by ECL compiled files."
+  `(progv (car +ecl-syntax-progv-list+)
+       (cdr +ecl-syntax-progv-list+)
+     ,@body))
 
 #-formatter
 (defmacro formatter (control-string)
