@@ -1,8 +1,9 @@
 ecl (9.8.4-1) unstable; urgency=low
 
   * New upstream with major changes.
+  * enable threading again
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 02 Sep 2009 07:56:34 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 02 Sep 2009 07:57:13 +0100
 
 ecl (9.6.1-1) unstable; urgency=low
 
