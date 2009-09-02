@@ -23,27 +23,34 @@
    (form :initarg :form :initform *current-form* :accessor compiler-message-form))
   (:REPORT
    (lambda (c stream)
-     (let ((position (compiler-message-file-position c)))
-       (if position
-	   (let ((*print-length* 3)
-		 (*print-level* 2))
+     (let ((position (compiler-message-file-position c))
+           (prefix (compiler-message-prefix c))
+           (file (compiler-message-file c))
+           (form (compiler-message-form c)))
+       (if (and position
+                (not (minusp position))
+                (not (equalp form '|compiler preprocess|)))
+	   (let* ((*print-length* 3)
+                  (*print-level* 2))
+             (unless 
 	     (format stream "~A: in file ~A, position ~D, and form ~%  ~A~%"
-		     (compiler-message-prefix c)
-		     (compiler-message-file c) position (compiler-message-form c)))
-	   (format stream "~A: " (compiler-message-prefix c)))
+		     prefix file position form)))
+	   (format stream "~A: " prefix))
        (format stream "~?"
 	       (simple-condition-format-control c)
 	       (simple-condition-format-arguments c))))))
 
 (define-condition compiler-note (compiler-message) ())
 
+(define-condition compiler-debug-note (compiler-note) ())
+
 (define-condition compiler-warning (compiler-message simple-condition style-warning)
   ((prefix :initform "Warning")))
 
-(define-condition compiler-error (compiler-message simple-error)
+(define-condition compiler-error (compiler-message)
   ((prefix :initform "Error")))
 
-(define-condition compiler-fatal-error (compiler-error) ())
+(define-condition compiler-fatal-error (compiler-message) ())
 
 (define-condition compiler-internal-error (compiler-fatal-error)
   ((prefix :initform "Internal error")))
@@ -59,21 +66,38 @@
   (unless (typep c *suppress-compiler-messages*)
     (format stream "~&~@<;;; ~@;~A~:>" c)))
 
-(defun handle-note (c)
+;;; A few notes about the following handlers. We want the user to be
+;;; able to capture, collect and perhaps abort on the different
+;;; conditions signaled by the compiler. Since the compiler uses
+;;; HANDLER-BIND, the only way to let this happen is either let the
+;;; handler return or use SIGNAL at the beginning of the handler and
+;;; let the outer handler intercept.
+;;;
+;;; In neither case do we want to enter the the debugger. That means
+;;; we can not derive the compiler conditions from SERIOUS-CONDITION.
+;;;
+(defun handle-compiler-note (c)
   nil)
 
-(defun handle-warning/error (c)
+(defun handle-compiler-warning (c)
   (push c *compiler-conditions*)
   nil)
 
-(defun handle-internal-error (c)
-  (si::default-debugger c)
-  (unless (typep c 'compiler-error)
-    (signal 'compiler-internal-error
-	    :format-control "~A"
-	    :format-arguments (list c))
-    (print-compiler-message c t)
-    (abort)))
+(defun handle-compiler-error (c)
+  (signal c)
+  (push c *compiler-conditions*)
+  (print-compiler-message c t)
+  (abort))
+
+(defun handle-compiler-internal-error (c)
+  (when *compiler-break-enable*
+    (si::default-debugger c))
+  (setf c (make-condition 'compiler-internal-error
+                          :format-control "~A"
+                          :format-arguments (list c)))
+  (signal c)
+  (print-compiler-message c t)
+  (abort))
 
 (defun do-compilation-unit (closure &key override)
   (cond (override
@@ -100,14 +124,15 @@
   `(let ((*compiler-conditions* nil))
      (declare (special *compiler-conditions*))
      (restart-case
-	 (handler-bind ((compiler-note #'handle-note)
-			(warning #'handle-warning/error)
-			(compiler-error #'handle-warning/error))
-	   (handler-bind ((error #'handle-internal-error))
-             (with-lock (+load-compile-lock+)
-	        (let ,+init-env-form+
-                  (with-compilation-unit ()
-                     ,@body)))))
+	 (handler-bind ((compiler-note #'handle-compiler-note)
+			(warning #'handle-compiler-warning)
+			(compiler-error #'handle-compiler-error)
+                        (compiler-internal-error #'handle-compiler-internal-error)
+                        (serious-condition #'handle-compiler-internal-error))
+           (with-lock (+load-compile-lock+)
+             (let ,+init-env-form+
+               (with-compilation-unit ()
+                 ,@body))))
        (abort ()))
      (setf ,compiler-conditions *compiler-conditions*)))
 
@@ -177,6 +202,9 @@
 (defun cmpnote (string &rest args)
   (do-cmpwarn 'compiler-note :format-control string :format-arguments args))
 
+(defun cmpdebug (string &rest args)
+  (do-cmpwarn 'compiler-debug-note :format-control string :format-arguments args))
+
 (defun print-current-form ()
   (when *compile-print*
     (let ((*print-length* 2)
@@ -211,23 +239,34 @@
        (when throw-flag ,error-form))))
 
 (defun cmp-eval (form)
-  (with-cmp-protection (eval form)
-    (cmperr "The form ~s was not evaluated successfully.~
-~&You are recommended to compile again."
-	    form)))
+  (handler-case (eval form)
+    (serious-condition (c)
+      (when *compiler-break-enable*
+        (invoke-debugger c))
+      (cmperr "The form ~s was not evaluated successfully.~%Error detected:~%~A"
+              form c)
+      nil)))
 
 (defun cmp-macroexpand (form &optional (env *cmp-env*))
-  (with-cmp-protection (macroexpand form env)
-    (cmperr "The macro form ~S was not expanded successfully.~
-~%You are recommended to compile again." form)))
+  (handler-case (macroexpand form env)
+    (serious-condition (c)
+      (when *compiler-break-enable*
+        (invoke-debugger c))
+      (cmperr "The macro form ~s was not expanded successfully.~%Error detected:~%~A"
+              form c)
+      nil)))
   
 (defun cmp-expand-macro (fd form &optional (env *cmp-env*))
-  (with-cmp-protection
-    (let ((new-form (funcall *macroexpand-hook* fd form env)))
-      (values new-form (not (eql new-form form))))
-    (cmperr "The macro form ~S was not expanded successfully.~
-~%You are recommended to compile again." form)))
-
+  (handler-case
+      (let ((new-form (funcall *macroexpand-hook* fd form env)))
+        (values new-form (not (eql new-form form))))
+    (serious-condition (c)
+      (when *compiler-break-enable*
+        (invoke-debugger c))
+      (cmperr "The macro form ~s was not expanded successfully.~%Error detected:~%~A"
+              form c)
+      (values nil nil))))
+  
 (defun si::compiler-clear-compiler-properties (symbol)
   #-:CCL
   ;(sys::unlink-symbol symbol)

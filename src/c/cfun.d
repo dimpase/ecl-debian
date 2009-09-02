@@ -132,9 +132,7 @@ cl_function_lambda_expression(cl_object fun)
 	case t_bytecodes:
 		name = fun->bytecodes.name;
 		output = fun->bytecodes.definition;
-		if (!CONSP(output))
-		    output = Cnil;
-		else if (name == Cnil)
+		if (name == Cnil)
 		    output = cl_cons(@'lambda', output);
 		else if (name != @'si::bytecodes')
 		    output = @list*(3, @'ext::lambda-block', name, output);

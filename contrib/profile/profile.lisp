@@ -40,8 +40,10 @@
 extern ECL_API size_t GC_get_total_bytes();
 ")
 
-(defconstant +wrap+ (ffi:c-inline () () :object "ecl_make_unsigned_integer(~((size_t)0))"
-			     :one-liner t))
+(let () ; This prevents compile-time evaluation of the following
+  (defconstant +wrap+ (ffi:c-inline () () :object
+				    "ecl_make_unsigned_integer(~((size_t)0))"
+				    :one-liner t)))
 
 (defun get-bytes-consed (orig)
   (let ((bytes (ffi:c-inline () () :object "ecl_make_unsigned_integer(GC_get_total_bytes())"
@@ -230,7 +232,7 @@ extern ECL_API size_t GC_get_total_bytes();
        (legal-fun-name-or-type-error name)
        ;; Then we map onto it.
        (funcall function name))
-      (string (let ((package (find-undeleted-package-or-lose name)))
+      (string (let ((package (find-package name)))
                 (do-symbols (symbol package)
                   (when (eq (symbol-package symbol) package)
                     (when (and (fboundp symbol)

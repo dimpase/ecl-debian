@@ -15,6 +15,7 @@
     See file '../Copyright' for full details.
 */
 
+#define _XOPEN_SOURCE 600	/* For pthread mutex attributes */
 #include <ecl/ecl.h>
 #include <ecl/internal.h>
 #include <ecl/ecl-inl.h>
@@ -179,7 +180,7 @@ ecl_make_package(cl_object name, cl_object nicknames, cl_object use_list)
 	{
 	pthread_mutexattr_t attr;
 	pthread_mutexattr_init(&attr);
-	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK_NP);
+	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
 	pthread_mutex_init(&x->pack.lock, &attr);
 	pthread_mutexattr_destroy(&attr);
 	}

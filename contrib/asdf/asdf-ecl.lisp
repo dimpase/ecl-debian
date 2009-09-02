@@ -11,6 +11,7 @@
 ;;;
 
 (in-package :asdf)
+(require 'cmp)
 
 ;;;
 ;;; COMPILE-OP / LOAD-OP
@@ -63,7 +64,7 @@
   ((type :initform :dll)))
 
 (defclass monolithic-bundle-op (bundle-op)
-  ((monlithic :initform t)))
+  ((monolithic :initform t)))
 
 (defclass monolithic-fasl-op (fasl-op monolithic-bundle-op) ())
 
@@ -74,7 +75,8 @@
   ((type :initform :dll)))
 
 (defclass program-op (monolithic-bundle-op)
-  ((type :initform :program)))
+  ((type :initform :program)
+   (epilogue-code-arg :accessor program-op-epilogue-code-arg)))
 
 (defmethod initialize-instance :after ((instance bundle-op) &rest initargs
 				       &key (name-suffix nil name-suffix-p)
@@ -82,6 +84,10 @@
   (unless name-suffix-p
     (setf (slot-value instance 'name-suffix)
 	  (if (bundle-op-monolithic-p instance) "-mono" "")))
+  (when (typep instance 'program-op)
+    (destructuring-bind (&rest original-initargs &key epilogue-code &allow-other-keys) (slot-value instance 'original-initargs)
+      (setf (slot-value instance 'original-initargs) (remove-keys '(epilogue-code) original-initargs)
+            (program-op-epilogue-code-arg instance) epilogue-code)))
   (setf (bundle-op-build-args instance)
 	(remove-keys '(type monolithic name-suffix)
 		     (slot-value instance 'original-initargs))))
@@ -184,7 +190,10 @@
 	 (output (output-files o c)))
     (ensure-directories-exist (first output))
     (apply #'c::builder (bundle-op-type o) (first output) :lisp-files object-files
-	   (bundle-op-build-args o))))
+	   (append (bundle-op-build-args o)
+                   (when (and (typep o 'program-op)
+                              (program-op-epilogue-code-arg o))
+                     `(:epilogue-code ,(program-op-epilogue-code-arg o)))))))
 
 (defun select-operation (monolithic type)
   (ecase type
@@ -211,21 +220,71 @@
 
 (defclass load-fasl-op (operation) ())
 
+(defun trivial-system-p (c)
+  (every #'(lambda (c) (typep c 'ecl-binary-file)) (module-components c)))
+
 (defmethod component-depends-on ((o load-fasl-op) (c system))
-  (subst 'load-fasl-op 'load-op
-	 (subst 'fasl-op 'compile-op
-		(component-depends-on (make-instance 'load-op) c))))
+  (unless (trivial-system-p c)
+    (subst 'load-fasl-op 'load-op
+           (subst 'fasl-op 'compile-op
+                  (component-depends-on (make-instance 'load-op) c)))))
 
 (defmethod input-files ((o load-fasl-op) (c system))
-  (output-files (make-instance 'fasl-op) c))
+  (unless (trivial-system-p c)
+    (output-files (make-instance 'fasl-op) c)))
 
 (defmethod perform ((o load-fasl-op) (c t))
   nil)
 
 (defmethod perform ((o load-fasl-op) (c system))
-  (load (first (input-files o c)))
-  (loop for i in (module-components c)
-     do (setf (gethash 'load-op (component-operation-times i)) (get-universal-time))))
+  (let ((l (input-files o c)))
+    (and l
+         (load (first l))
+         (loop for i in (module-components c)
+            do (setf (gethash 'load-op (component-operation-times i))
+                     (get-universal-time))))))
 
 (export '(make-build load-fasl-op))
 (push '("fasb" . si::load-binary) si::*load-hooks*)
+
+;; Hook into ECL's require/provide
+(require 'cmp)
+(defvar *require-asdf-operator* 'load-op)
+
+(defun module-provide-asdf (name)
+  (handler-bind ((style-warning #'muffle-warning))
+    (let* ((*verbose-out* (make-broadcast-stream))
+           (system (asdf:find-system name nil)))
+      (when system
+        (asdf:operate *require-asdf-operator* name)
+        t))))
+
+(defclass ecl-binary-file (component) ())
+(defmethod component-pathname ((c ecl-binary-file))
+  (merge-pathnames (compile-file-pathname (string (component-name c)))
+                   "sys:"))
+(defmethod output-files (o (c ecl-binary-file))
+  nil)
+(defmethod input-files (o (c ecl-binary-file))
+  nil)
+(defmethod perform ((o load-op) (c ecl-binary-file))
+  (load (component-pathname c)))
+(defmethod perform ((o load-fasl-op) (c ecl-binary-file))
+  (load (component-pathname c)))
+(defmethod perform (o (c ecl-binary-file))
+  nil)
+
+(defun register-pre-built-system (name)
+  (register-system name (make-instance 'system :name name)))
+
+(setf si::*module-provider-functions*
+      (loop for f in si::*module-provider-functions*
+         unless (eq f 'module-provide-asdf)
+         collect #'(lambda (name)
+                     (let ((l (multiple-value-list (funcall f name))))
+                       (and (first l) (register-pre-built-system name))
+                       (values-list l)))))
+#+win32 (push '("asd" . si::load-source) si::*load-hooks*)
+(pushnew 'module-provide-asdf ext:*module-provider-functions*)
+
+(provide 'asdf)

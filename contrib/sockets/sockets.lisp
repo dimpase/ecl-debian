@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: sockets.lisp,v 1.46 2009/03/30 12:41:11 jjgarcia Exp $
+;; $Id$
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.
@@ -88,14 +88,14 @@
   (wsock-initialize)
 ); #+:wsock
 
-(eval-when (:compile-toplevel :load-toplevel)
+(eval-when (:compile-toplevel :execute)
+  (defmacro c-constant (c-name)
+    `(c-inline () () :int ,c-name :one-liner t))
   (defmacro define-c-constants (&rest args)
-    `(progn
+    `(let () ; Prevents evaluation of constant value form
        ,@(loop
 	    for (lisp-name c-name) on args by #'cddr
-	    collect `(defconstant ,lisp-name (c-inline () () :int ,c-name :one-liner t)))))
-  (defmacro c-constant (name)
-    `(c-inline () () :int ,name :one-liner t)))
+	    collect `(defconstant ,lisp-name (c-constant ,c-name))))))
 
 #+:wsock
 (Clines
@@ -158,7 +158,7 @@ containing the whole rest of the given `string', if any."
 (defmethod host-ent-address ((host-ent host-ent))
   (car (host-ent-addresses host-ent)))
 
-;; FIXME: Do we need to free the hostent structures?
+;; FIXME: We should move this to using getaddrinfo
 (defun get-host-by-name (host-name)
   "Returns a HOST-ENT instance for HOST-NAME or throws some kind of condition.
 HOST-NAME may also be an IP address in dotted quad notation or some other
@@ -1173,29 +1173,29 @@ also known as unix-domain sockets."))
 	    "si_set_buffering_mode(ecl_make_stream_from_fd(#0,#1,(enum ecl_smmode)#2,8,ECL_STREAM_DEFAULT_FORMAT,Cnil), #3)"
 	    :one-liner t))
 
-(defmethod socket-make-stream ((socket socket)  &rest args &key (buffering-mode NIL))
+(defmethod socket-make-stream ((socket socket)  &rest args &key (buffering nil))
   (declare (ignore args))
   (let ((stream (and (slot-boundp socket 'stream)
 		     (slot-value socket 'stream))))
     (unless stream
       (setf stream (let ((fd (socket-file-descriptor socket)))
 		     (make-stream-from-fd fd #-:wsock :input-output #+:wsock :input-output-wsock
-					  buffering-mode)))
+					  buffering)))
       (setf (slot-value socket 'stream) stream)
       #+ ignore
       (sb-ext:cancel-finalization socket))
     stream))
 
 #+:wsock
-(defmethod socket-make-stream ((socket named-pipe-socket) &rest args &key (buffering-mode NIL))
+(defmethod socket-make-stream ((socket named-pipe-socket) &rest args &key (buffering nil))
   (declare (ignore args))
   (let ((stream (and (slot-boundp socket 'stream)
 		     (slot-value socket 'stream))))
     (unless stream
       (setf stream
 	    (let* ((fd (socket-file-descriptor socket))
-		   (in (make-stream-from-fd fd :smm-input buffering-mode))
-		   (out (make-stream-from-fd fd :smm-output buffering-mode)))
+		   (in (make-stream-from-fd fd :smm-input buffering))
+		   (out (make-stream-from-fd fd :smm-output buffering)))
 	      (make-two-way-stream in out)))
       (setf (slot-value socket 'stream) stream)
       #+ ignore
@@ -1253,7 +1253,7 @@ also known as unix-domain sockets."))
   (:documentation "Common base class of socket related conditions."))
 
 (defmacro define-socket-condition (symbol name)
-  `(progn
+  `(let () ; Prevents evaluation of constant value at compilation time
      (defconstant ,symbol (c-constant ,(symbol-name symbol)))
      (define-condition ,name (socket-error)
        ((symbol :reader socket-error-symbol :initform (quote ,symbol))))
@@ -1335,7 +1335,7 @@ GET-NAME-SERVICE-ERRNO")
 		       (get-name-service-error-message num))))))
 
 (defmacro define-name-service-condition (symbol name)
-  `(progn
+  `(let ()
      (defconstant ,symbol (c-constant ,(symbol-name symbol)))
      (define-condition ,name (name-service-error)
        ((symbol :reader name-service-error-symbol :initform (quote ,symbol))))
@@ -1519,3 +1519,4 @@ GET-NAME-SERVICE-ERRNO")
 
 ;; Finished loading
 (provide 'sockets)
+(provide 'sb-bsd-sockets)

@@ -1,5 +1,5 @@
-Announcement of ECL v8.12.0
-===========================
+Announcement of ECL v9.8.4
+==========================
 
 ECL stands for Embeddable Common-Lisp. The ECL project aims to produce an
 implementation of the Common-Lisp language which complies to the ANSI X3J13
@@ -19,25 +19,12 @@ ECL is currently hosted at Common-Lisp.net and SourceForge. The home page of
 the project is http://ecls.sourceforge.net, and in it you will find source code
 releases, a CVS tree and some useful documentation.
 
-
-Notes for this release
-======================
-
-This release is the last one before a major redesign of ECL, which will affect
-issues like Unicode streams and handling of interrupts.
-
-This is also the first one to follow the new numbering scheme, inspired by that
-of Ubuntu. The release number follows the scheme year.month.[0-9], where the
-last digit marks the patch release. The numbering is now incorporated in the
-library names, so that different versions of ECL may coexit on the same system.
-
-
-Changes since 0.9l
-==================
+Changes since last release
+==========================
 
 See file src/CHANGELOG or browse it online
 
-http://common-lisp.net/cgi-bin/viewcvs.cgi/ecl/src/CHANGELOG?root=ecl&view=markup
+http://ecls.cvs.sourceforge.net/viewvc/ecls/ecl/src/CHANGELOG?view=markup
 
 ;;; Local Variables: ***
 ;;; mode:text ***

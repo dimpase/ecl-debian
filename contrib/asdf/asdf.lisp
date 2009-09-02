@@ -1,4 +1,4 @@
-;;; This is asdf: Another System Definition Facility.  $Revision: 1.11 $
+;;; This is asdf: Another System Definition Facility.  $Revision$
 ;;;
 ;;; Feedback, bug reports, and patches are all welcome: please mail to
 ;;; <cclan-list@lists.sf.net>.  But note first that the canonical
@@ -116,7 +116,7 @@
 
 (in-package #:asdf)
 
-(defvar *asdf-revision* (let* ((v "$Revision: 1.11 $")
+(defvar *asdf-revision* (let* ((v "$Revision$")
                                (colon (or (position #\: v) -1))
                                (dot (position #\. v)))
                           (and v colon dot
@@ -362,6 +362,7 @@ and NIL NAME and TYPE components"
 
 (defvar *central-registry*
   '(*default-pathname-defaults*
+    "sys:"
     #+nil "/home/dan/src/sourceforge/cclan/asdf/systems/"
     #+nil "telent:asdf;systems;"))
 
@@ -1339,7 +1340,7 @@ output to *VERBOSE-OUT*.  Returns the shell's exit code."
              (system (asdf:find-system name nil)))
         (when system
           (asdf:operate 'asdf:load-op name)
-          t))))
+          (provide name)))))
 
   (defun contrib-sysdef-search (system)
     (let ((home (sb-ext:posix-getenv "SBCL_HOME")))
@@ -1368,20 +1369,3 @@ output to *VERBOSE-OUT*.  Returns the shell's exit code."
 
   (pushnew 'module-provide-asdf sb-ext:*module-provider-functions*)
   (pushnew 'contrib-sysdef-search *system-definition-search-functions*))
-
-;; Hook into ECL's require/provide
-#+ecl
-(progn
-  (require 'cmp)
-  (defvar *require-asdf-operator* 'load-op)
-  (defun module-provide-asdf (name)
-    (handler-bind ((style-warning #'muffle-warning))
-      (let* ((*verbose-out* (make-broadcast-stream))
-	     (system (asdf:find-system name nil)))
-	(when system
-	  (asdf:operate *require-asdf-operator* name)
-	  t))))
-  #+win32 (push '("asd" . si::load-source) si::*load-hooks*)
-  (pushnew 'module-provide-asdf ext:*module-provider-functions*))
-
-(provide 'asdf)

@@ -10,8 +10,8 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 9.6.1
-ECL_VERSION_NUMBER= 90601
+ECL_VERSION       = 9.8.4
+ECL_VERSION_NUMBER= 90804
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
@@ -90,7 +90,7 @@ GCFLAGS = nodebug=1
 !endif
 
 CFLAGS  = /EHsc /DGC_DLL /DGC_BUILD /nologo /D_CRT_SECURE_NO_DEPRECATE $(CFLAGS_CONFIG)
-LDFLAGS	= /link /nologo /verbose:lib /nodefaultlib:libcmt /nodefaultlib:libcmtd /nodefaultlib:libc /nodefaultlib:libcd $(LDFLAGS_CONFIG)
+LDFLAGS	= /link /nologo /nodefaultlib:libcmt /nodefaultlib:libcmtd /nodefaultlib:libc /nodefaultlib:libcd $(LDFLAGS_CONFIG)
 
 
 # Additional configuration for thread support
@@ -107,6 +107,7 @@ DEF        = ecl-threads.def
 #
 !if "$(ECL_UNICODE)" != ""
 CFLAGS     = $(CFLAGS) /DECL_UNICODE
+UCDDAT     = ucd.dat
 !endif
 
 !MESSAGE C++ compiler flags: $(CFLAGS)
@@ -190,15 +191,19 @@ c\cut$(EXE): $(top_srcdir)\util\cut.c
 	$(MAKE) cut$(EXE)
 	cd ..
 
-$(TARGETS): ecl_min$(EXE) compile.lsp sysfun.lsp BUILD-STAMP
-	.\ecl_min < compile.lsp
+$(TARGETS): $(UCDDAT) ecl_min$(EXE) compile.lsp sysfun.lsp BUILD-STAMP
+	set ECLDIR=./
+	ecl_min < compile.lsp
 BUILD-STAMP: Makefile
 	date /t > $@
 
 ecl-static.lib: $(TARGETS)
 	link /lib /out:$@ eclmin.lib c\all_symbols2.obj lsp.lib eclgmp.lib eclgc.lib
 
-ecl_min$(EXE): $(LIBRARIES) eclmin.lib
+ucd.dat: $(top_srcdir)\..\contrib\unicode\ucd.dat
+	copy $(top_srcdir)\..\contrib\unicode\ucd.dat .
+
+ecl_min$(EXE): $(LIBRARIES) eclmin.lib $(UCDDAT)
 	$(CC) /Fe$@ cinit.obj c\all_symbols.obj eclmin.lib $(LDFLAGS) $(LIBS)
 
 .gdbinit: $(srcdir)\util\gdbinit
@@ -223,7 +228,7 @@ compile.lsp: bare.lsp $(srcdir)/compile.lsp.in Makefile
 	    "@CFLAGS@" "$(CFLAGS) -DGC_BUILD" \
 	    "@ECL_CFLAGS@" "" \
 	    "@CPPFLAGS@" "" \
-	    "@LDRPATH@" "" \
+	    "@ECL_LDRPATH@" "" \
 	    "@LDFLAGS@" "$(LDFLAGS)" \
 	    "@SHARED_LDFLAGS@" "$(SHARED_LDFLAGS)" \
 	    "@BUNDLE_LDFLAGS@" "$(SHARED_LDFLAGS)" \
@@ -257,10 +262,10 @@ cmp/load.lsp: $(srcdir)/cmp/load.lsp.in
 cmp/cmpdefs.lsp: $(srcdir)/cmp/cmpdefs.lsp Makefile
 	c\cut "@ECL_CC@" "$(CC)" \
 	    "@CFLAGS@" "$(CFLAGS)" \
-        "@CFLAGS_OPTIMIZE@" "$(CFLAGS_OPTIMIZE)" \
+	    "@CFLAGS_OPTIMIZE@" "$(CFLAGS_OPTIMIZE)" \
 	    "@ECL_CFLAGS@" "" \
 	    "@CPPFLAGS@" "" \
-	    "@LDRPATH@" "" \
+	    "@ECL_LDRPATH@" "" \
 	    "@LDFLAGS@" "$(LDFLAGS)" \
 	    "@SHARED_LDFLAGS@" "$(SHARED_LDFLAGS)" \
 	    "@BUNDLE_LDFLAGS@" "$(SHARED_LDFLAGS)" \
@@ -327,7 +332,7 @@ rt.lisp:
 install:
 	IF NOT EXIST "$(prefix)" $(MKDIR) "$(prefix)"
 	IF NOT EXIST "$(bindir)" $(MKDIR) "$(bindir)"
-	for %i in ($(TARGETS) ecl.dll) do $(CP) %i "$(bindir)\%i"
+	for %i in ($(TARGETS) ecl.dll $(UCDDAT)) do $(CP) %i "$(bindir)\%i"
 	IF EXIST "$(bindir)\ecl2$(EXE)" $(MV) "$(bindir)\ecl2$(EXE)" "$(bindir)\ecl$(EXE)"
 	IF EXIST ecl2$(EXE).manifest $(CP) ecl2$(EXE).manifest "$(bindir)\ecl$(EXE).manifest"
 	IF EXIST ecl.dll.manifest $(CP) ecl.dll.manifest "$(bindir)"
@@ -377,8 +382,9 @@ clean: clean_ecl clean_lisp
 clean_ecl:
 	-for %i in (eclgc.lib eclgmp.lib lsp\config.lsp compile.lsp bare.lsp \
 	            lsp\load.lsp clos\load.lsp cmp\load.lsp cmp\cmpdefs.lsp \
-		    ecl.lib ecl.dll ecl_min$(EXE) eclmin.lib help.doc sysfun.lsp BUILD-STAMP \
-		    $(TARGETS) *.exp *.ilk *.manifest *.pdb *.c *.obj ecl-config.bat ecl-static.lib) \
+		    ecl.lib ecl.dll ecl_min$(EXE) eclmin.lib help.doc sysfun.lsp \
+		    BUILD-STAMP $(TARGETS) *.exp *.ilk *.manifest *.pdb *.c *.obj \
+		    ecl-config.bat ecl-static.lib $(UCDDAT)) \
 	     do $(RM) %i
 	cd c
 	-$(MAKE) ECL_THREADS=$(ECL_THREADS) clean

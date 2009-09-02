@@ -138,11 +138,14 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
     (compute-fun-closure-type fun)
     (when global
       (when (fun-closure fun)
-	(error "Function ~A is global but is closed over some variables.~%~
-~{~A ~}"
-	       (fun-name fun) (mapcar #'var-name (fun-referred-vars fun))))
+	(cmperr "Function ~A is global but is closed over some variables.~%~{~A ~}"
+                (fun-name fun) (mapcar #'var-name (fun-referred-vars fun))))
       (new-defun fun (fun-no-entry fun))))
   fun)
+
+(defun cmp-process-lambda-list (list)
+  (handler-case (si::process-lambda-list list 'function)
+    (error (c) (cmperr "Illegal lambda list ~S" list))))
 
 (defun c1lambda-expr (lambda-expr
                       &optional (block-name nil)
@@ -165,7 +168,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 
   (multiple-value-bind (requireds optionals rest key-flag keywords
 			allow-other-keys aux-vars)
-      (si::process-lambda-list (car lambda-expr) 'function)
+      (cmp-process-lambda-list (car lambda-expr))
 
     (do ((specs (setq requireds (cdr requireds)) (cdr specs)))
 	((endp specs))
@@ -383,11 +386,10 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	       (bind `(LCL ,reqi) var))
 	      ((unboxed var) ; create unboxed variable
 	       (setf (var-loc var) (wt-decl var)))))
-      #+nil ; jjgr debug
-      (loop for req in requireds
-            do (print (list local-entry-p req (var-loc req))))
-      (when (and rest (< (var-ref rest) 1)) ; dont create rest if not used
-	(setq rest nil))
+      ;; dont create rest or varargs if not used
+      (when (and rest (< (var-ref rest) 1))
+	(setq rest nil
+              varargs (or optionals keywords allow-other-keys)))
       (do ((opt optionals (cdddr opt)))
 	  ((endp opt))
         (do-decl (first opt))
@@ -400,7 +402,6 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 
     (when varargs
       (let ((first-arg (cond ((plusp nreq) (format nil "V~d" (+ req0 nreq)))
-			     ((eq closure-type 'CLOSURE) "env0")
 			     ((eq closure-type 'LEXICAL) (format nil "lex~D" (1- *level*)))
 			     (t "narg"))))
 	(wt-nl
@@ -413,7 +414,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 
     ;; Bind required parameters.
     (do ((reqs requireds (cdr reqs))
-	 (reqi (1+ req0) (1+ reqi)))	; to allow concurrent compilations
+	 (reqi (1+ req0) (1+ reqi)))
 	((or local-entry-p (endp reqs)))
       (declare (fixnum reqi) (type cons reqs))
       (bind `(LCL ,reqi) (first reqs)))
@@ -523,7 +524,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 				      let-vars extra-stmts all-keys)
   (multiple-value-bind (requireds optionals rest key-flag keywords
 				  allow-other-keys aux-vars)
-      (si::process-lambda-list (car lambda-form) 'function)
+      (cmp-process-lambda-list (car lambda-form))
     (when apply-p
       (setf apply-list (first (last arguments))
 	    apply-var (gensym)
@@ -547,9 +548,8 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 			   (pop ,apply-var)
 			   (si::dm-too-few-arguments)))
 			(t
-			 (error 'SIMPLE-PROGRAM-ERROR
-				:format-control "Too few arguments for lambda form ~S"
-				:format-arguments (cons 'LAMBDA lambda-form)))))
+			 (cmperr "Too few arguments for lambda form ~S"
+                                 (cons 'LAMBDA lambda-form)))))
 	    let-vars))
     (do ((scan (cdr optionals) (cdddr scan)))
 	((endp scan))

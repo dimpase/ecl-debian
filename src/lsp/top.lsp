@@ -406,7 +406,8 @@ under certain conditions; see file 'Copyright' for details.")
 
       (let ((*break-enable* t)
 	    (*tpl-level* -1))
-	(tpl)))))
+	(tpl))
+      0)))
 
 (defvar *allow-recursive-debug* nil)
 (defvar *debug-status* nil)
@@ -436,13 +437,16 @@ under certain conditions; see file 'Copyright' for details.")
     (unless quiet
       (break-where))
     (flet ((rep ()
-		(handler-bind 
-		 ((condition
+             ;; We let warnings pass by this way "warn" does the
+             ;; work.  It is conventional not to trap anything
+             ;; that is not a SERIOUS-CONDITION. Otherwise we
+             ;; would be interferring the behavior of code that relies
+             ;; on conditions for communication (for instance our compiler)
+             ;; and which expect nothing to happen by default.
+             (handler-bind 
+                 ((serious-condition
 		   (lambda (condition)
-		     (cond ((subtypep (type-of condition) 'warning)
-			    ;; We let warnings pass by this way "warn" does the work.
-			    )
-			   ((< break-level 1)
+		     (cond ((< break-level 1)
 			    ;; Toplevel should enter the debugger on any condition.
 			    )
 			   (*allow-recursive-debug*
@@ -745,7 +749,7 @@ under certain conditions; see file 'Copyright' for details.")
 		break;
 	}
 	case _ecl_double_loc: {
-		float *p = (double*)value;
+		double *p = (double*)value;
 		output = ecl_make_doublefloat(*p);
 		break;
 	}
@@ -796,7 +800,7 @@ under certain conditions; see file 'Copyright' for details.")
     (format t "~:[~;Local functions: ~:*~{~s~^, ~}.~%~]" functions)
     (format t "~:[~;Block names: ~:*~{~s~^, ~}.~%~]" blocks)
 
-    ;; This format is the what was in the orignal code.
+    ;; This format is what was in the orignal code.
     ;; It simply does not work when no-values is t.
     ;; If you care to debug this kind of conundrum then have fun!
     ;;(format t "Local variables: ~:[~:[none~;~:*~{~a~1*~:@{, ~a~1*~}~}~]~;~
@@ -829,7 +833,7 @@ under certain conditions; see file 'Copyright' for details.")
 				       (string-equal s1 s2)
 				     nil)))))
     (when val-pair
-      (format t "~&In tpl-inspect-command: val-pair = ~S~%" val-pair)
+      ;;(format t "~&In tpl-inspect-command: val-pair = ~S~%" val-pair)
       (let ((val (cdr val-pair)))
 	(inspect val)))))
 
@@ -842,7 +846,7 @@ under certain conditions; see file 'Copyright' for details.")
 	 (values))
       (when (eq (bds-var bi) var)
 	(return (let ((val (bds-val bi)))
-		  (if (unbound-value-p val) "<unbound value>" val)))))
+		  (if (eq val si::unbound) "<unbound value>" val)))))
     (do ((bi (1+ (frs-bds (max 0 (1- *frs-base*)))) (1+ bi))
 	 (last (frs-bds (1+ *frs-top*)))
 	 (fi *frs-base*)
@@ -857,7 +861,7 @@ under certain conditions; see file 'Copyright' for details.")
       (format t "BDS[~d]: ~s = ~s~%"
 	      bi (bds-var bi)
 	      (let ((val (bds-val bi)))
-		(if (unbound-value-p val) "<unbound value>" val))))))
+		(if (eq val si::unbound) "<unbound value>" val))))))
 
 (defun tpl-backtrace (&optional n)
   (let ((*print-pretty* nil)	 ;; because CLOS allows (setf foo) as function names
@@ -902,7 +906,8 @@ under certain conditions; see file 'Copyright' for details.")
 		;;(format t "~:[~; >~] ~S" b (ihs-fname i)) ;; JCB
 		(format t "  > ~S" (ihs-fname i))
 		(when (eq func-name 'si::bytecodes)
-		  (format t " [Evaluation of: ~S]" (function-lambda-expression (ihs-fun i))))
+                  (format t " [Evaluation of: ~S]"
+                          (function-lambda-expression (ihs-fun i))))
 		(terpri)
 		))))
       )
@@ -1326,13 +1331,22 @@ package."
             (default-debugger condition)))))
   (finish-output))
 
-(defun safe-eval (form env err-value)
-  (catch 'si::protect-tag
-    (let* ((*debugger-hook*
-	    #'(lambda (condition old-hooks)
-		(throw 'si::protect-tag condition))))
-      (return-from safe-eval (eval-with-env form env))))
-  err-value)
+(defun safe-eval (form env &optional (err-value nil err-value-p))
+  "Args: (FORM ENV &optional ERR-VALUE)
+Evaluates FORM in the given environment, which may be NIL. If the form
+signals an error, or tries to jump to an outer point, the function has two
+choices: by default, it will invoke a debugger, but if a third value is
+supplied, then SAFE-EVAL will not use a debugger but rather return that
+value."
+  (let ((output nil) (ok nil))
+    (unwind-protect
+         (if err-value-p
+             (let ((*break-enable* nil))
+               (si::eval-with-env form env))
+             (handler-bind ((serious-condition #'invoke-debugger))
+               (setf output (si::eval-with-env form env)
+                     ok t)))
+      (return-from safe-eval (if ok output err-value)))))
 
 #-ecl-min
 (package-lock "COMMON-LISP" t)

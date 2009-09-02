@@ -108,8 +108,6 @@
   (wt-nl-h "#ifdef __cplusplus")
   (wt-nl-h "extern \"C\" {")
   (wt-nl-h "#endif")
-  (when si::*compiler-constants*
-    (wt-nl-h "#include <string.h>"))
   ;;; Initialization function.
   (let* ((*lcl* 0) (*lex* 0) (*max-lex* 0) (*max-env* 0) (*max-temp* 0)
          (*aux-closure* nil)
@@ -159,17 +157,21 @@
       ;; and the initialization file
       (wt-nl "Cblock->cblock.data_text = \"" (init-name-tag name) "\";")
       )
-    (when si::*compiler-constants*
-      (wt-nl "{cl_object data = ecl_symbol_value("
-	     (nth-value 1 (si::mangle-name '*compiler-constants* nil))
-	     ");")
-      (wt-nl "memcpy(VV, data->vector.self.t, VM*sizeof(cl_object));}"))
     (wt-nl "VVtemp = Cblock->cblock.temp_data;")
+
+    ;; Type propagation phase
+
+    (when *do-type-propagation*
+      (setq *compiler-phase* 'p1propagate)
+      (dolist (form *top-level-forms*)
+        (p1propagate form nil))
+      (dolist (fun *local-funs*)
+        (p1propagate (fun-lambda fun) nil)))
 
     (setq *compiler-phase* 't2)
 
     ;; useless in initialization.
-    (dolist (form (nconc (nreverse *make-forms*) *top-level-forms*))
+    (dolist (form (nconc (reverse *make-forms*) *top-level-forms*))
       (let* ((*compile-to-linking-call* nil)
              (*compile-file-truename* (and form (c1form-file form)))
              (*compile-file-position* (and form (c1form-file-position form)))
@@ -451,6 +453,9 @@
 	(*compile-time-too* nil))
     (add-load-time-values (make-c1form* 'ORDINARY :args (c1expr form)))))
 
+(defun p1ordinary (c1form assumptions form)
+  (p1propagate form assumptions))
+
 (defun t2ordinary (form)
   (let* ((*exit* (next-label))
 	 (*unwind-exit* (list *exit*))
@@ -539,6 +544,12 @@
                 ((special global closure replaced lexical) . NIL)))))
 
 (defun build-debug-lexical-env (var-locations &optional first)
+  #+:msvc
+  (if first
+      (wt-nl "cl_object _ecl_debug_env = Cnil;")
+    (wt-nl "ihs.lex_env = _ecl_debug_env = Cnil;"))
+
+  #-:msvc ;; FIXME! Problem with initialization of statically defined vectors
   (let* ((filtered-locations '())
          (filtered-codes '()))
     ;; Filter out variables that we know how to store in the
@@ -632,6 +643,7 @@
     (wt ")"))
 
   (let* ((*lcl* 0) (*temp* 0) (*max-temp* 0)
+         (*last-label* 0)
 	 (*lex* 0) (*max-lex* 0)
 	 (*env* (fun-env fun))		; continue growing env
 	 (*max-env* *env*) (*env-lvl* 0)
@@ -740,6 +752,9 @@
 				    (c1expr pprint))))))))
     (c1call-global 'SI:FSET (list fname def macro pprint))))
 
+(defun p1fset (c1form assumptions fun fname macro pprint c1forms)
+  (p1propagate (fun-lambda fun) assumptions))
+
 (defun c2fset (fun fname macro pprint c1forms)
   (when (fun-no-entry fun)
     (wt-nl "(void)0; /* No entry created for "
@@ -777,7 +792,7 @@
                           (minarg (fun-minarg fun))
                           (maxarg (fun-maxarg fun))
                           (narg (if (= minarg maxarg) maxarg nil)))
-                     (format stream "~%{0,0,~D,0,MAKE_FIXNUM(~D),MAKE_FIXNUM(~D),(cl_objectfn)~A,Ct,MAKE_FIXNUM(~D)},"
+                     (format stream "~%{0,0,~D,0,MAKE_FIXNUM(~D),MAKE_FIXNUM(~D),(cl_objectfn)~A,Cnil,MAKE_FIXNUM(~D)},"
                              (or narg -1) (second loc) (second fname-loc)
                              cfun (fun-file-position fun))))
           (format stream "~%};")))))
@@ -786,21 +801,26 @@
 
 ;;; Pass 1 top-levels.
 
-(put-sysprop 'COMPILER-LET 'T1 #'c1compiler-let)
-(put-sysprop 'EVAL-WHEN 'T1 #'c1eval-when)
-(put-sysprop 'PROGN 'T1 #'c1progn)
-(put-sysprop 'MACROLET 'T1 #'c1macrolet)
-(put-sysprop 'LOCALLY 'T1 #'c1locally)
-(put-sysprop 'SYMBOL-MACROLET 'T1 #'c1symbol-macrolet)
+(put-sysprop 'COMPILER-LET 'T1 'c1compiler-let)
+(put-sysprop 'EVAL-WHEN 'T1 'c1eval-when)
+(put-sysprop 'PROGN 'T1 'c1progn)
+(put-sysprop 'MACROLET 'T1 'c1macrolet)
+(put-sysprop 'LOCALLY 'T1 'c1locally)
+(put-sysprop 'SYMBOL-MACROLET 'T1 'c1symbol-macrolet)
 (put-sysprop 'LOAD-TIME-VALUE 'C1 'c1load-time-value)
 (put-sysprop 'SI:FSET 'C1 'c1fset)
 
+;;; Pass 1 1/2 type propagation
+
+(put-sysprop 'ORDINARY 'P1PROPAGATE 'p1ordinary)
+(put-sysprop 'SI:FSET 'P1PROPAGATE 'p1fset)
+
 ;;; Pass 2 initializers.
 
-(put-sysprop 'COMPILER-LET 'T2 #'t2compiler-let)
-(put-sysprop 'DECL-BODY 't2 #'t2decl-body)
-(put-sysprop 'PROGN 'T2 #'t2progn)
-(put-sysprop 'ORDINARY 'T2 #'t2ordinary)
+(put-sysprop 'COMPILER-LET 'T2 't2compiler-let)
+(put-sysprop 'DECL-BODY 't2 't2decl-body)
+(put-sysprop 'PROGN 'T2 't2progn)
+(put-sysprop 'ORDINARY 'T2 't2ordinary)
 (put-sysprop 'LOAD-TIME-VALUE 'T2 't2load-time-value)
 (put-sysprop 'MAKE-FORM 'T2 't2make-form)
 (put-sysprop 'INIT-FORM 'T2 't2init-form)

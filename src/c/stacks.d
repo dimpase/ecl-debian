@@ -227,6 +227,29 @@ ecl_bds_unwind(cl_env_ptr env, cl_index new_bds_top_index)
 	env->bds_top = new_bds_top;
 }
 
+cl_index
+ecl_progv(cl_env_ptr env, cl_object vars0, cl_object values0)
+{
+        cl_object vars = vars0, values = values0;
+        cl_index n = env->bds_top - env->bds_org;
+        for (; LISTP(vars) && LISTP(values); vars = ECL_CONS_CDR(vars)) {
+                if (Null(vars)) {
+                        return n;
+                } else {
+                        cl_object var = ECL_CONS_CAR(vars);
+                        if (Null(values)) {
+                                ecl_bds_bind(env, var, OBJNULL);
+                        } else {
+                                ecl_bds_bind(env, var, ECL_CONS_CAR(values));
+                                values = ECL_CONS_CDR(values);
+                        }
+                }
+        }
+        FEerror("Wrong arguments to special form PROGV. Either~%"
+                "~A~%or~%~A~%are not proper lists",
+                2, vars0, values0);
+}
+
 static bds_ptr
 get_bds_ptr(cl_object x)
 {
@@ -255,7 +278,8 @@ si_bds_var(cl_object arg)
 cl_object
 si_bds_val(cl_object arg)
 {
-	@(return get_bds_ptr(arg)->value)
+        cl_object v = get_bds_ptr(arg)->value;
+	@(return ((v == OBJNULL)? ECL_UNBOUND : v))
 }
 
 /******************** INVOCATION STACK **********************/
@@ -558,7 +582,7 @@ init_stacks(cl_env_ptr env, char *new_cs_org)
 #endif
 	cs_set_size(env, ecl_get_option(ECL_OPT_C_STACK_SIZE));
 
-#if defined(HAVE_SIGPROCMASK) && defined(SA_SIGINFO)
+#if defined(HAVE_SIGPROCMASK) && defined(SA_SIGINFO) && defined(SA_ONSTACK)
 	if (ecl_get_option(ECL_OPT_SIGALTSTACK_SIZE)) {
 		stack_t new_stack;
 		cl_index size = ecl_get_option(ECL_OPT_SIGALTSTACK_SIZE);

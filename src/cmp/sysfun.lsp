@@ -46,16 +46,13 @@
 
 (in-package "COMPILER")
 
-(defmacro proclaim-function (name arg-types return-type
+(defmacro proclaim-function (&whole form name arg-types return-type
 			     &key no-sp-change predicate no-side-effects)
   (unless (or (null arg-types)
 	      (equal arg-types '(*)))
-    (put-sysprop name 'proclaimed-arg-types
-		 (mapcar #'(lambda (x) (if (eql x '*) '* (type-filter x)))
-			 arg-types)))
+    (put-sysprop name 'proclaimed-arg-types arg-types))
   (when (and return-type (not (eq 'T return-type)))
-    (put-sysprop name 'proclaimed-return-type
-		 (if (eql return-type '*) '* (type-filter return-type t))))
+    (put-sysprop name 'proclaimed-return-type return-type))
   (when no-sp-change
     (put-sysprop name 'no-sp-change t))
   (when predicate
@@ -81,11 +78,15 @@
 		arg-types))
   (when (eq return-rep-type t)
     (setf return-rep-type :object))
-  (let* ((return-type (rep-type->lisp-type return-rep-type))
+  (let* ((return-type (if (and (consp return-rep-type)
+                               (eq (first return-rep-type) 'values))
+                          t
+                          (rep-type->lisp-type return-rep-type)))
          (inline-info
-          (make-inline-info :arg-rep-types arg-rep-types
+          (make-inline-info :name name
+                            :arg-rep-types arg-rep-types
                             :return-rep-type return-rep-type
-                            :return-type (rep-type->lisp-type return-rep-type)
+                            :return-type return-type
                             :arg-types arg-types
                             :exact-return-type exact-return-type
                             ;; :side-effects (not (get-sysprop name 'no-side-effects))
@@ -106,6 +107,7 @@
 ;;
 
 (deftype string-designator () '(or string symbol character))
+(deftype natural () '(integer 0 *))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -117,7 +119,7 @@
 (proclaim-function aref (array *) t :no-side-effects t)
 
 (def-inline aref :unsafe (t t t) t
- "@0;ecl_aref(#0,fix(#1)*(#0)->array.dims[1]+fix(#2))")
+ "@0;ecl_aref_unsafe(#0,fix(#1)*(#0)->array.dims[1]+fix(#2))")
 (def-inline aref :unsafe ((array t) t t) t
  "@0;(#0)->array.self.t[fix(#1)*(#0)->array.dims[1]+fix(#2)]")
 (def-inline aref :unsafe ((array bit) t t) :fixnum
@@ -154,9 +156,9 @@
 
 (proclaim-function si:aset (t array *) nil)
 (def-inline si:aset :unsafe (t t t t) t
- "@0;ecl_aset(#1,fix(#2)*(#1)->array.dims[1]+fix(#3),#0)")
+ "@0;ecl_aset_unsafe(#1,fix(#2)*(#1)->array.dims[1]+fix(#3),#0)")
 (def-inline si:aset :unsafe (t t fixnum fixnum) t
- "@0;ecl_aset(#1,(#2)*(#1)->array.dims[1]+(#3),#0)")
+ "@0;ecl_aset_unsafe(#1,(#2)*(#1)->array.dims[1]+(#3),#0)")
 (def-inline si:aset :unsafe (t (array t) fixnum fixnum) t
  "@1;(#1)->array.self.t[#2*(#1)->array.dims[1]+#3]= #0")
 (def-inline si:aset :unsafe (t (array bit) fixnum fixnum) :fixnum
@@ -196,18 +198,65 @@
  "ecl_aset_bv(#1,#2,#0)")
 
 (proclaim-function row-major-aref (array fixnum) t :no-side-effects t)
-(def-inline row-major-aref :always (array fixnum) t "ecl_aref(#0,#1)")
+(def-inline row-major-aref :always (t t) t "ecl_aref(#0,fixint(#1))")
+(def-inline row-major-aref :always (t fixnum) t "ecl_aref(#0,#1)")
+(def-inline row-major-aref :unsafe (t t) t "ecl_aref_unsafe(#0,fix(#1))")
+(def-inline row-major-aref :unsafe (t fixnum) t "ecl_aref_unsafe(#0,#1)")
+(def-inline row-major-aref :unsafe ((array bit) t) :fixnum "ecl_aref_bv(#0,fix(#1))")
+(def-inline row-major-aref :unsafe ((array bit) fixnum) :fixnum "ecl_aref_bv(#0,#1)")
+#+unicode
+(def-inline row-major-aref :unsafe ((array character) fixnum) :wchar
+ "(#0)->string.self[#1]")
+(def-inline row-major-aref :unsafe ((array base-char) fixnum) :char
+ "(#0)->base_string.self[#1]")
+(def-inline row-major-aref :unsafe ((array double-float) fixnum) :double
+ "(#0)->array.self.df[#1]")
+(def-inline row-major-aref :unsafe ((array single-float) fixnum) :float
+ "(#0)->array.self.sf[#1]")
+(def-inline row-major-aref :unsafe ((array fixnum) fixnum) :fixnum
+ "(#0)->array.self.fix[#1]")
 
 (proclaim-function si:row-major-aset (array fixnum t) t)
-(def-inline si:row-major-aset :always (array fixnum t) t "ecl_aset(#0,#1,#2)")
+(def-inline si:row-major-aset :always (t t t) t "ecl_aset(#0,fixint(#1),#2)")
+(def-inline si:row-major-aset :always (t fixnum t) t "ecl_aset(#0,#1,#2)")
+(def-inline si:row-major-aset :unsafe (t t t) t "ecl_aset_unsafe(#0,fix(#1),#2)")
+(def-inline si:row-major-aset :unsafe (t fixnum t) t "ecl_aset_unsafe(#0,#1,#2)")
+(def-inline si:row-major-aset :unsafe ((array t) fixnum t) t
+ "(#0)->vector.self.t[#1]= #2")
+(def-inline si:row-major-aset :unsafe ((array bit) fixnum t) :fixnum
+ "ecl_aset_bv(#0,#1,fix(#2))")
+(def-inline si:row-major-aset :unsafe ((array bit) fixnum fixnum) :fixnum
+ "ecl_aset_bv(#0,#1,#2)")
+(def-inline si:row-major-aset :unsafe ((array base-char) fixnum base-char) :char
+ "(#0)->base_string.self[#1]= #2")
+#+unicode
+(def-inline si:row-major-aset :unsafe ((array character) fixnum character) :wchar
+ "(#0)->string.self[#1]= #2")
+(def-inline si:row-major-aset :unsafe ((array double-float) fixnum double-float) :double
+ "(#0)->array.self.df[#1]= #2")
+(def-inline si:row-major-aset :unsafe ((array single-float) fixnum single-float) :float
+ "(#0)->array.self.sf[#1]= #2")
+(def-inline si:row-major-aset :unsafe ((array fixnum) fixnum fixnum) :fixnum
+ "(#0)->array.self.fix[#1]= #2")
 
 (proclaim-function array-element-type (array) t)
 (proclaim-function array-rank (array) fixnum)
+(def-inline array-rank :unsafe (array) :fixnum
+ "(#0)->array.rank")
+
 (proclaim-function array-dimension (array fixnum) fixnum)
+(def-inline array-dimension :always (t t) fixnum
+ "ecl_array_dimension(#0,fixint(#1))")
+(def-inline array-dimension :always (t fixnum) fixnum
+ "ecl_array_dimension(#0,#1)")
+
 (proclaim-function array-total-size (array) t :no-side-effects t)
 (def-inline array-total-size :unsafe (t) :fixnum "((#0)->array.dim)")
 
 (proclaim-function adjustable-array-p (array) t :predicate t)
+(def-inline adjustable-array-p :always (t) :bool "@0;(ECL_ARRAYP(#0)? (void)0: FEtype_error_array(#0),ECL_ADJUSTABLE_ARRAY_P(#0))")
+(def-inline adjustable-array-p :unsafe (array) :bool "ECL_ADJUSTABLE_ARRAY_P(#0)")
+
 (proclaim-function array-displacement (array) (values t fixnum) :predicate t)
 (proclaim-function svref (simple-vector fixnum) t :no-side-effects t)
 (def-inline svref :always (t t) t "ecl_aref1(#0,fixint(#1))")
@@ -222,6 +271,8 @@
 (def-inline si:svset :unsafe (t fixnum t) t "(#0)->vector.self.t[#1]= #2")
 
 (proclaim-function array-has-fill-pointer-p (*) t :predicate t)
+(def-inline array-has-fill-pointer-p :always (t) :bool "@0;(ECL_ARRAYP(#0)?(void)0:FEtype_error_array(#0),ECL_ARRAY_HAS_FILL_POINTER_P(#0))")
+(def-inline array-has-fill-pointer-p :unsafe (array) :bool "ECL_ARRAY_HAS_FILL_POINTER_P(#0)")
 (proclaim-function fill-pointer (vector) fixnum :no-side-effects t)
 (def-inline fill-pointer :unsafe (t) :fixnum "((#0)->vector.fillp)")
 
@@ -724,28 +775,46 @@
 
 ;; file num_co.d
 
-(proclaim-function float (t *) t :no-side-effects t)
+(proclaim-function float (real *) float :no-side-effects t)
 (def-inline float :always (t single-float) :float "ecl_to_float(#0)")
 (def-inline float :always (t double-float) :double "ecl_to_double(#0)")
 (def-inline float :always (fixnum-float) :double "((double)(#0))" :exact-return-type t)
 (def-inline float :always (fixnum-float) :float "((float)(#0))" :exact-return-type t)
 
-(proclaim-function numerator (t) t)
-(proclaim-function denominator (t) t)
-(proclaim-function floor (t *) (values t t) :no-side-effects t)
+(proclaim-function numerator (rational) integer :no-side-effects t)
+(def-inline numerator :unsafe (integer) integer "(#0)")
+(def-inline numerator :unsafe (ratio) integer "(#0)->ratio.num")
+
+(proclaim-function denominator (rational) integer :no-side-effects t)
+(def-inline denominator :unsafe (integer) integer "MAKE_FIXNUM(1)")
+(def-inline denominator :unsafe (ratio) integer "(#0)->ratio.den")
+
+(proclaim-function floor (real *) (values integer real) :no-side-effects t)
+(def-inline floor :always (t) (values &rest t) "ecl_floor1(#0)")
+(def-inline floor :always (t t) (values &rest t) "ecl_floor2(#0,#1)")
 (def-inline floor :always (fixnum fixnum) :fixnum
  "@01;(#0>=0&&#1>0?(#0)/(#1):ecl_ifloor(#0,#1))")
 
-(proclaim-function ceiling (t *) (values t t))
-(proclaim-function truncate (t *) (values t t) :no-side-effects t)
+(proclaim-function ceiling (real *) (values integer real) :no-side-effects t)
+(def-inline ceiling :always (t) (values &rest t) "ecl_ceiling1(#0)")
+(def-inline ceiling :always (t t) (values &rest t) "ecl_ceiling2(#0,#1)")
+
+(proclaim-function truncate (real *) (values integer real) :no-side-effects t)
+(def-inline truncate :always (t) (values &rest t) "ecl_truncate1(#0)")
+(def-inline truncate :always (t t) (values &rest t) "ecl_truncate2(#0,#1)")
 (def-inline truncate :always (fixnum-float) :fixnum "(cl_fixnum)(#0)")
 
-(proclaim-function round (t *) (values t t))
-(proclaim-function mod (t t) t :no-side-effects t)
+(proclaim-function round (real *) (values integer real) :no-side-effects t)
+(def-inline round :always (t) (values &rest t) "ecl_round1(#0)")
+(def-inline round :always (t t) (values &rest t) "ecl_round2(#0,#1)")
+
+(proclaim-function mod (real real) real :no-side-effects t)
+(def-inline mod :always (t t) t "(ecl_floor2(#0,#1),cl_env_copy->values[1])")
 (def-inline mod :always (fixnum fixnum) :fixnum
  "@01;(#0>=0&&#1>0?(#0)%(#1):ecl_imod(#0,#1))")
 
-(proclaim-function rem (t t) t :no-side-effects t)
+(proclaim-function rem (real real) real :no-side-effects t)
+(def-inline rem :always (t t) t "(ecl_truncate2(#0,#1),cl_env_copy->values[1])")
 (def-inline rem :always (fixnum fixnum) :fixnum "(#0)%(#1)")
 
 (proclaim-function decode-float (t) (values t t t))
@@ -769,18 +838,26 @@
 (proclaim-function < (t *) t :predicate t :no-side-effects t)
 (def-inline < :always (t t) :bool "ecl_number_compare(#0,#1)<0")
 (def-inline < :always (fixnum-float fixnum-float) :bool "(#0)<(#1)")
+(def-inline < :always (fixnum-float fixnum-float fixnum-float) :bool
+            "@012;((#0)<(#1) && (#1)<(#2))")
 
 (proclaim-function > (t *) t :predicate t :no-side-effects t)
 (def-inline > :always (t t) :bool "ecl_number_compare(#0,#1)>0")
 (def-inline > :always (fixnum-float fixnum-float) :bool "(#0)>(#1)")
+(def-inline > :always (fixnum-float fixnum-float fixnum-float) :bool
+            "@012;((#0)>(#1) && (#1)>(#2))")
 
 (proclaim-function <= (t *) t :predicate t :no-side-effects t)
 (def-inline <= :always (t t) :bool "ecl_number_compare(#0,#1)<=0")
 (def-inline <= :always (fixnum-float fixnum-float) :bool "(#0)<=(#1)")
+(def-inline <= :always (fixnum-float fixnum-float fixnum-float) :bool
+            "@012;((#0)<=(#1) && (#1)<=(#2))")
 
 (proclaim-function >= (t *) t :predicate t :no-side-effects t)
 (def-inline >= :always (t t) :bool "ecl_number_compare(#0,#1)>=0")
 (def-inline >= :always (fixnum-float fixnum-float) :bool "(#0)>=(#1)")
+(def-inline >= :always (fixnum-float fixnum-float fixnum-float) :bool
+            "@012;((#0)>=(#1) && (#1)>=(#2))")
 
 (proclaim-function max (t *) t :no-side-effects t)
 (def-inline max :always (t t) t "@01;(ecl_number_compare(#0,#1)>=0?#0:#1)")
@@ -877,32 +954,62 @@
 (proclaim-function random (t *) t)
 (proclaim-function make-random-state (*) t)
 (proclaim-function random-state-p (t) t :predicate t)
-(proclaim-function expt (t t) t :no-side-effects t)
+(proclaim-function expt (number number) number :no-side-effects t)
 (def-inline expt :always ((integer 2 2) (integer 0 29)) :fixnum "(1<<(#1))")
 (def-inline expt :always ((integer 0 0) t) :fixnum "0")
 (def-inline expt :always ((integer 1 1) t) :fixnum "1")
 
-(proclaim-function log (t *) t :no-side-effects t)
+(proclaim-function exp (number) number :no-side-effects t)
+
+(proclaim-function log (number &optional number) number :no-side-effects t)
 (def-inline log :always (fixnum-float) :double "log((double)(#0))" :exact-return-type t)
 (def-inline log :always (fixnum-float) :float "(float)log((double)(#0))" :exact-return-type t)
 
 (proclaim-function sqrt (number) number :no-side-effects t)
-(def-inline sqrt :always ((or (long-float 0.0 *) (double-float 0.0 *))) :double "sqrt((double)(#0))")
-(def-inline sqrt :always ((or (single-float 0.0 *) (short-float 0.0 *))) :float "(float)sqrt((double)(#0))")
+(def-inline sqrt :always ((long-float 0.0 *)) :double "sqrt((double)(#0))")
+(def-inline sqrt :always ((double-float 0.0 *)) :double "sqrt((double)(#0))")
+(def-inline sqrt :always ((single-float 0.0 *)) :float "(float)sqrt((double)(#0))")
+(def-inline sqrt :always ((short-float 0.0 *)) :float "(float)sqrt((double)(#0))")
+
+(proclaim-function isqrt (natural) natural :no-side-effects t)
 
 (proclaim-function sin (number) number :no-side-effects t)
 (def-inline sin :always (fixnum-float) :double "sin((double)(#0))" :exact-return-type t)
 (def-inline sin :always (fixnum-float) :float "(float)sin((double)(#0))" :exact-return-type t)
 
+(proclaim-function asin (number) number :no-side-effects t)
+
 (proclaim-function cos (number) number :no-side-effects t)
 (def-inline cos :always (fixnum-float) :double "cos((double)(#0))" :exact-return-type t)
 (def-inline cos :always (fixnum-float) :float "(float)cos((double)(#0))" :exact-return-type t)
+
+(proclaim-function acos (number) number :no-side-effects t)
 
 (proclaim-function tan (number) number :no-side-effects t)
 (def-inline tan :always (fixnum-float) :double "tan((double)(#0))" :exact-return-type t)
 (def-inline tan :always (fixnum-float) :float "(float)tan((double)(#0))" :exact-return-type t)
 
-(proclaim-function atan (t *) t)
+(proclaim-function atan (number &optional number) number :no-side-effects t)
+
+(proclaim-function cis (real) complex :no-side-effects t)
+
+(proclaim-function sinh (number) number :no-side-effects t)
+(def-inline sinh :always (fixnum-float) :double "sinh((double)(#0))" :exact-return-type t)
+(def-inline sinh :always (fixnum-float) :float "(float)sinh((double)(#0))" :exact-return-type t)
+
+(proclaim-function asinh (number) number :no-side-effects t)
+
+(proclaim-function cosh (number) number :no-side-effects t)
+(def-inline cosh :always (fixnum-float) :double "cosh((double)(#0))" :exact-return-type t)
+(def-inline cosh :always (fixnum-float) :float "(float)cosh((double)(#0))" :exact-return-type t)
+
+(proclaim-function acosh (number) number :no-side-effects t)
+
+(proclaim-function tanh (number) number :no-side-effects t)
+(def-inline tanh :always (fixnum-float) :double "tanh((double)(#0))" :exact-return-type t)
+(def-inline tanh :always (fixnum-float) :float "(float)tanh((double)(#0))" :exact-return-type t)
+
+(proclaim-function atanh (number) number :no-side-effects t)
 
 ;; file package.d
 
@@ -992,15 +1099,7 @@
 (def-inline bit-vector-p :always (t) :bool "(type_of(#0)==t_bitvector)")
 
 (proclaim-function vectorp (t) t :predicate t :no-side-effects t)
-#-unicode
-(def-inline vectorp :always (t) :bool "@0;type_of(#0)==t_vector||
-type_of(#0)==t_base_string||
-type_of(#0)==t_bitvector")
-#+unicode
-(def-inline vectorp :always (t) :bool "@0;type_of(#0)==t_vector||
-type_of(#0)==t_base_string||
-type_of(#0)==t_string||
-type_of(#0)==t_bitvector")
+(def-inline vectorp :always (t) :bool "@0;ECL_VECTORP(#0)")
 
 (proclaim-function vector-push (t vector) (or fixnum null) :no-sp-change t)
 (proclaim-function vector-push-extend (t vector *) fixnum :no-sp-change t)
@@ -1008,7 +1107,7 @@ type_of(#0)==t_bitvector")
 (proclaim-function simple-bit-vector-p (t) t :predicate t)
 (proclaim-function simple-vector-p (t) t :predicate t)
 (proclaim-function arrayp (t) t :predicate t :no-side-effects t)
-(def-inline arrayp :always (t) :bool "@0;ARRAYP(#0)")
+(def-inline arrayp :always (t) :bool "@0;ECL_ARRAYP(#0)")
 
 (proclaim-function packagep (t) t :predicate t)
 (proclaim-function functionp (t) t :predicate t)
@@ -1100,7 +1199,7 @@ type_of(#0)==t_bitvector")
 (proclaim-function make-dispatch-macro-character (*) t)
 (proclaim-function set-dispatch-macro-character (*) t)
 (proclaim-function get-dispatch-macro-character (*) t)
-(proclaim-function si:string-to-object (t) t)
+(proclaim-function si:string-to-object (t &optional t) t)
 (proclaim-function si:standard-readtable (t) t)
 (proclaim-function symbol-function (t) t)
 (proclaim-function fboundp (symbol) t :predicate t)
@@ -1118,15 +1217,38 @@ type_of(#0)==t_bitvector")
 ;; file sequence.d
 
 (proclaim-function elt (sequence fixnum) t :no-side-effects t)
-(def-inline elt :always (t t) t "ecl_elt(#0,fixint(#1))")
+(def-inline elt :always (t t) t "ecl_elt(#0,fix(#1))")
 (def-inline elt :always (t fixnum) t "ecl_elt(#0,#1)")
+(def-inline elt :always (vector t) t "ecl_aref1(#0,fix(#1))")
+(def-inline elt :always (vector fixnum) t "ecl_aref1(#0,#1)")
+
 (def-inline elt :unsafe (t t) t "ecl_elt(#0,fix(#1))")
 (def-inline elt :unsafe (t fixnum) t "ecl_elt(#0,#1)")
+(def-inline elt :unsafe (vector t) t "ecl_aref_unsafe(#0,fix(#1))")
+(def-inline elt :unsafe (vector fixnum) t "ecl_aref_unsafe(#0,#1)")
+(def-inline aref :unsafe ((array bit) t) :fixnum "ecl_aref_bv(#0,fix(#1))")
+(def-inline aref :unsafe ((array bit) fixnum) :fixnum "ecl_aref_bv(#0,#1)")
+#+unicode
+(def-inline aref :unsafe ((array character) fixnum) :wchar
+ "(#0)->string.self[#1]")
+(def-inline aref :unsafe ((array base-char) fixnum) :char
+ "(#0)->base_string.self[#1]")
+(def-inline aref :unsafe ((array double-float) fixnum) :double
+ "(#0)->array.self.df[#1]")
+(def-inline aref :unsafe ((array single-float) fixnum) :float
+ "(#0)->array.self.sf[#1]")
+(def-inline aref :unsafe ((array fixnum) fixnum) :fixnum
+ "(#0)->array.self.fix[#1]")
 
 (proclaim-function si:elt-set (sequence fixnum t) t)
 (def-inline si:elt-set :always (t t t) t "ecl_elt_set(#0,fixint(#1),#2)")
 (def-inline si:elt-set :always (t fixnum t) t "ecl_elt_set(#0,#1,#2)")
+(def-inline si:elt-set :always (vector t t) t "ecl_aset1(#0,fixint(#1),#2)")
+(def-inline si:elt-set :always (vector fixnum t) t "ecl_aset1(#0,#1,#2)")
+
 (def-inline si:elt-set :unsafe (t t t) t "ecl_elt_set(#0,fix(#1),#2)")
+(def-inline si:elt-set :unsafe (vector t t) t "ecl_aset1_unsafe(#0,fixint(#1),#2)")
+(def-inline si:elt-set :unsafe (vector fixnum t) t "ecl_aset1_unsafe(#0,#1,#2)")
 
 (proclaim-function subseq (sequence fixnum *) sequence)
 (proclaim-function copy-seq (sequence) sequence)
@@ -1175,12 +1297,8 @@ type_of(#0)==t_bitvector")
 (def-inline schar :always (t fixnum) :wchar "ecl_char(#0,#1)")
 (def-inline schar :unsafe (base-string t) t "CODE_CHAR((#0)->base_string.self[fix(#1)])")
 #-unicode
-(def-inline schar :unsafe (t t) :fixnum "(#0)->base_string.self[fix(#1)]")
-#-unicode
 (def-inline schar :unsafe (t fixnum) :char "(#0)->base_string.self[#1]")
 (def-inline schar :unsafe (base-string fixnum) :char "(#0)->base_string.self[#1]")
-#+unicode
-(def-inline schar :unsafe (ext:extended-string fixnum) :fixnum "(#0)->string.self[#1]")
 #+unicode
 (def-inline schar :unsafe (ext:extended-string fixnum) :wchar "(#0)->string.self[#1]")
 
@@ -1273,12 +1391,12 @@ type_of(#0)==t_bitvector")
 (proclaim-function gentemp (*) symbol)
 (proclaim-function symbol-package (symbol) t)
 (proclaim-function keywordp (t) t :predicate t)
-(proclaim-function si:put-f (*) (t t))
-(proclaim-function si:rem-f (*) (t t))
+(proclaim-function si:put-f (list t t) t)
+(proclaim-function si:rem-f (list t) boolean)
 (proclaim-function si:set-symbol-plist (symbol t) t)
 (proclaim-function si:putprop (t t t) t)
 (proclaim-function si:put-sysprop (t t t) t)
-(proclaim-function si:get-sysprop (t t t) t)
+(proclaim-function si:get-sysprop (t t) t)
 (proclaim-function si:rem-sysprop (t t) t)
 
 ;; file tcp.d
@@ -1412,7 +1530,7 @@ type_of(#0)==t_bitvector")
     si::safe-eval
     ;; iolib.lsp
     read-from-string write-to-string prin1-to-string princ-to-string
-    y-or-n-p yes-or-no-p
+    y-or-n-p yes-or-no-p string-to-object
     ;; listlib.lsp
     union nunion intersection nintersection set-difference nset-difference
     set-exclusive-or nset-exclusive-or subsetp rassoc-if rassoc-if-not

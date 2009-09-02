@@ -75,8 +75,8 @@ static cl_fixnum option_values[ECL_OPT_LIMIT+1] = {
 	128,		/* ECL_OPT_FRAME_STACK_SAFETY_AREA */
 	32768,		/* ECL_OPT_LISP_STACK_SIZE */
 	128,		/* ECL_OPT_LISP_STACK_SAFETY_AREA */
-	4*1024*1024,	/* ECL_OPT_C_STACK_SIZE */
-	128*1024,	/* ECL_OPT_C_STACK_SAFETY_AREA */
+	512*1024,	/* ECL_OPT_C_STACK_SIZE */
+	16*1024,	/* ECL_OPT_C_STACK_SAFETY_AREA */
 	1,		/* ECL_OPT_SIGALTSTACK_SIZE */
 	256*1024*1024, 	/* ECL_OPT_HEAP_SIZE */
 	1024*1024, 	/* ECL_OPT_HEAP_SAFETY_AREA */
@@ -90,7 +90,9 @@ static char stdout_buf[BUFSIZ];
 
 static const char *feature_names[] = {
         "ECL", "COMMON", ECL_ARCHITECTURE, "FFI", "PREFIXED-API",
+#ifdef ECL_IEEE_FP
         "IEEE-FLOATING-POINT",
+#endif
 #ifdef WITH_GMP
         "COMMON-LISP",
         "ANSI-CL",
@@ -136,7 +138,7 @@ static const char *feature_names[] = {
 #ifdef ECL_CLOS_STREAMS
 	"CLOS-STREAMS",
 #endif
-#ifdef ECL_DYNAMIC_FFI
+#if defined(ECL_DYNAMIC_FFI) || defined(HAVE_LIBFFI)
 	"DFFI",
 #endif
 #ifdef ECL_UNICODE
@@ -219,6 +221,12 @@ ecl_init_env(cl_env_ptr env)
 # endif /* THREADS */
 #endif /* !GBC_BOEHM */
 
+#ifdef HAVE_LIBFFI
+        env->ffi_args_limit = 0;
+        env->ffi_types = 0;
+        env->ffi_values = 0;
+        env->ffi_values_ptrs = 0;
+#endif
 #ifdef ECL_DYNAMIC_FFI
 	env->fficall = ecl_alloc(sizeof(struct ecl_fficall));
 	((struct ecl_fficall*)env->fficall)->registers = 0;
@@ -238,48 +246,7 @@ ecl_init_env(cl_env_ptr env)
         env->trap_fpe_bits = 0;
 }
 
-static const struct {
-	const char *name;
-	int code;
-} char_names[] = {
-	{"Null", 0},
-	{"Soh", 1},
-	{"Stx", 2},
-	{"Etx", 3},
-	{"Eot", 4},
-	{"Enq", 5},
-	{"Ack", 6},
-	{"Bell", 7},
-	{"Backspace", 8},
-	{"Tab", 9},
-	{"Linefeed", 10},
-	{"Newline", 10},
-	{"Vt", 11},
-	{"Page", 12},
-	{"Return", 13},
-	{"So", 14},
-	{"Si", 15},
-	{"Dle", 16},
-	{"Dc1", 17},
-	{"Dc2", 18},
-	{"Dc3", 19},
-	{"Dc4", 20},
-	{"Nak", 21},
-	{"Syn", 22},
-	{"Etb", 23},
-	{"Can", 24},
-	{"Em", 25},
-	{"Sub", 26},
-	{"Escape", 27},
-	{"Esc", 27},
-	{"Fs", 28},
-	{"Gs", 29},
-	{"Rs", 30},
-	{"Us", 31},
-	{"Space", 32},
-	{"Rubout", 127},
-	{NULL, -1}
-};
+#include "iso_latin_names.h"
 
 void
 _ecl_dealloc_env(cl_env_ptr env)
@@ -355,22 +322,25 @@ read_char_database()
 						 si_get_library_pathname(),
 						 make_constant_base_string("ucd.dat"));
 	cl_object output = Cnil;
-	FILE *f = fopen(s->base_string.self, "r");
+	FILE *f = fopen(s->base_string.self, "rb");
 	if (f) {
-		cl_index size;
+		cl_index size, read;
 		if (!fseek(f, 0, SEEK_END)) {
 			size = ftell(f);
 			fseek(f, 0, SEEK_SET);
 			output = si_make_vector(@'ext::byte8', MAKE_FIXNUM(size),
 						Cnil, Cnil, Cnil, Cnil);
-			if (fread(output->vector.self.b8, 1, size, f) < size) {
-				output = Cnil;
-			} else {
-				uint8_t *p = output->vector.self.b8;
-				cl_core.unicode_database = output;
-				cl_core.ucd_misc = p + 2;
-				cl_core.ucd_pages = cl_core.ucd_misc + (p[0] + (p[1]<<8));
-				cl_core.ucd_data = cl_core.ucd_pages + (0x110000 / 256);
+	    
+			read = 0;
+			while (read < size) {
+				cl_index res;
+				res = fread(output->vector.self.b8 + read, 1, size - read, f);
+				if (res > 0) {
+					read += res;
+                                } else {
+					output = Cnil;
+					break;
+				}
 			}
 		}
 		fclose(f);
@@ -378,6 +348,12 @@ read_char_database()
 	if (output == Cnil) {
 		printf("Unable to read Unicode database: %s\n", s->base_string.self);
 		abort();
+	} else {
+		uint8_t *p = output->vector.self.b8;
+		cl_core.unicode_database = output;
+		cl_core.ucd_misc = p + 2;
+		cl_core.ucd_pages = cl_core.ucd_misc + (p[0] + (p[1]<<8));
+		cl_core.ucd_data = cl_core.ucd_pages + (0x110000 / 256);
 	}
 	ECL_SET(@'si::+unicode-database+', output);
 }
@@ -504,26 +480,81 @@ cl_boot(int argc, char **argv)
 
 	/* These must come _after_ the packages and NIL/T have been created */
 	init_all_symbols();
+
+	/*
+	 * Initialize the per-thread data.
+	 * This cannot come later, because some routines need the
+	 * frame stack immediately (for instance SI:PATHNAME-TRANSLATIONS).
+	 */
+	ecl_init_env(env);
+#if !defined(GBC_BOEHM)
+	/* We need this because a lot of stuff is to be created */
+	init_GC();
+#endif
+	GC_enable();
+
+        /*
+         * Initialize default pathnames
+         */
+	cl_core.pathname_translations = Cnil;
+        cl_core.library_pathname = Cnil;
+#if 1
+	ECL_SET(@'*default-pathname-defaults*', si_getcwd(0));
+#else
+	ECL_SET(@'*default-pathname-defaults*',
+		ecl_make_pathname(Cnil, Cnil, Cnil, Cnil, Cnil, Cnil));
+#endif
+
+        /*
+         * Initialize Unicode character database.
+         */
 	read_char_database();
 
 	/*
-	 * 2) Initialize constants (strings, numbers and time).
-	 */
-
-	/* FIXME! This is a hack! We use EQUALP hashes because we know that
-	 * the characters in this table will not be alphanumeric.
+         * Load character names. The following hash table is a map
+         * from names to character codes and viceversa. Note that we
+         * need EQUALP because it has to be case insensitive.
 	 */
 	cl_core.char_names = aux =
 	    cl__make_hash_table(@'equalp', MAKE_FIXNUM(128), /* size */
 				ecl_make_singlefloat(1.5f), /* rehash-size */
 				ecl_make_singlefloat(0.5f), /* rehash-threshold */
 				Cnil); /* thread-safe */
-	for (i = 0; char_names[i].code >= 0; i++) {
-		cl_object name = make_constant_base_string(char_names[i].name);
-		cl_object code = CODE_CHAR(char_names[i].code);
+	for (i = 0; char_names[i]; i++) {
+		cl_object name = make_constant_base_string(char_names[i]);
+		cl_object code = MAKE_FIXNUM(i);
 		ecl_sethash(name, aux, code);
 		ecl_sethash(code, aux, name);
 	}
+	{
+		/* Linefeed is redundant with one of the names given
+		 * in iso_latin_names.h, but it can not be associated
+		 * to the code 10, because the default name must be
+		 * Newline. Similar to the other codes. */
+                static struct {
+                        const char *name;
+                        int code;
+                } extra_names[] = { { "Null", 0 },
+                                    { "Linefeed", 10 },
+                                    { "Bell", 7 },
+                                    { "Escape", 27 } };
+                for (i = 0; i < 4; i++) {
+                        cl_object name = make_constant_base_string(extra_names[i].name);
+                        ecl_sethash(name, aux, MAKE_FIXNUM(extra_names[i].code));
+                }
+	}
+
+        /*
+         * Initialize logical pathname translations. This must come after
+         * the character database has been filled.
+         */
+	@si::pathname-translations(2,make_constant_base_string("SYS"),
+				   cl_list(1,cl_list(2,make_constant_base_string("*.*"),
+						     make_constant_base_string("./*.*"))));
+
+	/*
+	 * Initialize constants (strings, numbers and time).
+	 */
 
 	/* LIBRARIES is an adjustable vector of objects. It behaves as
 	   a vector of weak pointers thanks to the magic in
@@ -567,18 +598,6 @@ cl_boot(int argc, char **argv)
 	init_number();
 	init_unixtime();
 
-	/*
-	 * 3) Initialize the per-thread data.
-	 *    This cannot come later, because some routines need the
-	 *    frame stack immediately (for instance SI:PATHNAME-TRANSLATIONS).
-	 */
-	ecl_init_env(env);
-#if !defined(GBC_BOEHM)
-	/* We need this because a lot of stuff is to be created */
-	init_GC();
-#endif
-	GC_enable();
-
 #ifdef ECL_THREADS
 	env->bindings_hash = cl__make_hash_table(@'eq', MAKE_FIXNUM(1024),
 						   ecl_make_singlefloat(1.5f),
@@ -588,28 +607,15 @@ cl_boot(int argc, char **argv)
 #endif
 
 	/*
-	 * 4) Initialize I/O subsystem and pathnames.
+	 * Initialize I/O subsystem.
 	 */
-
 	init_file();
 	init_read();
 
 	ECL_SET(@'*print-case*', @':upcase');
 
-	cl_core.pathname_translations = Cnil;
-#if 1
-	ECL_SET(@'*default-pathname-defaults*', si_getcwd(0));
-#else
-	ECL_SET(@'*default-pathname-defaults*',
-		ecl_make_pathname(Cnil, Cnil, Cnil, Cnil, Cnil, Cnil));
-#endif
-
-	@si::pathname-translations(2,make_constant_base_string("SYS"),
-				   cl_list(1,cl_list(2,make_constant_base_string("*.*"),
-						     make_constant_base_string("./*.*"))));
-
 	/*
-	 * 5) Set up hooks for LOAD, errors and macros.
+	 * Set up hooks for LOAD, errors and macros.
 	 */
 #ifdef ECL_THREADS
 	ECL_SET(@'mp::+load-compile-lock+',
@@ -634,7 +640,7 @@ cl_boot(int argc, char **argv)
 	init_macros();
 
 	/*
-	 * 6) Set up infrastructure for CLOS.
+	 * Set up infrastructure for CLOS.
 	 */
 #ifdef CLOS
 	ECL_SET(@'si::*class-name-hash-table*',
@@ -645,7 +651,7 @@ cl_boot(int argc, char **argv)
 #endif
 
 	/*
-	 * 7) Features.
+	 * Features.
 	 */
 
 	ECL_SET(@'LAMBDA-LIST-KEYWORDS',

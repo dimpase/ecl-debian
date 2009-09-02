@@ -1,5 +1,5 @@
 ;; -*- Mode: Lisp; Syntax: Common-Lisp -*-
-;; $Id: package.lisp,v 1.1 2009/02/24 14:07:07 jjgarcia Exp $
+;; $Id$
 
 ;; This file is based on SBCL's SB-BSD-SOCKET module and has been
 ;; heavily modified to work with ECL by Julian Stecklina.

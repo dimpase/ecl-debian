@@ -279,10 +279,10 @@
   (declare (si::c-local))
   (dolist (new-declaration names-list)
     (unless (symbolp new-declaration)
-      (funcall error "The declaration ~s is not a symbol" new-declaration))
+      (cmperr "The declaration ~s is not a symbol" new-declaration))
     (when (type-name-p new-declaration)
-      (funcall error "Symbol name ~S cannot be both the name of a type and of a declaration"
-	       new-declaration))
+      (cmperr "Symbol name ~S cannot be both the name of a type and of a declaration"
+              new-declaration))
     (pushnew new-declaration si:*alien-declarations*)))
 
 (defun proclaim-var (type vl)
@@ -625,7 +625,7 @@
 (defun policy-inline-slot-access-p (&optional (env *cmp-env*))
   "Do we inline access to structures and sealed classes?"
   (or (< (cmp-env-optimization 'safety env) 2)
-       (<= (cmp-env-optimization 'safety env) (cmp-env-optimization 'speed env))))
+      (<= (cmp-env-optimization 'safety env) (cmp-env-optimization 'speed env))))
 
 (defun policy-check-all-arguments-p (&optional (env *cmp-env*))
   "Do we assume that arguments are the right type?"
@@ -639,3 +639,11 @@
 (defun policy-assume-types-dont-change-p (&optional (env *cmp-env*))
   "Do we assume that type and class definitions will not change?"
   (<= (cmp-env-optimization 'safety env) 1))
+
+(defun policy-open-code-aref/aset-p (&optional (env *cmp-env*))
+  "Do we inline access to arrays?"
+  (< (cmp-env-optimization 'safety env) 2))
+
+(defun policy-array-bounds-check-p (&optional (env *cmp-env*))
+  "Check access to array bounds?"
+  (>= (cmp-env-optimization 'safety env) 1))

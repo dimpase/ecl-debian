@@ -154,6 +154,32 @@ printer and we should rather use MAKE-LOAD-FORM."
 	    (method-specializers m)))
   m)
 
+(defun ext::output-float-nan (x stream)
+  (print-unreadable-object (x stream :type t)
+    (princ "quiet NaN" stream)))
+
+(defun ext::output-float-infinity (x stream)
+  (when (and *print-readably* (null *read-eval*))
+    (error 'print-not-readable :object x))
+  (let ((*print-circle* nil)
+        (*print-package* #.(find-package :keyword))
+        (infinities '((#.ext::single-float-negative-infinity .
+                       ext::single-float-negative-infinity)
+                      (#.ext::double-float-negative-infinity .
+                       ext::double-float-negative-infinity)
+                      (#.ext::short-float-negative-infinity .
+                       ext::short-float-negative-infinity)
+                      (#.ext::long-float-negative-infinity .
+                       ext::long-float-negative-infinity)
+                      (#.ext::single-float-positive-infinity .
+                       ext::single-float-positive-infinity)
+                      (#.ext::double-float-positive-infinity .
+                       ext::double-float-positive-infinity)
+                      (#.ext::short-float-positive-infinity .
+                       ext::short-float-positive-infinity)
+                      (#.ext::long-float-positive-infinity .
+                       ext::long-float-positive-infinity))))
+    (format stream "#.~S" (cdr (assoc x infinities)))))
 
 ;;; ----------------------------------------------------------------------
 ;;; Describe

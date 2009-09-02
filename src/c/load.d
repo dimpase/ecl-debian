@@ -17,7 +17,6 @@
 #include <ecl/ecl.h>
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
 #ifdef ENABLE_DLOPEN
 # ifdef HAVE_DLFCN_H
 #  include <dlfcn.h>
@@ -43,6 +42,8 @@
 #  include <winbase.h>
 #  include <tlhelp32.h>
 #  define INIT_PREFIX "init_fas_"
+# else
+#  include <unistd.h>
 # endif
 #endif
 #include <ecl/ecl-inl.h>
@@ -116,7 +117,10 @@ ecl_library_open(cl_object filename, bool force_reload) {
 	char *filename_string;
 
 	/* Coerces to a file name but does not merge with cwd */
-	filename = si_coerce_to_filename(filename);
+	filename = coerce_to_physical_pathname(filename);
+        filename = ecl_namestring(filename,
+                                  ECL_NAMESTRING_TRUNCATE_IF_ERROR |
+                                  ECL_NAMESTRING_FORCE_BASE_STRING);
 
 	if (!force_reload) {
 		/* When loading a foreign library, such as a dll or a
@@ -147,6 +151,7 @@ ecl_library_open(cl_object filename, bool force_reload) {
 		}
 #endif
 	}
+ DO_LOAD:
 	block = ecl_alloc_object(t_codeblock);
 	block->cblock.self_destruct = self_destruct;
 	block->cblock.locked = 0;
@@ -202,6 +207,11 @@ ecl_library_open(cl_object filename, bool force_reload) {
 	cl_object other = ecl_library_find_by_handle(block->cblock.handle);
 	if (other != Cnil) {
 		ecl_library_close(block);
+                if (force_reload) {
+                        filename = copy_object_file(filename);
+                        self_destruct = 1;
+                        goto DO_LOAD;
+                }
 		block = other;
 	} else {
 		si_set_finalizer(block, Ct);

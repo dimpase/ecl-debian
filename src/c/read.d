@@ -1005,11 +1005,11 @@ sharp_left_parenthesis_reader(cl_object in, cl_object c, cl_object d)
 			if (i >= dim) {
 				FEreader_error("Vector larger than specified length, ~D.", in, 1, d);
 			}
-			ecl_aset1(v, i, last = aux);
+			ecl_aset_unsafe(v, i, last = aux);
 		}
 		/* ... we fill the vector with the last element read (or NIL). */
 		for (; i < dim; i++) {
-			ecl_aset1(v, i, last);
+			ecl_aset_unsafe(v, i, last);
 		}
 	}
 	@(return v)
@@ -1427,6 +1427,7 @@ ecl_copy_readtable(cl_object from, cl_object to)
 	 * at the end in a more or less "atomic" (meaning "fast") way.
 	 */
 	output = ecl_alloc_object(t_readtable);
+        output->readtable.locked = 0;
 	output->readtable.table = to_rtab = (struct ecl_readtable_entry *)
 		ecl_alloc_align(total_bytes, entry_bytes);
 	from_rtab = from->readtable.table;
@@ -1463,8 +1464,7 @@ ecl_current_readtable(void)
 	/* INV: *readtable* always has a value */
 	r = ECL_SYM_VAL(the_env, @'*readtable*');
 	if (type_of(r) != t_readtable) {
-		ECL_SETQ(the_env, @'*readtable*',
-			 ecl_copy_readtable(cl_core.standard_readtable, Cnil));
+		ECL_SETQ(the_env, @'*readtable*', cl_core.standard_readtable);
 		FEerror("The value of *READTABLE*, ~S, was not a readtable.",
 			1, r);
 	}
@@ -1867,10 +1867,22 @@ cl_readtable_case(cl_object r)
 	@(return r)
 }
 
+static void
+error_locked_readtable(cl_object r)
+{
+        cl_error(3,
+                 make_constant_base_string("Change readtable"),
+                 make_constant_base_string("Cannot modify locked readtable ~A."),
+                 r);
+}
+
 cl_object
 si_readtable_case_set(cl_object r, cl_object mode)
 {
 	assert_type_readtable(r);
+        if (r->readtable.locked) {
+                error_locked_readtable(r);
+        }
 	if (mode == @':upcase') {
 		r->readtable.read_case = ecl_case_upcase;
 	} else if (mode == @':downcase') {
@@ -1929,6 +1941,9 @@ void
 ecl_readtable_set(cl_object readtable, int c, enum ecl_chattrib cat,
 		   cl_object macro_or_table)
 {
+        if (readtable->readtable.locked) {
+                error_locked_readtable(readtable);
+        }
 #ifdef ECL_UNICODE
 	if (c >= RTABSIZE) {
 		cl_object hash = readtable->readtable.hash;
@@ -1962,6 +1977,9 @@ ecl_invalid_character_p(int c)
 	cl_object dispatch;
 	cl_fixnum fc, tc;
 @
+        if (tordtbl->readtable.locked) {
+                error_locked_readtable(tordtbl);
+        }
 	if (Null(fromrdtbl))
 		fromrdtbl = cl_core.standard_readtable;
 	assert_type_readtable(fromrdtbl);
@@ -2024,6 +2042,9 @@ ecl_invalid_character_p(int c)
 @
 	assert_type_readtable(readtable);
 	ecl_readtable_get(readtable, ecl_char_code(dspchr), &table);
+        if (readtable->readtable.locked) {
+                error_locked_readtable(readtable);
+        }
 	if (type_of(table) != t_hashtable) {
 		FEerror("~S is not a dispatch character.", 1, dspchr);
 	}
@@ -2070,30 +2091,21 @@ ecl_invalid_character_p(int c)
 @)
 
 cl_object
-c_string_to_object(const char *s)
-{
-	return si_string_to_object(make_constant_base_string(s));
-}
-
-cl_object
-si_string_to_object(cl_object x)
-{
-	cl_object in;
-
-	/* FIXME! Restricted to base string */
-	x = ecl_check_cl_type(@'si::string-to-object', x, t_base_string);
-	in = ecl_make_string_input_stream(x, 0, TOKEN_STRING_FILLP(x));
-	x = ecl_read_object(in);
-	if (x == OBJNULL)
-		FEend_of_file(in);
-	@(return x)
-}
-
-cl_object
 si_standard_readtable()
 {
 	@(return cl_core.standard_readtable)
 }
+
+@(defun ext::readtable-lock (r &optional yesno)
+	cl_object output;
+@
+	assert_type_readtable(r);
+        output = (r->readtable.locked)? Ct : Cnil;
+	if (narg > 1) {
+                r->readtable.locked = !Null(yesno);
+        }
+        @(return output)
+@)
 
 static void
 extra_argument(int c, cl_object stream, cl_object d)
@@ -2114,9 +2126,9 @@ init_read(void)
 	int i;
 
 	cl_core.standard_readtable = r = ecl_alloc_object(t_readtable);
-	cl_core.standard_readtable->readtable.read_case = ecl_case_upcase;
-	cl_core.standard_readtable->readtable.table
-	= rtab
+        r->readtable.locked = 0;
+	r->readtable.read_case = ecl_case_upcase;
+	r->readtable.table = rtab
 	= (struct ecl_readtable_entry *)
 		ecl_alloc(RTABSIZE * sizeof(struct ecl_readtable_entry));
 	for (i = 0;  i < RTABSIZE;  i++) {
@@ -2124,7 +2136,7 @@ init_read(void)
 		rtab[i].dispatch = Cnil;
 	}
 #ifdef ECL_UNICODE
-	cl_core.standard_readtable->readtable.hash = Cnil;
+	r->readtable.hash = Cnil;
 #endif
 
 	cl_core.dispatch_reader = make_cf2(dispatch_reader_fun);
@@ -2205,6 +2217,10 @@ init_read(void)
 	cl_set_dispatch_macro_character(4, CODE_CHAR('#'), CODE_CHAR('Y'),
 					make_cf3(sharp_Y_reader), r);
 
+        /* Lock the standard read table so that we do not have to make copies
+         * to keep it unchanged */
+        r->readtable.locked = 1;
+
 	init_backq();
 
 	ECL_SET(@'*readtable*',
@@ -2212,6 +2228,104 @@ init_read(void)
 	cl_set_dispatch_macro_character(4, CODE_CHAR('#'), CODE_CHAR('!'),
 					Cnil, r);
 	ECL_SET(@'*read-default-float-format*', @'single-float');
+
+        {
+                cl_object var, val;
+                var = cl_list(23,
+                              @'*print-pprint-dispatch*', /* See end of pprint.lsp */
+                              @'*print-array*',
+                              @'*print-base*',
+                              @'*print-case*',
+                              @'*print-circle*',
+                              @'*print-escape*',
+                              @'*print-gensym*',
+                              @'*print-length*',
+                              @'*print-level*',
+                              @'*print-lines*',
+                              @'*print-miser-width*',
+                              @'*print-pretty*',
+                              @'*print-radix*',
+                              @'*print-readably*',
+                              @'*print-right-margin*',
+                              @'*read-base*',
+                              @'*read-default-float-format*',
+                              @'*read-eval*',
+                              @'*read-suppress*',
+                              @'*readtable*',
+                              @'si::*print-package*',
+                              @'si::*print-structure*',
+                              @'si::*sharp-eq-context*');
+                val = cl_list(23,
+                              /**pprint-dispatch-table**/ Cnil,
+                              /**print-array**/ Ct,
+                              /**print-base**/ MAKE_FIXNUM(10),
+                              /**print-case**/ @':downcase',
+                              /**print-circle**/ Ct,
+                              /**print-escape**/ Ct,
+                              /**print-gensym**/ Ct,
+                              /**print-length**/ Cnil,
+                              /**print-level**/ Cnil,
+                              /**print-lines**/ Cnil,
+                              /**print-miser-width**/ Cnil,
+                              /**print-pretty**/ Cnil,
+                              /**print-radix**/ Cnil,
+                              /**print-readably**/ Ct,
+                              /**print-right-margin**/ Cnil,
+                              /**read-base**/ MAKE_FIXNUM(10),
+                              /**read-default-float-format**/ @'single-float',
+                              /**read-eval**/ Ct,
+                              /**read-suppress**/ Cnil,
+                              /**readtable**/ cl_core.standard_readtable,
+                              /*si::*print-package**/ cl_core.lisp_package,
+                              /*si::*print-structure**/ Ct,
+                              /*si::*sharp-eq-context**/ Cnil);
+                ECL_SET(@'si::+ecl-syntax-progv-list+', CONS(var,val));
+                var = cl_list(21,
+                              @'*print-pprint-dispatch*', /* See end of pprint.lsp */
+                              @'*print-array*',
+                              @'*print-base*',
+                              @'*print-case*',
+                              @'*print-circle*',
+                              @'*print-escape*',
+                              @'*print-gensym*',
+                              @'*print-length*',
+                              @'*print-level*',
+                              @'*print-lines*',
+                              @'*print-miser-width*',
+                              @'*print-pretty*',
+                              @'*print-radix*',
+                              @'*print-readably*',
+                              @'*print-right-margin*',
+                              @'*read-base*',
+                              @'*read-default-float-format*',
+                              @'*read-eval*',
+                              @'*read-suppress*',
+                              @'*readtable*',
+                              @'*package*');
+                val = cl_list(21,
+                              /**pprint-dispatch-table**/ Cnil,
+                              /**print-array**/ Ct,
+                              /**print-base**/ MAKE_FIXNUM(10),
+                              /**print-case**/ @':upcase',
+                              /**print-circle**/ Cnil,
+                              /**print-escape**/ Ct,
+                              /**print-gensym**/ Ct,
+                              /**print-length**/ Cnil,
+                              /**print-level**/ Cnil,
+                              /**print-lines**/ Cnil,
+                              /**print-miser-width**/ Cnil,
+                              /**print-pretty**/ Cnil,
+                              /**print-radix**/ Cnil,
+                              /**print-readably**/ Ct,
+                              /**print-right-margin**/ Cnil,
+                              /**read-base**/ MAKE_FIXNUM(10),
+                              /**read-default-float-format**/ @'single-float',
+                              /**read-eval**/ Ct,
+                              /**read-suppress**/ Cnil,
+                              /**readtable**/ cl_core.standard_readtable,
+                              /**package**/ cl_core.user_package);
+                ECL_SET(@'si::+io-syntax-progv-list+', CONS(var,val));
+        }
 }
 
 /*
@@ -2258,6 +2372,9 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 
 	in = OBJNULL;
 	CL_UNWIND_PROTECT_BEGIN(env) {
+                cl_index bds_ndx;
+                cl_object progv_list;
+
 		ecl_bds_bind(env, @'si::*cblock*', block);
 		if (cl_core.packages_to_be_created == OBJNULL)
 			cl_core.packages_to_be_created = Cnil;
@@ -2269,6 +2386,25 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 		perm_len = block->cblock.data_size;
 		temp_len = block->cblock.temp_data_size;
 		len = perm_len + temp_len;
+
+                if (block->cblock.data_text == 0) {
+                        if (len) {
+                                /* Code from COMPILE uses data in *compiler-constants* */
+                                cl_object v = ECL_SYM_VAL(env,@'si::*compiler-constants*');
+                                if (type_of(v) != t_vector ||
+                                    v->vector.dim != len ||
+                                    v->vector.elttype != aet_object)
+                                        FEerror("Internal error: corrupted data in "
+                                                "si::*compiler-constants*", 0);
+                                VV = block->cblock.data = v->vector.self.t;
+                                VVtemp = block->cblock.temp_data = 0;
+                        }
+                        goto NO_DATA_LABEL;
+                }
+		if (len == 0) {
+                        VV = VVtemp = 0;
+                        goto NO_DATA_LABEL;
+                }
 #ifdef ECL_DYNAMIC_VV
 		VV = block->cblock.data = perm_len? (cl_object *)ecl_alloc(perm_len * sizeof(cl_object)) : NULL;
 #else
@@ -2276,20 +2412,15 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 #endif
 		memset(VV, 0, perm_len * sizeof(*VV));
 
-		if ((len == 0) || (block->cblock.data_text == 0)) goto NO_DATA_LABEL;
-
 		VVtemp = block->cblock.temp_data = temp_len? (cl_object *)ecl_alloc(temp_len * sizeof(cl_object)) : NULL;
 		memset(VVtemp, 0, temp_len * sizeof(*VVtemp));
 
 		/* Read all data for the library */
 		in=ecl_make_string_input_stream(make_constant_base_string(block->cblock.data_text),
 						0, block->cblock.data_text_size);
-		ecl_bds_bind(env, @'*read-base*', MAKE_FIXNUM(10));
-		ecl_bds_bind(env, @'*read-default-float-format*', @'single-float');
-		ecl_bds_bind(env, @'*read-suppress*', Cnil);
-		ecl_bds_bind(env, @'*readtable*', cl_core.standard_readtable);
-		ecl_bds_bind(env, @'*package*', cl_core.lisp_package);
-		ecl_bds_bind(env, @'si::*sharp-eq-context*', Cnil);
+                progv_list = ECL_SYM_VAL(env, @'si::+ecl-syntax-progv-list+');
+                bds_ndx = ecl_progv(env, ECL_CONS_CAR(progv_list),
+                                    ECL_CONS_CDR(progv_list));
 		for (i = 0 ; i < len; i++) {
 			x = ecl_read_object(in);
 			if (x == OBJNULL)
@@ -2308,7 +2439,7 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 				}
 			}
 		}
-		ecl_bds_unwind_n(env, 6);
+                ecl_bds_unwind(env, bds_ndx);
 		if (i < len)
 			FEreader_error("Not enough data while loading binary file", in, 0);
 	NO_DATA_LABEL:
