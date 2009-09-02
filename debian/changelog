@@ -5,8 +5,9 @@ ecl (9.8.4-1) unstable; urgency=low
   * Changed to the lisp Section
   * Updated Standards-Version no real changes
   * Added linitian override for the clc directory
+  * Added debian/README.building file
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 02 Sep 2009 09:09:10 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 02 Sep 2009 09:10:09 +0100
 
 ecl (9.6.1-1) unstable; urgency=low
 
