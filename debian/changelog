@@ -1,3 +1,9 @@
+ecl (9.8.4-2) unstable; urgency=low
+
+  * I should not have changed to lisp section
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 03 Sep 2009 16:25:57 +0100
+
 ecl (9.8.4-1) unstable; urgency=low
 
   * New upstream with major changes.

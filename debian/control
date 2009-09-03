@@ -1,5 +1,5 @@
 Source: ecl
-Section: lisp
+Section: devel
 Priority: optional
 Maintainer: Debian Common Lisp Team <pkg-common-lisp-devel@lists.alioth.debian.org>
 Uploaders: Peter Van Eynde <pvaneynd@debian.org>, Luca Capello <luca@pca.it>
