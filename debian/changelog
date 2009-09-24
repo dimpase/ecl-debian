@@ -1,4 +1,4 @@
-ecl (9.8.4-2) UNRELEASED; urgency=low
+ecl (9.8.4-2) unstable; urgency=low
 
   * I should not have changed to lisp section
   * Force the configure script to use ginstall-info, (Closes: #545625)
