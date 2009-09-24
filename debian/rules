@@ -110,6 +110,9 @@ install: build-arch
 	   $(CURDIR)/debian/ecl/usr/share/info/clx.info \
 	   $(CURDIR)/debian/ecl/usr/share/info/ecldev.info
 
+
+	rm $(CURDIR)/debian/ecl/usr/share/info/dir
+
 	rmdir $(CURDIR)/debian/ecl/usr/share/info
 
 	cp ${CURDIR}/debian/install-clc.lisp $(CURDIR)/debian/ecl/usr/lib/ecl/
