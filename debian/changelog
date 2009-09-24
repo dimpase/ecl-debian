@@ -1,8 +1,9 @@
-ecl (9.8.4-2) unstable; urgency=low
+ecl (9.8.4-2) UNRELEASED; urgency=low
 
   * I should not have changed to lisp section
+  * Force the configure script to use ginstall-info, (Closes: #545625)
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 03 Sep 2009 16:25:57 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 24 Sep 2009 11:10:07 +0200
 
 ecl (9.8.4-1) unstable; urgency=low
 

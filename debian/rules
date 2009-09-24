@@ -27,6 +27,9 @@ ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
 	INSTALL_PROGRAM += -s
 endif
 
+# force to use ginstall-info:
+INSTALL_INFO=/usr/bin/ginstall-info
+
 config.status: configure
 	dh_testdir
 	# Add here commands to configure the package.
@@ -106,9 +109,6 @@ install: build-arch
 	rm $(CURDIR)/debian/ecl/usr/share/info/ecl.info \
 	   $(CURDIR)/debian/ecl/usr/share/info/clx.info \
 	   $(CURDIR)/debian/ecl/usr/share/info/ecldev.info
-
-	rm $(CURDIR)/debian/ecl/usr/share/info/dir \
-	   $(CURDIR)/debian/ecl/usr/share/info/dir.old
 
 	rmdir $(CURDIR)/debian/ecl/usr/share/info
 
