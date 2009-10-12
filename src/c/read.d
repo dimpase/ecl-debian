@@ -17,6 +17,7 @@
 
 #define ECL_INCLUDE_MATH_H
 #include <ecl/ecl.h>
+#include <ecl/number.h>
 #include <stdio.h>
 #include <limits.h>
 #include <float.h>
@@ -59,7 +60,7 @@ si_get_buffer_string()
 #ifdef ECL_UNICODE
 		output = ecl_alloc_adjustable_extended_string(ECL_BUFFER_STRING_SIZE);
 #else
-		output = cl_alloc_adjustable_base_string(ECL_BUFFER_STRING_SIZE);
+		output = ecl_alloc_adjustable_base_string(ECL_BUFFER_STRING_SIZE);
 #endif
 	} else {
 		output = CAR(pool);
@@ -86,7 +87,7 @@ si_put_buffer_string(cl_object string)
 #ifdef ECL_UNICODE
 				string = ecl_alloc_adjustable_extended_string(ECL_BUFFER_STRING_SIZE);
 #else
-				string = cl_alloc_adjustable_base_string(ECL_BUFFER_STRING_SIZE);
+				string = ecl_alloc_adjustable_base_string(ECL_BUFFER_STRING_SIZE);
 #endif
 			}
 			TOKEN_STRING_FILLP(string) = l+1;
@@ -597,20 +598,21 @@ ecl_parse_integer(cl_object str, cl_index start, cl_index end,
 		sign = -1;
 		start++;
 	}
-	integer_part = big_register0_get();
+	integer_part = _ecl_big_register0();
+        _ecl_big_set_ui(integer_part, 0);
 	for (i = start; i < end; i++) {
 		c = ecl_char(str, i);
 		d = ecl_digitp(c, radix);
 		if (d < 0) {
 			break;
 		}
-		big_mul_ui(integer_part, radix);
-		big_add_ui(integer_part, d);
+		_ecl_big_mul_ui(integer_part, integer_part, radix);
+		_ecl_big_add_ui(integer_part, integer_part, d);
 	}
 	if (sign < 0) {
-		big_complement(integer_part);
+		_ecl_big_complement(integer_part, integer_part);
 	}
-	output = big_register_normalize(integer_part);
+	output = _ecl_big_register_normalize(integer_part);
 	*ep = i;
 	return (i == start)? OBJNULL : output;
 }

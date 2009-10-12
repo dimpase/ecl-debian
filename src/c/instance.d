@@ -200,15 +200,15 @@ si_copy_instance(cl_object x)
 cl_object
 ecl_slot_value(cl_object x, const char *slot)
 {
-	cl_object slot_name = c_string_to_object(slot);
+	cl_object slot_name = ecl_read_from_cstring(slot);
 	return funcall(3, @'slot-value', x, slot_name);
 }
 
 cl_object
 ecl_slot_value_set(cl_object x, const char *slot, cl_object value)
 {
-	cl_object slot_name = c_string_to_object(slot);
-	cl_object slot_setter = c_string_to_object("(SETF SLOT-VALUE)");
+	cl_object slot_name = ecl_read_from_cstring(slot);
+	cl_object slot_setter = ecl_read_from_cstring("(SETF SLOT-VALUE)");
 	return funcall(4, ecl_fdefinition(slot_setter), value, x, slot_name);
 }
 
@@ -254,12 +254,16 @@ enum ecl_built_in_classes {
 	ECL_BUILTIN_READTABLE,
 	ECL_BUILTIN_CODE_BLOCK,
 	ECL_BUILTIN_FOREIGN_DATA,
-	ECL_BUILTIN_FRAME
+	ECL_BUILTIN_FRAME,
+	ECL_BUILTIN_WEAK_POINTER
 #ifdef ECL_THREADS
         ,
 	ECL_BUILTIN_PROCESS,
 	ECL_BUILTIN_LOCK,
 	ECL_BUILTIN_CONDITION_VARIABLE
+#endif
+#ifdef ECL_SEMAPHORES
+        , ECL_BUILTIN_SEMAPHORE
 #endif
 };
 
@@ -350,12 +354,18 @@ cl_class_of(cl_object x)
 	case t_condition_variable:
 		index = ECL_BUILTIN_CONDITION_VARIABLE; break;
 #endif
+#ifdef ECL_SEMAPHORES
+	case t_semaphores:
+		index = ECL_BUILTIN_SEMAPHORE; break;
+#endif
 	case t_codeblock:
 		index = ECL_BUILTIN_CODE_BLOCK; break;
 	case t_foreign:
 		index = ECL_BUILTIN_FOREIGN_DATA; break;
 	case t_frame:
 		index = ECL_BUILTIN_FRAME; break;
+	case t_weak_pointer:
+		index = ECL_BUILTIN_WEAK_POINTER; break;
 	default:
 		ecl_internal_error("not a lisp data object");
 	}

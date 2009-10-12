@@ -91,15 +91,11 @@ struct cl_env_struct {
 	/* Note: if you change the size of these registers, change also
 	   BIGNUM_REGISTER_SIZE in config.h */
 	cl_object big_register[3];
-#ifdef WITH_GMP
-	mp_limb_t big_register_limbs[3][16];
-#endif /* WITH_GMP */
 
 #ifdef ECL_THREADS
 	cl_object own_process;
 #endif
-	int interrupt_pending;
-	void *interrupt_info;
+	cl_object pending_interrupt;
 
 	/* The following is a hash table for caching invocations of
 	   generic functions. In a multithreaded environment we must
@@ -131,6 +127,9 @@ struct cl_env_struct {
 
         /* Floating point interrupts which are trapped */
         int trap_fpe_bits;
+
+	/* Old exception filter. Needed by windows. */
+	void *old_exception_filter;
 };
 
 #ifndef __GNUC__
@@ -167,9 +166,7 @@ struct cl_core_struct {
 	cl_object gray_package;
 # endif
 #endif
-#ifdef ECL_THREADS
 	cl_object mp_package;
-#endif
 	cl_object packages_to_be_created;
 
 	cl_object pathname_translations;
@@ -211,7 +208,7 @@ struct cl_core_struct {
 
 #ifdef ECL_THREADS
 	cl_object processes;
-	pthread_mutex_t global_lock;
+	cl_object global_lock;
 #endif
 	cl_object libraries;
 	cl_object to_be_finalized;
@@ -224,6 +221,10 @@ struct cl_core_struct {
 #ifdef GBC_BOEHM
         char *safety_region;
 #endif
+#ifdef ECL_THREADS
+	cl_object signal_queue_lock;
+#endif
+	cl_object signal_queue;
 
 #ifdef ECL_UNICODE
 	cl_object unicode_database;
@@ -231,6 +232,7 @@ struct cl_core_struct {
 	uint8_t *ucd_pages;
 	uint8_t *ucd_data;
 #endif
+	void *default_sigmask;
 };
 
 extern ECL_API struct cl_core_struct cl_core;
@@ -255,6 +257,10 @@ extern ECL_API void ecl_dealloc(void *);
 #define ecl_alloc_align(s,d) ecl_alloc(s)
 #define ecl_alloc_atomic_align(s,d) ecl_alloc_atomic(s)
 #define ecl_register_static_root(x) ecl_register_root(x)
+extern ECL_API cl_object ecl_alloc_compact_object(cl_type t, cl_index extra_space);
+
+extern ECL_API cl_object si_make_weak_pointer(cl_object o);
+extern ECL_API cl_object si_weak_pointer_value(cl_object o);
 #else
 extern ECL_API cl_object si_allocate _ARGS((cl_narg narg, cl_object type, cl_object qty, ...));
 extern ECL_API cl_object si_maximum_allocatable_pages _ARGS((cl_narg narg, cl_object type));
@@ -334,6 +340,7 @@ extern ECL_API cl_object ecl_aref1(cl_object v, cl_index index);
 extern ECL_API cl_object ecl_aset(cl_object x, cl_index index, cl_object value);
 extern ECL_API cl_object ecl_aset1(cl_object v, cl_index index, cl_object val);
 extern ECL_API void ecl_array_allocself(cl_object x);
+extern ECL_API cl_object ecl_alloc_simple_vector(cl_index l, cl_elttype aet);
 extern ECL_API cl_elttype ecl_array_elttype(cl_object x);
 extern ECL_API cl_elttype ecl_symbol_to_elttype(cl_object x);
 extern ECL_API cl_object ecl_elttype_to_symbol(cl_elttype aet);
@@ -355,24 +362,13 @@ extern ECL_API void ecl_clear_compiler_properties(cl_object sym);
 
 /* big.c */
 
-extern ECL_API cl_object big_register0_get(void);
-extern ECL_API cl_object big_register1_get(void);
-extern ECL_API cl_object big_register2_get(void);
-extern ECL_API cl_object big_register_copy(cl_object x);
-extern ECL_API cl_object big_register_normalize(cl_object x);
-extern ECL_API void big_register_free(cl_object x);
+#define _ecl_big_register0()	ecl_process_env()->big_register[0]
+#define _ecl_big_register1()	ecl_process_env()->big_register[1]
+#define _ecl_big_register2()	ecl_process_env()->big_register[2]
+extern ECL_API cl_object _ecl_big_register_copy(cl_object x);
+extern ECL_API cl_object _ecl_big_register_normalize(cl_object x);
+extern ECL_API void _ecl_big_register_free(cl_object x);
 extern ECL_API cl_object bignum1(cl_fixnum val);
-#ifdef WITH_GMP
-extern ECL_API cl_object bignum2(mp_limb_t hi, mp_limb_t lo);
-#else  /* WITH_GMP */
-extern ECL_API cl_object bignum2(cl_fixnum hi, cl_fixnum lo);
-#endif /* WITH_GMP */
-extern ECL_API cl_object big_set_fixnum(cl_object x, cl_object fix);
-extern ECL_API cl_object big_copy(cl_object x);
-extern ECL_API cl_object big_minus(cl_object x);
-extern ECL_API cl_object big_plus(cl_object x, cl_object y);
-extern ECL_API cl_object big_normalize(cl_object x);
-extern ECL_API double big_to_double(cl_object x);
 
 
 /* cfun.c */
@@ -666,6 +662,7 @@ extern ECL_API int ecl_stream_to_handle(cl_object s, bool output);
 
 /* finalize.c */
 
+extern ECL_API void ecl_set_finalizer_unprotected(cl_object o, cl_object finalizer);
 extern ECL_API cl_object si_get_finalizer(cl_object o);
 extern ECL_API cl_object si_set_finalizer(cl_object o, cl_object finalizer);
 
@@ -732,7 +729,7 @@ extern ECL_API cl_object si_hash_eql _ARGS((cl_narg narg, ...));
 extern ECL_API cl_object si_hash_equal _ARGS((cl_narg narg, ...));
 extern ECL_API cl_object si_hash_equalp _ARGS((cl_narg narg, ...));
 
-extern ECL_API void ecl_sethash(cl_object key, cl_object hashtable, cl_object value);
+extern ECL_API cl_object ecl_sethash(cl_object key, cl_object hashtable, cl_object value);
 extern ECL_API cl_object ecl_gethash(cl_object key, cl_object hash);
 extern ECL_API cl_object ecl_gethash_safe(cl_object key, cl_object hash, cl_object def);
 extern ECL_API bool ecl_remhash(cl_object key, cl_object hash);
@@ -898,6 +895,9 @@ typedef enum {
 	ECL_OPT_TRAP_SIGINT,
 	ECL_OPT_TRAP_SIGILL,
 	ECL_OPT_TRAP_SIGBUS,
+	ECL_OPT_TRAP_INTERRUPT_SIGNAL,
+	ECL_OPT_SIGNAL_HANDLING_THREAD,
+	ECL_OPT_SIGNAL_QUEUE_SIZE,
 	ECL_OPT_BOOTED,
 	ECL_OPT_BIND_STACK_SIZE,
 	ECL_OPT_BIND_STACK_SAFETY_AREA,
@@ -911,6 +911,7 @@ typedef enum {
 	ECL_OPT_HEAP_SIZE,
 	ECL_OPT_HEAP_SAFETY_AREA,
         ECL_OPT_THREAD_INTERRUPT_SIGNAL,
+        ECL_OPT_SET_GMP_MEMORY_FUNCTIONS,
 	ECL_OPT_LIMIT
 } ecl_option;
 
@@ -1445,7 +1446,6 @@ extern ECL_API cl_object cl_reverse(cl_object x);
 extern ECL_API cl_object cl_nreverse(cl_object x);
 extern ECL_API cl_object cl_subseq _ARGS((cl_narg narg, cl_object sequence, cl_object start, ...));
 
-extern ECL_API cl_object ecl_alloc_simple_vector(cl_index l, cl_elttype aet);
 extern ECL_API cl_object ecl_elt(cl_object seq, cl_fixnum index);
 extern ECL_API cl_object ecl_elt_set(cl_object seq, cl_fixnum index, cl_object val);
 extern ECL_API cl_fixnum ecl_length(cl_object x);
@@ -1475,7 +1475,6 @@ extern ECL_API cl_index ecl_progv(cl_env_ptr env, cl_object vars, cl_object valu
 extern ECL_API void ecl_bds_unwind(cl_env_ptr env, cl_index new_bds_top_index);
 extern ECL_API void ecl_unwind(cl_env_ptr env, ecl_frame_ptr fr) /*__attribute__((noreturn))*/;
 extern ECL_API ecl_frame_ptr frs_sch(cl_object frame_id);
-extern ECL_API ecl_frame_ptr frs_sch_catch(cl_object frame_id);
 
 /* string.c */
 
@@ -1508,8 +1507,8 @@ extern ECL_API cl_object cl_nstring_capitalize _ARGS((cl_narg narg, ...));
 extern ECL_API cl_object si_base_string_concatenate _ARGS((cl_narg narg, ...));
 extern ECL_API cl_object si_copy_to_simple_base_string(cl_object s);
 
-extern ECL_API cl_object cl_alloc_simple_base_string(cl_index l);
-extern ECL_API cl_object cl_alloc_adjustable_base_string(cl_index l);
+#define ecl_alloc_simple_base_string(l) ecl_alloc_simple_vector((l),aet_bc)
+extern ECL_API cl_object ecl_alloc_adjustable_base_string(cl_index l);
 extern ECL_API cl_object make_simple_base_string(char *s);
 #define make_constant_base_string(s) (make_simple_base_string((char *)s))
 extern ECL_API cl_object make_base_string_copy(const char *s);
@@ -1596,29 +1595,50 @@ extern ECL_API cl_object mp_make_process _ARGS((cl_narg narg, ...));
 extern ECL_API cl_object mp_process_active_p(cl_object process);
 extern ECL_API cl_object mp_process_enable(cl_object process);
 extern ECL_API cl_object mp_process_yield(void);
+extern ECL_API cl_object mp_process_join(cl_object process);
 extern ECL_API cl_object mp_process_interrupt(cl_object process, cl_object function);
 extern ECL_API cl_object mp_process_kill(cl_object process);
+extern ECL_API cl_object mp_process_suspend(cl_object process);
+extern ECL_API cl_object mp_process_resume(cl_object process);
 extern ECL_API cl_object mp_process_name(cl_object process);
 extern ECL_API cl_object mp_process_preset _ARGS((cl_narg narg, cl_object process, cl_object function, ...));
 extern ECL_API cl_object mp_process_run_function _ARGS((cl_narg narg, cl_object name, cl_object function, ...));
 extern ECL_API cl_object mp_process_whostate(cl_object process);
-extern ECL_API cl_object mp_make_lock _ARGS((cl_narg narg, ...));
-extern ECL_API cl_object mp_recursive_lock_p(cl_object lock);
-extern ECL_API cl_object mp_lock_name(cl_object lock);
-extern ECL_API cl_object mp_lock_holder(cl_object lock);
-extern ECL_API cl_object mp_get_lock _ARGS((cl_narg narg, cl_object lock, ...));
-extern ECL_API cl_object mp_giveup_lock(cl_object lock);
 extern ECL_API cl_object mp_make_condition_variable(void);
 extern ECL_API cl_object mp_condition_variable_wait(cl_object cv, cl_object lock);
 extern ECL_API cl_object mp_condition_variable_timedwait(cl_object cv, cl_object lock, cl_object seconds);
 extern ECL_API cl_object mp_condition_variable_signal(cl_object cv);
 extern ECL_API cl_object mp_condition_variable_broadcast(cl_object cv);
 extern ECL_API cl_object mp_current_process(void);
+extern ECL_API cl_object mp_block_signals(void);
+extern ECL_API cl_object mp_restore_signals(cl_object sigmask);
 
-extern ECL_API void ecl_import_current_thread(cl_object process_name, cl_object process_binding);
+extern ECL_API bool ecl_import_current_thread(cl_object process_name, cl_object process_binding);
 extern ECL_API void ecl_release_current_thread(void);
-#endif
+# ifdef ECL_SEMAPHORES
+extern ECL_API void mp_make_semaphore _ARGS((cl_narg, cl_object, ...));
+extern ECL_API void mp_semaphore_trywait(cl_object);
+extern ECL_API void mp_semaphore_wait(cl_object);
+extern ECL_API void mp_semaphore_signal(cl_object);
+extern ECL_API void mp_semaphore_close(cl_object);
+# endif
 
+/* threads_mutex.c */
+
+extern ECL_API cl_object mp_make_lock _ARGS((cl_narg narg, ...));
+extern ECL_API cl_object mp_recursive_lock_p(cl_object lock);
+extern ECL_API cl_object mp_lock_name(cl_object lock);
+extern ECL_API cl_object mp_lock_holder(cl_object lock);
+extern ECL_API cl_object mp_lock_mine_p(cl_object lock);
+extern ECL_API cl_object mp_lock_count(cl_object lock);
+extern ECL_API cl_object mp_lock_count_mine(cl_object lock);
+extern ECL_API cl_object mp_get_lock _ARGS((cl_narg narg, cl_object lock, ...));
+extern ECL_API cl_object mp_get_lock_wait(cl_object lock);
+extern ECL_API cl_object mp_get_lock_nowait(cl_object lock);
+extern ECL_API cl_object mp_giveup_lock(cl_object lock);
+
+extern ECL_API cl_object ecl_make_lock(cl_object lock, bool recursive);
+#endif /* ECL_THREADS */
 
 /* time.c */
 
@@ -1701,17 +1721,22 @@ extern ECL_API cl_object si_copy_file(cl_object orig, cl_object end);
 #define ecl_disable_interrupts_env(env) ((env)->disable_interrupts=1)
 #define ecl_enable_interrupts_env(env) (((env)->disable_interrupts^=1) && (ecl_check_pending_interrupts(),0))
 #endif
+#define ecl_clear_interrupts_env(env) ((env)->pendinginterrupts=0)
+#define ecl_clear_interrupts() ecl_clear_interrupts(&cl_env)
 #define ecl_disable_interrupts() ecl_disable_interrupts_env(&cl_env)
 #define ecl_enable_interrupts() ecl_enable_interrupts_env(&cl_env)
 #define ECL_PSEUDO_ATOMIC_ENV(env,stmt) (ecl_disable_interrupts_env(env),(stmt),ecl_enable_interrupts_env(env))
 #define ECL_PSEUDO_ATOMIC(stmt) (ecl_disable_interrupts(),(stmt),ecl_enable_interrupts())
+extern ECL_API cl_object si_handle_signal(cl_object signal);
 extern ECL_API cl_object si_catch_signal(cl_object signal, cl_object state);
 extern ECL_API cl_object si_check_pending_interrupts(void);
 extern ECL_API cl_object si_disable_interrupts(void);
 extern ECL_API cl_object si_enable_interrupts(void);
 extern ECL_API cl_object si_trap_fpe(cl_object condition, cl_object flag);
+#if defined(_MSC_VER) || defined(mingw32)
+extern LONG WINAPI _ecl_w32_exception_filter(struct _EXCEPTION_POINTERS*);
+#endif
 extern ECL_API void ecl_check_pending_interrupts(void);
-
 
 /* unixsys.c */
 
@@ -1727,7 +1752,7 @@ extern ECL_API cl_object si_base_char_p(cl_object x);
 extern ECL_API cl_object si_base_string_p(cl_object x);
 extern ECL_API cl_object si_coerce_to_base_string(cl_object x);
 extern ECL_API cl_object si_coerce_to_extended_string(cl_object x);
-extern ECL_API cl_object cl_alloc_simple_extended_string(cl_index l);
+#define ecl_alloc_simple_extended_string(l) ecl_alloc_simple_vector((l),aet_ch)
 extern ECL_API cl_object ecl_alloc_adjustable_extended_string(cl_index l);
 #else
 #define si_base_char_p cl_characterp
@@ -1956,6 +1981,8 @@ extern ECL_API cl_object clos_standard_instance_set _ARGS((cl_narg narg, cl_obje
 /*
  * LEGACY
  */
+#ifndef ECL_NO_LEGACY
+
 #define make_shortfloat(x) ecl_make_shortfloat(x);
 #define cl_def_c_function_va(sym,function) ecl_def_c_function_va(sym,function)
 #define cl_def_c_function(sym,function,narg) ecl_def_c_function(sym,function,narg)
@@ -1972,6 +1999,21 @@ extern ECL_API cl_object clos_standard_instance_set _ARGS((cl_narg narg, cl_obje
 #define ARRAYP ECL_ARRAYP
 #define VECTORP ECL_VECTORP
 #define c_string_to_object ecl_read_from_cstring
+
+#define big_register0_get _ecl_big_register0
+#define big_register1_get _ecl_big_register1
+#define big_register2_get _ecl_big_register2
+#define big_register_free _ecl_big_register_free
+#define big_register_copy _ecl_big_register_copy
+#define big_register_normalize _ecl_big_register_normalize
+/* #define big_copy _ecl_big_copy  Has disappeared */
+/* #define big_to_double Has disappeared */
+
+#define cl_alloc_simple_base_string ecl_alloc_simple_base_string
+#define cl_alloc_adjustable_base_string ecl_alloc_adjustable_base_string
+#define cl_alloc_simple_extended_string ecl_alloc_simple_extended_string
+
+#endif
 
 #ifdef __cplusplus
 }

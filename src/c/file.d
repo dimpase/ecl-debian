@@ -1463,9 +1463,9 @@ ecl_make_string_output_stream(cl_index line_length, int extended)
 #ifdef ECL_UNICODE
 	cl_object s = extended?
 		ecl_alloc_adjustable_extended_string(line_length) :
-		cl_alloc_adjustable_base_string(line_length);
+		ecl_alloc_adjustable_base_string(line_length);
 #else
-	cl_object s = cl_alloc_adjustable_base_string(line_length);
+	cl_object s = ecl_alloc_adjustable_base_string(line_length);
 #endif
 	return si_make_string_output_stream_from_string(s);
 }
@@ -2630,7 +2630,8 @@ io_file_clear_input(cl_object strm)
 	}
 #endif
 	while (file_listen(f) == ECL_LISTEN_AVAILABLE) {
-		eformat_read_char(strm);
+		ecl_character c = eformat_read_char(strm);
+                if (c == EOF) return;
 	}
 }
 
@@ -4016,7 +4017,7 @@ ecl_force_output(cl_object strm)
 void
 ecl_finish_output(cl_object strm)
 {
-	return stream_dispatch_table(strm)->finish_output(strm);
+	stream_dispatch_table(strm)->finish_output(strm);
 }
 
 int
@@ -4623,6 +4624,12 @@ file_listen(int fileno)
 	fd_set fds;
 	int retv, fd;
 	struct timeval tv = { 0, 0 };
+        /*
+         * Note that the following code is fragile. If the file is closed (/dev/null)
+         * then select() may return 1 (at least on OS X), so that we return a flag
+         * saying characters are available but will find none to read. See also the
+         * code in cl_clear_input().
+         */
 	FD_ZERO(&fds);
 	FD_SET(fileno, &fds);
 	retv = select(fileno + 1, &fds, NULL, NULL, &tv);
@@ -4731,7 +4738,7 @@ ecl_off_t_to_integer(ecl_off_t offset)
 	} else if (offset <= MOST_POSITIVE_FIXNUM) {
 		output = MAKE_FIXNUM((cl_fixnum)offset);
 	} else {
-		cl_object y = big_register0_get();
+		cl_object y = _ecl_big_register0();
 #ifdef WITH_GMP
 		if (sizeof(y->big.big_limbs[0]) == sizeof(cl_index)) {
 			y->big.big_limbs[0] = (cl_index)offset;
@@ -4745,7 +4752,7 @@ ecl_off_t_to_integer(ecl_off_t offset)
 #else
 		y->big.big_num = offset;
 #endif
-		output = big_register_normalize(y);
+		output = _ecl_big_register_normalize(y);
 	}
 	return output;
 }
@@ -5003,7 +5010,9 @@ init_file(void)
 	null_stream = cl_make_two_way_stream(null_stream, cl_make_broadcast_stream(0));
 	cl_core.null_stream = null_stream;
 
-#if 1
+        /* We choose C streams by default only when _not_ using threads.
+         * The reason is that C streams block on I/O operations. */
+#ifndef ECL_THREADS
 	standard_input = ecl_make_stream_from_FILE(make_constant_base_string("stdin"),
 						   stdin, smm_input, 8, flags, external_format);
 	standard_output = ecl_make_stream_from_FILE(make_constant_base_string("stdout"),

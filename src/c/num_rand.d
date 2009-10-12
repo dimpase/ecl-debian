@@ -63,7 +63,7 @@ cl_object
 init_random_state()
 {
 	cl_index bytes = sizeof(ulong) * (MT_N + 1);
-	cl_object a = cl_alloc_simple_base_string(bytes);
+	cl_object a = ecl_alloc_simple_base_string(bytes);
 	ulong *mt = (ulong*)a->base_string.self;
 	int j;
 #if !defined(_MSC_VER) && !defined(mingw32)
@@ -162,7 +162,7 @@ rando(cl_object x, cl_object rs)
 	default:
 	ERROR:
 		x = ecl_type_error(@'random',"limit",x,
-				   c_string_to_object("(OR (INTEGER (0) *) (FLOAT (0) *))"));
+				   ecl_read_from_cstring("(OR (INTEGER (0) *) (FLOAT (0) *))"));
 		goto AGAIN;
 	}
 	return z;

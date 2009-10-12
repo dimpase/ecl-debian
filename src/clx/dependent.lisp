@@ -893,7 +893,7 @@
   (sb-thread:make-mutex :name name))
 
 #+(and ecl threads)
-(defun make-lock (name)
+(defun make-process-lock (name)
   (mp:make-lock :name name))
 
 ;;; HOLDING-LOCK: Execute a body of code with a lock held.
@@ -952,8 +952,8 @@
 			      &key timeout)
 			&body body)
   (declare (ignore display))
-  `(progn (mp:get-lock ,lock)
-	  ,@body))
+  `(mp::with-lock (,lock)
+      ,@body))
 
 #+sbcl
 (defmacro holding-lock ((lock display &optional (whostate "CLX wait")

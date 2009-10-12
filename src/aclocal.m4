@@ -202,7 +202,7 @@ THREAD_CFLAGS=''
 THREAD_LIBS=''
 THREAD_GC_FLAGS='--enable-threads=posix'
 INSTALL_TARGET='install'
-THREAD_OBJ='threads'
+THREAD_OBJ='threads threads_mutex'
 clibs=''
 SONAME=''
 SONAME_LDFLAGS=''
@@ -278,12 +278,16 @@ case "${host_os}" in
 		;;
 	solaris*)
 		thehost='sun4sol2'
+		THREAD_LIBS='-lrt -lpthread'
 		SHARED_LDFLAGS="-dy -G ${LDFLAGS}"
 		BUNDLE_LDFLAGS="-dy -G ${LDFLAGS}"
 		ECL_LDRPATH='-Wl,-R,~A'
 		TCPLIBS='-lsocket -lnsl -lintl'
 		clibs='-ldl'
-		CFLAGS="${CFLAGS} -std=gnu99"
+		# We should use C99 and _XOPEN_SOURCE=600, but Solaris 10
+		# ships with GCC 3.4.3 which does not support C99
+		# CFLAGS="${CFLAGS} -std=gnu99"
+		enable_slow_config=yes
 		;;
 	cygwin*)
 		thehost='cygwin'
@@ -321,18 +325,27 @@ case "${host_os}" in
 		THREAD_CFLAGS='-D_THREAD_SAFE'
 		THREAD_LIBS='-lpthread'
 		# The GMP library has not yet been ported to Intel-OSX
-		if test "`uname -m`" = i386; then
-		  gmp_build=none-apple-${host_os}
-		else
-		  export ABI=mode32
-		fi
+		case "`uname -m`" in
+		i386*|x86_64) gmp_build=none-apple-${host_os};;
+		*) ABI=32;;
+		esac
+                if test "x$ABI" = "x64"; then
+                  if echo "$CFLAGS" | grep -v '[ ]*-m64' >/dev/null ; then
+                     CFLAGS="-m64 $CFLAGS"
+                     LDFLAGS="-m64 $LDFLAGS"
+                  fi
+                  # Needed when building the old version of GMP.
+                  # Should be removed when moving to MPIR
+                  ABI="long"
+                fi
+                if test "x$ABI" = "x32"; then
+                  ABI="long"
+                fi
                 # The Boehm-Weiser GC library shipped with Fink does not work
                 # well with our signal handler.
                 enable_boehm=included
-		# ECL, due to some of the libraries, does not build on
-		# 64 bit mode on OSX. We prevent GMP using that mode.
 		SONAME="${SHAREDPREFIX}ecl.SOVERSION.${SHAREDEXT}"
-		SONAME_LDFLAGS="-Wl,-install_name,SONAME -Wl,-compatibility_version,${PACKAGE_VERSION}"
+		SONAME_LDFLAGS="-Wl,-install_name,@libdir\@/SONAME -Wl,-compatibility_version,${PACKAGE_VERSION}"
 		;;
 	nsk*)
 		# HP Non-Stop platform
@@ -418,12 +431,14 @@ ECL_INT16_T=""
 ECL_INT32_T=""
 ECL_INT64_T=""
 AC_SUBST(ECL_STDINT_HEADER)
-AC_CHECK_HEADER([stdint.h],[ECL_STDINT_HEADER="#include <stdint.h>"],[])
+AC_CHECK_HEADER([stdint.h],[AC_DEFINE(HAVE_STDINT_H)
+ECL_STDINT_HEADER="#include <stdint.h>"],[])
 if test -z "${ECL_STDINT_HEADER}"; then
-AC_CHECK_HEADER([inttypes.h],[ECL_STDINT_HEADER="#include <inttypes.h>"],[])
+AC_CHECK_HEADER([inttypes.h],[AC_DEFINE(HAVE_INTTYPES_H)
+ECL_STDINT_HEADER="#include <inttypes.h>"],[])
 fi
 if test -n "${ECL_STDINT_HEADER}" -a -z "${ECL_UINT8_T}"; then
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_STDINT_H
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #else
 #ifdef HAVE_STDINT_H
@@ -455,7 +470,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [[
 }]])],[ECL_UINT8_T="unsigned char";ECL_INT8_T="signed char"],[])
 fi
 if test -n "${ECL_STDINT_HEADER}" -a -z "${ECL_UINT16_T}"; then
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_STDINT_H
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #else
 #ifdef HAVE_STDINT_H
@@ -474,7 +489,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_STDINT_H
 }]])],[ECL_UINT16_T=uint16_t;ECL_INT16_T=int16_t],[])
 fi
 if test -n "${ECL_STDINT_HEADER}" -a -z "${ECL_UINT32_T}"; then
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_STDINT_H
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #else
 #ifdef HAVE_STDINT_H
@@ -493,7 +508,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_STDINT_H
 }]])],[ECL_UINT32_T=uint32_t;ECL_INT32_T=int32_t],[])
 fi
 if test -n "${ECL_STDINT_HEADER}" -a -z "${ECL_UINT64_T}"; then
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_STDINT_H
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #else
 #ifdef HAVE_STDINT_H
@@ -735,13 +750,11 @@ dnl configuring ECL in a compatible way.
 dnl
 AC_DEFUN(ECL_GMP_BASED_CONFIG,[
 AC_MSG_CHECKING([Using the GMP library to guess good compiler/linker flags])
-(rm -rf tmp; \
- mkdir tmp; \
- aux=`cd ${srcdir}/gmp; pwd`;
- cd tmp; \
- ${aux}/configure --srcdir=${aux} --prefix=${builddir} >/dev/null 2>&1)
-GMP_CFLAGS=`grep '^s,@CFLAGS@' tmp/config.status| sed 's&s,@CFLAGS@,\(.*\),;t t&\1&'`
-GMP_LDFLAGS=`grep '^s,@GMP_LDFLAGS@' tmp/config.status| sed 's&s,@GMP_LDFLAGS@,\(.*\),;t t&\1&'`;
+if test ! -f gmp/config.status; then
+  AC_MSG_ERROR([Cannot find GMP's configuration file. Aborting])
+fi
+GMP_CFLAGS=`grep '^s,@CFLAGS@' gmp/config.status| sed 's&s,@CFLAGS@,\(.*\),;t t&\1&'`
+GMP_LDFLAGS=`grep '^s,@GMP_LDFLAGS@' gmp/config.status| sed 's&s,@GMP_LDFLAGS@,\(.*\),;t t&\1&'`;
 # Notice that GMP_LDFLAGS is designed to be passed to libtool, and therefore
 # some options could be prefixed by -Wc, which means "flag for the compiler".
 LDFLAGS=`echo ${LDFLAGS} ${GMP_LDFLAGS} | sed 's%-Wc,%%g'`
@@ -769,7 +782,11 @@ case "${host_cpu}" in
 		EXTRA_OBJS="${EXTRA_OBJS} apply_x86.o"
 		AC_DEFINE(ECL_ASM_APPLY)
 	fi
-        AC_DEFINE(ECL_USE_VARARG_AS_POINTER)
+        # OSX may report i386 and still allow building 64-bits
+        # executables.
+        if test $CL_FIXNUM_BITS = 32; then
+          AC_DEFINE(ECL_USE_VARARG_AS_POINTER)
+        fi
 	dynamic_ffi=yes
 	;;
    x86_64 )
@@ -823,3 +840,29 @@ case "${host_cpu}" in
 esac
 AC_SUBST(ECL_FPE_CODE)
 ])
+
+dnl ----------------------------------------------------------------------
+dnl Check whether we have unnamed POSIX semaphores available
+AC_DEFUN([ECL_POSIX_SEMAPHORES],
+[AC_MSG_CHECKING(working sem_init())
+AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#ifdef HAVE_SEMAPHORE_H
+#include <semaphore.h>
+int main() {
+  sem_t aux;
+  if (sem_init(&aux, 0, 0))
+    exit(1);
+  exit(0);
+#else
+int main() {
+  exit(1);
+}
+#endif
+}]])],[working_sem_init=yes],[working_sem_init=no],[])
+AC_MSG_RESULT([$working_sem_init])
+if test $working_sem_init = yes ; then
+  AC_DEFINE(ECL_SEMAPHORES)
+  AC_DEFINE(HAVE_SEM_INIT)
+fi
+])
+
