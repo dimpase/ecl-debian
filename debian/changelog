@@ -1,8 +1,8 @@
-ecl (9.8.4-3) UNRELEASED; urgency=low
+ecl (9.10.2-1) UNRELEASED; urgency=low
 
-  * 
+  * New upstream release. 
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 24 Sep 2009 14:46:50 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Mon, 12 Oct 2009 11:43:41 +0100
 
 ecl (9.8.4-2) unstable; urgency=low
 
