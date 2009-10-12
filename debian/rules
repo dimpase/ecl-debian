@@ -51,7 +51,7 @@ config.status: configure
 	   --with-tcp \
 	   --with-clx  \
 	   --enable-threads=yes \
-	   --enable-boehm=system \
+	   --enable-boehm=included \
 	   --with-x
 	   #--enable-boehm=system
 
