@@ -57,7 +57,7 @@ FEtype_error_proper_list(cl_object x) {
 	cl_error(9, @'simple-type-error', @':format-control',
 		    make_constant_base_string("Not a proper list ~D"),
 		    @':format-arguments', cl_list(1, x),
-		    @':expected-type', c_string_to_object("si::proper-list"),
+		    @':expected-type', ecl_read_from_cstring("si::proper-list"),
 		    @':datum', x);
 }
 
@@ -206,12 +206,18 @@ ecl_type_to_symbol(cl_type t)
 	case t_condition_variable:
 		return @'mp::condition-variable';
 #endif
+#ifdef ECL_SEMAPHORES
+	case t_semaphore:
+		return @'mp::semaphore';
+#endif
 	case t_codeblock:
 		return @'si::code-block';
 	case t_foreign:
 		return @'si::foreign-data';
 	case t_frame:
 		return @'si::frame';
+	case t_weak_pointer:
+		return @'ext::weak-pointer';
 	default:
 		ecl_internal_error("not a lisp data object");
 	}
@@ -262,7 +268,7 @@ assert_type_non_negative_integer(cl_object p)
 		if (FIXNUM_PLUSP(p))
 			return;
 	} else if (t == t_bignum) {
-		if (big_sign(p) >= 0)
+		if (_ecl_big_sign(p) >= 0)
 			return;
 	}
 	FEwrong_type_argument(cl_list(3,@'integer',MAKE_FIXNUM(0),@'*'), p);

@@ -192,6 +192,10 @@ extern ECL_API ecl_frame_ptr _ecl_frs_push(register cl_env_ptr, register cl_obje
 #define return0()	return ((NVALUES = 0),Cnil)
 #define return1(x)	return ((VALUES(0)=(x)),(NVALUES=1),VALUES(0))
 #define returnn(x)	return x
+#define ecl_return0(env,x) \
+	do { (env)->nvalues = 0; return Cnil; } while (1)
+#define ecl_return1(env,x) \
+	do { cl_object __aux = (x); (env)->nvalues = 0; return __aux; } while (1)
 
 /*****************************
  * LEXICAL ENVIRONMENT STACK
@@ -307,16 +311,29 @@ extern ECL_API ecl_frame_ptr _ecl_frs_push(register cl_env_ptr, register cl_obje
 	if (ecl_frs_push(__the_env,tag) == 0) {
 
 #define CL_CATCH_END } \
-	frs_pop(); } while (0)
+	ecl_frs_pop(__the_env); } while (0)
 
-#define CL_CATCH_ALL_BEGIN(the_env) do {	\
+#if defined(_MSC_VER)
+extern ECL_API LONG WINAPI _ecl_w32_exception_filter(struct _EXCEPTION_POINTERS *);
+# define CL_CATCH_ALL_BEGIN(the_env) do {			\
+	const cl_env_ptr __the_env = (the_env);			\
+	_try {							\
+	const cl_env_ptr __the_env = (the_env);			\
+	if (ecl_frs_push(__the_env,ECL_PROTECT_TAG) == 0) {
+# define CL_CATCH_ALL_IF_CAUGHT } else {
+# define CL_CATCH_ALL_END }}						\
+	_except(_ecl_w32_exception_filter(GetExceptionInformation())) \
+	{ (void)0; }							\
+	ecl_frs_pop(__the_env); } while(0)
+#else
+# define CL_CATCH_ALL_BEGIN(the_env) do {	\
 	const cl_env_ptr __the_env = (the_env);	\
 	if (ecl_frs_push(__the_env,ECL_PROTECT_TAG) == 0) {
-
-#define CL_CATCH_ALL_IF_CAUGHT } else {
-
-#define CL_CATCH_ALL_END } \
+# define CL_CATCH_ALL_IF_CAUGHT } else {
+# define CL_CATCH_ALL_END } \
 	ecl_frs_pop(__the_env); } while(0)
+#endif
+
 
 #ifdef __cplusplus
 }

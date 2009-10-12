@@ -1,6 +1,6 @@
 /* -*- mode: c; c-basic-offset: 8 -*- */
 /*
-    threads.d -- Posix threads with support from GCC.
+    threads.d -- Native threads.
 */
 /*
     Copyright (c) 2003, Juan Jose Garcia Ripoll.
@@ -12,18 +12,18 @@
 
     See file '../Copyright' for full details.
 */
-/*
- * IMPORTANT!!!! IF YOU EDIT THIS FILE, CHANGE ALSO threads_win32.d
- */
 
+#ifndef __sun__ /* See unixinit.d for this */
 #define _XOPEN_SOURCE 600	/* For pthread mutex attributes */
-#if !defined(_MSC_VER) && !defined(mingw32)
+#endif
+#if defined(_MSC_VER) || defined(mingw32)
+# include <windows.h>
+#else
 # include <pthread.h>
 #endif
 #include <errno.h>
 #include <time.h>
 #include <signal.h>
-#define GC_THREADS
 #define ECL_INCLUDE_MATH_H
 #include <ecl/ecl.h>
 #include <ecl/internal.h>
@@ -33,15 +33,16 @@
 #ifdef HAVE_SCHED_YIELD
 # include <sched.h>
 #endif
+#ifdef HAVE_SEMAPHORE_H
+# include <semaphore.h>
+#endif
 
-#if defined(_MSC_VER) || defined(mingw32)
-# define ECL_WINDOWS_THREADS
+#ifdef ECL_WINDOWS_THREADS
 /*
  * We have to put this explicit definition here because Boehm GC
  * is designed to produce a DLL and we rather want a static
  * reference
  */
-# include <windows.h>
 # include <gc.h>
 extern HANDLE WINAPI GC_CreateThread(
     LPSECURITY_ATTRIBUTES lpThreadAttributes, 
@@ -50,15 +51,11 @@ extern HANDLE WINAPI GC_CreateThread(
 # ifndef WITH___THREAD
 DWORD cl_env_key;
 # endif
-static DWORD main_thread;
 #else
 # ifndef WITH___THREAD
 static pthread_key_t cl_env_key;
 # endif
-static pthread_t main_thread;
-static pthread_attr_t pthreadattr;
-static pthread_mutexattr_t mutexattr_error, mutexattr_recursive;
-#endif /* _MSC_VER || mingw32 */
+#endif /* ECL_WINDOWS_THREADS */
 
 extern void ecl_init_env(struct cl_env_struct *env);
 
@@ -124,12 +121,14 @@ thread_cleanup(void *aux)
 	 * mp_process_kill().
 	 */
 	cl_object process = (cl_object)aux;
+	process->process.active = 0;
+	mp_giveup_lock(process->process.exit_lock);
 	THREAD_OP_LOCK();
 	cl_core.processes = ecl_remove_eq(process, cl_core.processes);
 	THREAD_OP_UNLOCK();
-	_ecl_dealloc_env(process->process.env);
+	if (process->process.env)
+		_ecl_dealloc_env(process->process.env);
 	process->process.env = NULL;
-	process->process.active = 0;
 }
 
 #ifdef ECL_WINDOWS_THREADS
@@ -142,10 +141,10 @@ thread_entry_point(void *arg)
         cl_object process = (cl_object)arg;
 	cl_env_ptr env;
 
-	/* 1) Setup the environment for the execution of the thread */
 #ifndef ECL_WINDOWS_THREADS
 	pthread_cleanup_push(thread_cleanup, (void *)process);
 #endif
+	/* 1) Setup the environment for the execution of the thread */
 	process->process.env = env = _ecl_alloc_env();
 	env->own_process = process;
 	ecl_set_process_env(env);
@@ -154,25 +153,25 @@ thread_entry_point(void *arg)
 	THREAD_OP_UNLOCK();
 	ecl_init_env(env);
 	env->bindings_hash = process->process.initial_bindings;
-	init_big_registers(env);
 	ecl_enable_interrupts_env(env);
-        env->trap_fpe_bits = process->process.parent->process.env->trap_fpe_bits;
+        env->trap_fpe_bits = process->process.trap_fpe_bits;
         si_trap_fpe(@'last', Ct);
 
 	/* 2) Execute the code. The CATCH_ALL point is the destination
 	*     provides us with an elegant way to exit the thread: we just
 	*     do an unwind up to frs_top.
 	*/
+	mp_get_lock(1, process->process.exit_lock);
 	process->process.active = 1;
 	CL_CATCH_ALL_BEGIN(env) {
 		ecl_bds_bind(env, @'mp::*current-process*', process);
 		cl_apply(2, process->process.function, process->process.args);
 		ecl_bds_unwind1(env);
 	} CL_CATCH_ALL_END;
-	process->process.active = 0;
 
-	/* 3) If everything went right, we should be exiting the thread
-	 *    through this point. thread_cleanup is automatically invoked.
+	/* 4) If everything went right, we should be exiting the thread
+	 *    through this point. thread_cleanup is automatically invoked
+	 *    marking the process as inactive.
 	 */
 #ifdef ECL_WINDOWS_THREADS
 	thread_cleanup(process);
@@ -204,30 +203,44 @@ alloc_process(cl_object name, cl_object initial_bindings)
 		process->process.initial_bindings
 			= si_copy_hash_table(this_env->bindings_hash);
 	}
+	process->process.exit_lock = mp_make_lock(0);
 	return process;
 }
 
-void
+bool
 ecl_import_current_thread(cl_object name, cl_object bindings)
 {
 	cl_object process, l;
 	pthread_t current;
 	cl_env_ptr env;
 #ifdef ECL_WINDOWS_THREADS
-	current = GetCurrentThread();
+	{
+	HANDLE aux = GetCurrentThread();
+	DuplicateHandle(GetCurrentProcess(),
+			aux,
+			GetCurrentProcess(),
+			&current,
+			0,
+			FALSE,
+			DUPLICATE_SAME_ACCESS);
+	CloseHandle(current);
+	}
 #else
 	current = pthread_self();
+#endif
+#ifdef GBC_BOEHM
+	GC_register_my_thread((void*)&name);
 #endif
 	for (l = cl_core.processes; l != Cnil; l = ECL_CONS_CDR(l)) {
 		cl_object p = ECL_CONS_CAR(l);
 		if (p->process.thread == current) {
-			return;
+			return 0;
 		}
 	}
 	env = _ecl_alloc_env();
 	ecl_set_process_env(env);
-	process = alloc_process(name, bindings);
-	process->process.active = 1;
+	env->own_process = process = alloc_process(name, bindings);
+	process->process.active = 2;
 	process->process.thread = current;
 	process->process.env = env;
 	THREAD_OP_LOCK();
@@ -235,14 +248,19 @@ ecl_import_current_thread(cl_object name, cl_object bindings)
 	THREAD_OP_UNLOCK();
 	ecl_init_env(env);
 	env->bindings_hash = process->process.initial_bindings;
-	init_big_registers(env);
+	mp_get_lock(1, process->process.exit_lock);
+	process->process.active = 1;
 	ecl_enable_interrupts_env(env);
+	return 1;
 }
 
 void
 ecl_release_current_thread(void)
 {
-	thread_cleanup(&cl_env);
+	thread_cleanup(ecl_process_env()->own_process);
+#ifdef GBC_BOEHM
+	GC_unregister_my_thread();
+#endif
 }
 
 @(defun mp::make-process (&key name ((:initial-bindings initial_bindings) Ct))
@@ -270,33 +288,39 @@ mp_interrupt_process(cl_object process, cl_object function)
 {
 	if (mp_process_active_p(process) == Cnil)
 		FEerror("Cannot interrupt the inactive process ~A", 1, process);
-#ifdef ECL_WINDOWS_THREADS
-	/*
-	{
-	CONTEXT context;
-	HANDLE thread = process->process.thread;
-	if (SuspendThread(thread) == (DWORD)-1)
-		FEwin32_error("Cannot suspend process ~A", 1, process);
-	context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-	if (!GetThreadContext(thread, &context))
-		FEwin32_error("Cannot get context for process ~A", 1, process);
-	context.Eip = process_interrupt_handler;
-	if (!SetThreadContext(thread, &context))
-		FEwin32_error("Cannot set context for process ~A", 1, process);
-	process->process.interrupt = function;
-	if (ResumeThread(thread) == (DWORD)-1)
-		FEwin32_error("Cannot resume process ~A", 1, process);
-	}
-	*/
-#else
-        {
-                int signal = ecl_get_option(ECL_OPT_THREAD_INTERRUPT_SIGNAL);
-                process->process.interrupt = function;
-                if (pthread_kill(process->process.thread, signal))
-                        FElibc_error("pthread_kill() failed.", 0);
-        }
-#endif
+        ecl_interrupt_process(process, function);
 	@(return Ct)
+}
+
+cl_object
+mp_suspend_loop()
+{
+        cl_env_ptr env = ecl_process_env();
+        CL_CATCH_BEGIN(env,@'mp::suspend-loop') {
+                for ( ; ; ) {
+                        cl_sleep(MAKE_FIXNUM(100));
+                }
+        } CL_CATCH_END;
+}
+
+cl_object
+mp_break_suspend_loop()
+{
+        if (frs_sch(@'mp::suspend-loop')) {
+                cl_throw(@'mp::suspend-loop');
+        }
+}
+
+cl_object
+mp_process_suspend(cl_object process)
+{
+        mp_interrupt_process(process, @'mp::suspend-loop');
+}
+
+cl_object
+mp_process_resume(cl_object process)
+{
+        mp_interrupt_process(process, @'mp::break-suspend-loop');
 }
 
 cl_object
@@ -311,7 +335,7 @@ mp_process_yield(void)
 #ifdef HAVE_SCHED_YIELD
 	sched_yield();
 #else
-# if defined(_MSC_VER) || defined(mingw32)
+# ifdef ECL_WINDOWS_THREADS
 	Sleep(0);
 # else
 	sleep(0); /* Use sleep(0) to yield to a >= priority thread */
@@ -331,16 +355,36 @@ mp_process_enable(cl_object process)
 	if (mp_process_active_p(process) != Cnil)
 		FEerror("Cannot enable the running process ~A.", 1, process);
         process->process.parent = mp_current_process();
+	process->process.trap_fpe_bits =
+		process->process.parent->process.env->trap_fpe_bits;
 	code = (HANDLE)CreateThread(NULL, 0, thread_entry_point, process, 0, &threadId);
 	output = (process->process.thread = code)? process : Cnil;
 #else
 	int code;
+        pthread_attr_t pthreadattr;
 
+	pthread_attr_init(&pthreadattr);
+	pthread_attr_setdetachstate(&pthreadattr, PTHREAD_CREATE_DETACHED);
 	if (mp_process_active_p(process) != Cnil)
 		FEerror("Cannot enable the running process ~A.", 1, process);
         process->process.parent = mp_current_process();
+	/*
+	 * We launch the thread with the signal mask specified in cl_core.
+	 * The reason is that we might need to block certain signals
+	 * to be processed by the signal handling thread in unixint.d
+	 */
+#ifdef HAVE_SIGPROCMASK
+	{
+		sigset_t previous;
+		pthread_sigmask(SIG_SETMASK, cl_core.default_sigmask, &previous);
+		code = pthread_create(&process->process.thread, &pthreadattr,
+				      thread_entry_point, process);
+		pthread_sigmask(SIG_SETMASK, &previous, NULL);
+	}
+#else
 	code = pthread_create(&process->process.thread, &pthreadattr, thread_entry_point, process);
-	output = (process->process.thread = code)? Cnil : process;
+#endif
+	output = code? Cnil : process;
 #endif
 	@(return output)
 }
@@ -348,23 +392,12 @@ mp_process_enable(cl_object process)
 cl_object
 mp_exit_process(void)
 {
-#ifdef ECL_WINDOWS_THREADS
-	int same = GetCurrentThreadId() == main_thread;
-#else
-	int same = pthread_equal(pthread_self(), main_thread);
-#endif
-	if (same) {
-		/* This is the main thread. Quitting it means exiting the
-		   program. */
-		si_quit(0);
-	} else {
-		/* We simply undo the whole of the frame stack. This brings up
-		   back to the thread entry point, going through all possible
-		   UNWIND-PROTECT.
-		*/
-		const cl_env_ptr env = ecl_process_env();
-		ecl_unwind(env, env->frs_org);
-	}
+	/* We simply undo the whole of the frame stack. This brings up
+	   back to the thread entry point, going through all possible
+	   UNWIND-PROTECT.
+	*/
+	const cl_env_ptr env = ecl_process_env();
+	ecl_unwind(env, env->frs_org);
 }
 
 cl_object
@@ -397,6 +430,26 @@ mp_process_whostate(cl_object process)
 }
 
 cl_object
+mp_process_join(cl_object process)
+{
+	assert_type_process(process);
+	/* We only wait for threads that we have created */
+        if (process->process.active != 1) {
+		cl_object l = process->process.exit_lock;
+		if (!Null(l)) {
+			l = mp_get_lock(1, l);
+			if (Null(l)) {
+				FEerror("MP:PROCESS-JOIN: Error when "
+					"joining process ~A",
+					1, process);
+			}
+			mp_giveup_lock(l);
+                }
+        }
+        @(return Cnil)
+}
+
+cl_object
 mp_process_run_function(cl_narg narg, cl_object name, cl_object function, ...)
 {
 	cl_object process;
@@ -415,127 +468,62 @@ mp_process_run_function(cl_narg narg, cl_object name, cl_object function, ...)
 }
 
 /*----------------------------------------------------------------------
- * LOCKS or MUTEX
+ * INTERRUPTS
  */
 
-@(defun mp::make-lock (&key name ((:recursive recursive) Ct))
-	cl_object output;
-@
-	output = ecl_alloc_object(t_lock);
-#ifdef ECL_WINDOWS_THREADS
-	output->lock.name = name;
-	output->lock.mutex = CreateMutex(NULL, FALSE, NULL);
-	output->lock.holder = Cnil;
-	output->lock.counter = 0;
-	output->lock.recursive = (recursive != Cnil);
-#else
-	{
-	output->lock.name = name;
-	output->lock.holder = Cnil;
-	output->lock.counter = 0;
-	if (recursive == Cnil) {
-		output->lock.recursive = 0;
-		pthread_mutex_init(&output->lock.mutex, &mutexattr_error);
-	} else {
-		output->lock.recursive = 1;
-		pthread_mutex_init(&output->lock.mutex, &mutexattr_recursive);
-	}
-	}
+#ifndef ECL_WINDOWS_THREADS
+static cl_object
+mp_get_sigmask(void)
+{
+        cl_object data = ecl_alloc_simple_vector(sizeof(sigset_t), aet_b8);
+        sigset_t *mask_ptr = (sigset_t*)data->vector.self.b8;
+        sigset_t no_signals;
+        sigemptyset(&no_signals);
+        if (pthread_sigmask(SIG_BLOCK, &no_signals, mask_ptr))
+                FElibc_error("MP:GET-SIGMASK failed in a call to pthread_sigmask", 0);
+        @(return data)
+}
+
+static cl_object
+mp_set_sigmask(cl_object data)
+{
+        sigset_t *mask_ptr = (sigset_t*)data->vector.self.b8;
+        if (pthread_sigmask(SIG_SETMASK, mask_ptr, NULL))
+                FElibc_error("MP:SET-SIGMASK failed in a call to pthread_sigmask", 0);
+        @(return data)
+}
 #endif
-	si_set_finalizer(output, Ct);
-	@(return output)
-@)
 
 cl_object
-mp_recursive_lock_p(cl_object lock)
+mp_block_signals(void)
 {
-	if (type_of(lock) != t_lock)
-		FEwrong_type_argument(@'mp::lock', lock);
-	@(return (lock->lock.recursive? Ct : Cnil))
-}
-
-cl_object
-mp_lock_name(cl_object lock)
-{
-	if (type_of(lock) != t_lock)
-		FEwrong_type_argument(@'mp::lock', lock);
-	@(return lock->lock.name)
-}
-
-cl_object
-mp_lock_holder(cl_object lock)
-{
-	if (type_of(lock) != t_lock)
-		FEwrong_type_argument(@'mp::lock', lock);
-	@(return lock->lock.holder)
-}
-
-cl_object
-mp_giveup_lock(cl_object lock)
-{
-	cl_object own_process = mp_current_process();
-	if (type_of(lock) != t_lock)
-		FEwrong_type_argument(@'mp::lock', lock);
-	if (lock->lock.holder != own_process) {
-		FEerror("Attempt to give up a lock ~S that is not owned by ~S.", 2,
-			lock, own_process);
-	}
-	if (--lock->lock.counter == 0) {
-		lock->lock.holder = Cnil;
-	}
 #ifdef ECL_WINDOWS_THREADS
-        if (ReleaseMutex(lock->lock.mutex) == 0)
-		FEwin32_error("Unable to release Win32 Mutex", 0);
+        cl_env_ptr the_env = ecl_process_env();
+        cl_object previous = ecl_symbol_value(@'si::*interrupts-enabled*');
+        ECL_SETQ(the_env, @'si::*interrupts-enabled*', Cnil);
+        @(return previous)
 #else
-	pthread_mutex_unlock(&lock->lock.mutex);
+        cl_object previous = mp_get_sigmask();
+        sigset_t all_signals;
+        sigfillset(&all_signals);
+        if (pthread_sigmask(SIG_SETMASK, &all_signals, NULL))
+                FElibc_error("MP:BLOCK-SIGNALS failed in a call to pthread_sigmask",0);
+        @(return previous)
 #endif
-	@(return Ct)
 }
 
-@(defun mp::get-lock (lock &optional (wait Ct))
-	cl_object output;
-	int rc;
-@
-	if (type_of(lock) != t_lock)
-		FEwrong_type_argument(@'mp::lock', lock);
-	/* In Windows, all locks are recursive. We simulate the other case. */
-	/* We will complain always if recursive=0 and try to lock recursively. */
-	if (!lock->lock.recursive && (lock->lock.holder == the_env->own_process)) {
-		FEerror("A recursive attempt was made to hold lock ~S", 1, lock);
-	}
+cl_object
+mp_restore_signals(cl_object sigmask)
+{
 #ifdef ECL_WINDOWS_THREADS
-	switch (WaitForSingleObject(lock->lock.mutex, (wait==Ct?INFINITE:0))) {
-		case WAIT_OBJECT_0:
-                        lock->lock.holder = the_env->own_process;
-			lock->lock.counter++;
-			output = Ct;
-			break;
-		case WAIT_TIMEOUT:
-			output = Cnil;
-			break;
-		case WAIT_ABANDONED:
-			ecl_internal_error("");
-			break;
-		case WAIT_FAILED:
-			FEwin32_error("Unable to lock Win32 Mutex", 0);
-			break;
-	}
+        cl_env_ptr the_env = ecl_process_env();
+        ECL_SETQ(the_env, @'si::*interrupts-enabled*', sigmask);
+        ecl_check_pending_interrupts();
+        @(return sigmask)
 #else
-	if (wait == Ct) {
-		rc = pthread_mutex_lock(&lock->lock.mutex);
-	} else {
-		rc = pthread_mutex_trylock(&lock->lock.mutex);
-	}
-	if (rc == 0) {
-		lock->lock.holder = the_env->own_process;
-		lock->lock.counter++;
-		output = Ct;
-	} else {
-		output = Cnil;
-	}
+        return mp_set_sigmask(sigmask);
 #endif
-	@(return output)
-@)
+}
 
 /*----------------------------------------------------------------------
  * CONDITION VARIABLES
@@ -563,13 +551,33 @@ mp_condition_variable_wait(cl_object cv, cl_object lock)
 #ifdef ECL_WINDOWS_THREADS
 	FEerror("Condition variables are not supported under Windows.", 0);
 #else
+        int count, rc;
+        cl_object own_process = mp_current_process();
 	if (type_of(cv) != t_condition_variable)
 		FEwrong_type_argument(@'mp::condition-variable', cv);
 	if (type_of(lock) != t_lock)
 		FEwrong_type_argument(@'mp::lock', lock);
-	if (pthread_cond_wait(&cv->condition_variable.cv,
-	                      &lock->lock.mutex) == 0)
-		lock->lock.holder = mp_current_process();
+        if (lock->lock.holder != own_process) {
+                FEerror("Attempt to wait on a condition variable using lock~%~S"
+                        "~%which is not owned by process~%~S", 2, lock, own_process);
+        }
+        if (lock->lock.counter > 1) {
+                FEerror("mp:condition-variable-wait can not be used with recursive"
+                        " locks:~%~S", 1, lock);
+        }
+        /* Note: this is highly unsafe. We are marking the lock as released
+         * without knowing whether pthread_cond_wait worked as expected. */
+        lock->lock.counter = 0;
+        lock->lock.holder = Cnil;
+	rc = pthread_cond_wait(&cv->condition_variable.cv,
+                               &lock->lock.mutex);
+        lock->lock.holder = own_process;
+        lock->lock.counter = 1;
+        if (rc != 0) {
+                FEerror("System returned error code ~D "
+                        "when waiting on condition variable~%~A~%and lock~%~A.",
+                        3, MAKE_FIXNUM(rc), cv, lock);
+        }
 #endif
 	@(return Ct)
 }
@@ -580,6 +588,8 @@ mp_condition_variable_timedwait(cl_object cv, cl_object lock, cl_object seconds)
 #ifdef ECL_WINDOWS_THREADS
 	FEerror("Condition variables are not supported under Windows.", 0);
 #else
+        int rc;
+        cl_object own_process = mp_current_process();
 	double r;
 	struct timespec   ts;
 	struct timeval    tp;
@@ -588,6 +598,14 @@ mp_condition_variable_timedwait(cl_object cv, cl_object lock, cl_object seconds)
 		FEwrong_type_argument(@'mp::condition-variable', cv);
 	if (type_of(lock) != t_lock)
 		FEwrong_type_argument(@'mp::lock', lock);
+        if (lock->lock.holder != own_process) {
+                FEerror("Attempt to wait on a condition variable using lock~%~S"
+                        "~%which is not owned by process~%~S", 2, lock, own_process);
+        }
+        if (lock->lock.counter > 1) {
+                FEerror("mp:condition-variable-wait can not be used with recursive"
+                        " locks:~%~S", 1, lock);
+        }
 	/* INV: ecl_minusp() makes sure `seconds' is real */
 	if (ecl_minusp(seconds))
 		cl_error(9, @'simple-type-error', @':format-control',
@@ -607,13 +625,20 @@ mp_condition_variable_timedwait(cl_object cv, cl_object lock, cl_object seconds)
 		ts.tv_nsec -= 1e9;
 		ts.tv_sec++;
 	}
-	if (pthread_cond_timedwait(&cv->condition_variable.cv,
-	                           &lock->lock.mutex, &ts) == 0) {
-		lock->lock.holder = mp_current_process();
-		@(return Ct)
-	} else {
-		@(return Cnil)
-	}
+        /* Note: this is highly unsafe. We are marking the lock as released
+         * without knowing whether pthread_cond_wait worked as expected. */
+        lock->lock.counter = 0;
+        lock->lock.holder = Cnil;
+	rc = pthread_cond_timedwait(&cv->condition_variable.cv,
+                                    &lock->lock.mutex, &ts);
+        lock->lock.holder = own_process;
+        lock->lock.counter = 1;
+        if (rc != 0 && rc != ETIMEDOUT) {
+                FEerror("System returned error code ~D "
+                        "when waiting on condition variable~%~A~%and lock~%~A.",
+                        3, MAKE_FIXNUM(rc), cv, lock);
+        }
+        @(return (rc? Ct : Cnil))
 #endif
 }
 
@@ -644,6 +669,188 @@ mp_condition_variable_broadcast(cl_object cv)
 }
 
 /*----------------------------------------------------------------------
+ * SEMAPHORES
+ */
+
+#ifdef ECL_SEMAPHORES
+
+# ifdef ECL_MACH_SEMAPHORES
+struct ecl_semaphore_inner {
+        task_t owner;
+        semaphore_t counter[1];
+};
+# endif
+
+@(defun mp::make-semaphore (max &key name ((:count count) MAKE_FIXNUM(0)))
+	cl_object output;
+	cl_index initial_count, max_count;
+@
+{
+        output = ecl_alloc_object(t_semaphore);
+        ecl_disable_interrupts_env(the_env);
+        output->semaphore.name = name;
+        output->semaphore.handle = NULL;
+        ecl_set_finalizer_unprotected(output, Ct);
+        max_count = ecl_fixnum_in_range(@'mp:make-semaphore', "maximum count",
+                                        max, 0, 0xFFFF);
+        initial_count = ecl_fixnum_in_range(@'mp:make-semaphore', "initial count",
+                                            count, 0, max_count);
+#ifdef ECL_WINDOWS_THREADS
+        {
+                HANDLE h = CreateSemaphore(NULL,
+                                           initial_count,
+                                           0xFFFF,
+                                           NULL);
+                output->semaphore.handle = h;
+                ecl_enable_interrupts_env(the_env);
+                if (h == NULL)
+                        FEwin32_error("Unable to create semaphore object.", 0);
+        }
+#else
+# ifdef HAVE_SEM_INIT
+        {
+                sem_t *h = ecl_alloc_atomic(sizeof(sem_t));
+                int rc = sem_init(h, 0, initial_count);
+                if (!rc)
+                        output->semaphore.handle = h;
+                ecl_enable_interrupts();
+                if (rc)
+                        FEerror("Unable to create semaphore object.", 0);
+        }
+# endif /* HAVE_SEM_INIT */
+#endif /* ECL_WINDOWS_THREADS */
+        @(return output)
+}
+@)
+
+cl_object
+mp_semaphore_trywait(cl_object sem)
+{
+        cl_object output;
+        if (typeof(sem) != t_semaphore)
+                FEwrong_type_argument(@'mp::semaphore', cv);
+ AGAIN:
+#ifdef ECL_WINDOWS_THREADS
+        {
+                HANDLE h = (HANDLE)(sem->semaphore.handle);
+                switch (WaitForSingleObject(h, 0)) {
+		case WAIT_OBJECT_0:
+                        output = Ct;
+			break;
+                case WAIT_TIMEOUT:
+                        output = Cnil;
+                        break;
+		default:
+			FEwin32_error("Unable to wait on semaphore", 0);
+                        output = Cnil;
+                }
+        }
+#else
+# ifdef HAVE_SEM_INIT
+        {
+                sem_t *h = (sem_t *)(sem->semaphore.handle);
+                int rc = sem_trywait(h);
+                if (sem_trywait(h)) {
+                        if (errno != EAGAIN) {
+                                FElibc_error("Unable to wait on semaphore", 0);
+                        }
+                        output = Cnil;
+                } else {
+                        output = Ct;
+                }
+        }
+# endif /* HAVE_SEM_INIT */
+#endif /* ECL_WINDOWS_THREADS */
+        @(return output)
+}
+
+
+cl_object
+mp_semaphore_wait(cl_object sem)
+{
+        cl_object output;
+        if (typeof(sem) != t_semaphore)
+                FEwrong_type_argument(@'mp::semaphore', cv);
+ AGAIN:
+#ifdef ECL_WINDOWS_THREADS
+        {
+                HANDLE h = (HANDLE)(sem->semaphore.handle);
+                if (WaitForSingleObject(h, INFINITE) != WAIT_OBJECT_0) {
+			FEwin32_error("Unable to wait on semaphore", 0);
+                }
+        }
+#else
+# ifdef HAVE_SEM_INIT
+        {
+                sem_t *h = (sem_t *)(sem->semaphore.handle);
+                int rc = sem_wait(h);
+                if (sem_wait(h)) {
+                        if (errno == EINTR) {
+                                ecl_check_pending_interrupts();
+                                goto AGAIN;
+                        }
+                        FElibc_error("Unable to wait on semaphore", 0);
+                }
+        }
+# endif /* HAVE_SEM_INIT */
+#endif /* ECL_WINDOWS_THREADS */
+        @(return Ct)
+}
+
+cl_object
+mp_semaphore_signal(cl_object sem)
+{
+        if (typeof(sem) != t_semaphore)
+                FEwrong_type_argument(@'mp::semaphore', cv);
+ AGAIN:
+#ifdef ECL_WINDOWS_THREADS
+        {
+                HANDLE h = (HANDLE)(sem->semaphore.handle);
+                if (!ReleaseSemaphore(h, 1, NULL)) {
+                        FEwin32_error("Unable to post on semaphore ~A" 1, sem);
+                }
+        }
+#else
+# ifdef HAVE_SEM_INIT
+        {
+                sem_t *h = (sem_t *)(sem->semaphore.handle);
+                int rc = sem_wait(h);
+                if (sem_wait(h)) {
+                        if (errno == EINTR) {
+                                ecl_check_pending_interrupts();
+                                goto AGAIN;
+                        }
+                        FElibc_error("Unable to post on semaphore ~A", 1, sem);
+                }
+        }
+# endif /* HAVE_SEM_INIT */
+#endif /* ECL_WINDOWS_THREADS */
+        @(return Ct)
+}
+
+cl_object
+mp_semaphore_close(cl_object sem)
+{
+        if (typeof(sem) != t_semaphore)
+                FEwrong_type_argument(@'mp::semaphore', cv);
+#ifdef ECL_WINDOWS_THREADS
+        {
+                HANDLE h = (HANDLE)(sem->semaphore.handle);
+                if (h) CloseHandle(h);
+        }
+#else
+# ifdef HAVE_SEM_INIT
+        /*
+         * No need for closing.
+         */
+# endif /* HAVE_SEM_INIT */
+#endif /* ECL_WINDOWS_THREADS */
+        @(return Ct)
+}
+
+#endif /* ECL_SEMAPHORES */
+
+/*----------------------------------------------------------------------
  * INITIALIZATION
  */
 
@@ -651,18 +858,8 @@ void
 init_threads(cl_env_ptr env)
 {
 	cl_object process;
+	pthread_t main_thread;
 
-#ifdef ECL_WINDOWS_THREADS
-	cl_core.global_lock = CreateMutex(NULL, FALSE, NULL);
-#else
-	pthread_mutexattr_init(&mutexattr_error);
-	pthread_mutexattr_settype(&mutexattr_error, PTHREAD_MUTEX_ERRORCHECK);
-	pthread_mutexattr_init(&mutexattr_recursive);
-	pthread_mutexattr_settype(&mutexattr_recursive, PTHREAD_MUTEX_RECURSIVE);
-	pthread_attr_init(&pthreadattr);
-	pthread_attr_setdetachstate(&pthreadattr, PTHREAD_CREATE_DETACHED);
-	pthread_mutex_init(&cl_core.global_lock, &mutexattr_error);
-#endif
 	cl_core.processes = OBJNULL;
 
 	/* We have to set the environment before any allocation takes place,
@@ -677,7 +874,16 @@ init_threads(cl_env_ptr env)
 	ecl_set_process_env(env);
 
 #ifdef ECL_WINDOWS_THREADS
-	main_thread = GetCurrentThreadId();
+	{
+	HANDLE aux = GetCurrentThread();
+	DuplicateHandle(GetCurrentProcess(),
+			aux,
+			GetCurrentProcess(),
+			&main_thread,
+			0,
+			FALSE,
+			DUPLICATE_SAME_ACCESS);
+	}
 #else
 	main_thread = pthread_self();
 #endif
@@ -691,5 +897,6 @@ init_threads(cl_env_ptr env)
 
 	env->own_process = process;
 
+        cl_core.global_lock = ecl_make_lock(@'si::package-lock', 0);
 	cl_core.processes = ecl_list1(process);
 }

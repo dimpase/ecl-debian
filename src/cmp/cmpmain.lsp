@@ -19,6 +19,13 @@
 (defmacro with-lock ((lock) &body body)
   `(progn ,@body))
 
+(defun safe-mkstemp (template)
+  (or (si::mkstemp template)
+      (error "Unable to create temporay file~%~
+	~AXXXXXX
+Make sure you have enough free space in disk, check permissions or set~%~
+the environment variable TMPDIR to a different value." template)))
+
 (defun safe-system (string)
   (cmpnote "Invoking external command:~%  ~A" string)
   (let ((result (si:system string)))
@@ -56,10 +63,28 @@
 
 #+msvc
 (defun delete-msvc-generated-files (output-pathname)
-  (loop for i in '("lib" "exp" "ilk" "pdb")
-        do (let ((the-pathname (merge-pathnames (make-pathname :type i) output-pathname)))
-	     (when (probe-file the-pathname)
-	       (cmp-delete-file the-pathname)))))
+  (loop for i in '("implib" "exp" "ilk" "pdb")
+	for full = (make-pathname :type i :defaults output-pathname)
+	for truename = (probe-file full)
+	when truename
+	do (cmp-delete-file truename)))
+
+#+msvc
+(defun embed-manifest-file (o-file &optional (type :dll))
+  (let* ((real-file (probe-file o-file)))
+    (when real-file
+      (let* ((manifest-namestring (concatenate 'string (namestring o-file)
+					       ".manifest"))
+	     (manifest (probe-file manifest-namestring)))
+	(when manifest
+	  (safe-system
+	   (format nil "mt -nologo -manifest ~S \"-outputresource:~A;~D\""
+		   manifest-namestring
+		   (namestring real-file)
+		   (ecase type
+		     ((:dll :shared-library :fasl :fas) 2)
+		     ((:program) 1))))
+	  (delete-file manifest))))))
 
 (defun cmp-delete-file (file)
   (cond ((null *delete-files*))
@@ -91,7 +116,24 @@
 	   (fix-for-mingw (ecl-library-directory))
 	   options
            *ld-rpath*
-	   *ld-flags*)))
+	   *ld-flags*))
+  #+msvc
+  (embed-manifest-file o-pathname :program)
+  #+msvc
+  (delete-msvc-generated-files o-pathname))
+
+#+dlopen
+(defun dll-extra-flags (o-pathname)
+  #-msvc
+  *ld-shared-flags*
+  #+msvc
+  (let ((implib (si::coerce-to-filename
+		 (compile-file-pathname o-pathname :type :lib))))
+    (concatenate 'string
+		 *ld-shared-flags*
+		 " /LIBPATH:" (ecl-library-directory)
+		 " /IMPLIB:" implib)))
+			       
 
 #+dlopen
 (defun shared-cc (o-pathname &rest options)
@@ -104,7 +146,11 @@
 	   (fix-for-mingw (ecl-library-directory))
 	   options
            *ld-rpath*
-	   *ld-shared-flags*))
+	   (dll-extra-flags o-pathname)))
+  #+msvc
+  (embed-manifest-file o-pathname :dll)
+  #+msvc
+  (delete-msvc-generated-files o-pathname)
   #+(or mingw32)
   (let ((lib-file (compile-file-pathname o-pathname :type :lib)))
     (safe-system
@@ -117,6 +163,21 @@
 	     *ld-shared-flags*))))
 
 #+dlopen
+(defun bundle-extra-flags (init-name o-pathname)
+  #-msvc
+  *ld-bundle-flags*
+  #+msvc
+  (let ((implib (si::coerce-to-filename
+		 (compile-file-pathname
+		  o-pathname :type :import-library))))
+    (concatenate 'string
+		 *ld-bundle-flags*
+		 " /EXPORT:" init-name
+		 " /LIBPATH:" (ecl-library-directory)
+		 " /IMPLIB:" implib)))
+			       
+
+#+dlopen
 (defun bundle-cc (o-pathname init-name &rest options)
   #-(or mingw32)
   (safe-system
@@ -127,14 +188,11 @@
 	   (fix-for-mingw (ecl-library-directory))
 	   options
            *ld-rpath*
-	   #-msvc *ld-bundle-flags*
-	   #+msvc (concatenate 'string *ld-bundle-flags*
-			       " /EXPORT:" init-name
-			       " /LIBPATH:" (ecl-library-directory)
-			       " /IMPLIB:"
-			       (si::coerce-to-filename
-				(compile-file-pathname
-				 o-pathname :type :import-library)))))
+	   (bundle-extra-flags init-name o-pathname)))
+  #+msvc
+  (embed-manifest-file o-pathname :fasl)
+  #+msvc
+  (delete-msvc-generated-files o-pathname)
   #+(or mingw32)
   (safe-system
    (format nil
@@ -344,7 +402,7 @@ filesystem or in the database of ASDF modules."
 		   (princ ";
 cl_object output;
 si_select_package(make_simple_base_string(\"CL-USER\"));
-output = si_safe_eval(3, c_string_to_object(lisp_code), Cnil, OBJNULL);
+output = si_safe_eval(3, ecl_read_from_cstring(lisp_code), Cnil, OBJNULL);
 " stream)
 		   (when (eq target :program)
 		     (princ "
@@ -352,8 +410,8 @@ cl_shutdown();
 if (FIXNUMP(output))
 	return fix(output);
 if (Null(output) || (output == OBJNULL))
-	return 1;
-return 0;"
+	return 0;
+return 1;"
                             stream))
 		   (princ #\} stream)
 		   )))))
@@ -365,7 +423,7 @@ return 0;"
   ;; To avoid name clashes, this object file will have a temporary
   ;; file name (tmp-name).
   ;;
-  (let* ((tmp-name (si::mkstemp #P"TMP:ECLINIT"))
+  (let* ((tmp-name (safe-mkstemp #P"TMP:ECLINIT"))
 	 (c-name (si::coerce-to-filename
 		  (compile-file-pathname tmp-name :type :c)))
 	 (o-name (si::coerce-to-filename
@@ -438,13 +496,13 @@ static cl_object VV[VM];
        #+msvc
        (unwind-protect
          (progn
-           (with-open-file (f "static_lib.tmp" :direction :output :if-does-not-exist :create :if-exists :supersede)
+           (with-open-file (f "static_lib.tmp" :direction :output
+			      :if-does-not-exist :create :if-exists :supersede)
              (format f "/DEBUGTYPE:CV /OUT:~A ~A ~{~&\"~A\"~}"
                      output-name o-name ld-flags))
            (safe-system "link -lib @static_lib.tmp"))
          (when (probe-file "static_lib.tmp")
-           (cmp-delete-file "static_lib.tmp")))
-       )
+           (cmp-delete-file "static_lib.tmp"))))
       #+dlopen
       ((:shared-library :dll)
        (format c-file +lisp-program-init+ init-name prologue-code
@@ -692,13 +750,7 @@ after compilation."
 	(t
 	 (setq form `(setf (symbol-function ',name) #',form))))
 
-  (let ((template (format nil "TMP:ECL~3,'0x" (incf *gazonk-counter*))))
-    (unless (setq data-pathname (si::mkstemp template))
-      (error "Unable to create temporay file~%~
-	~AXXXXXX
-Make sure you have enough free space in disk, check permissions or set~%~
-the environment variable TMPDIR to a different value." template)
-      (return-from compile (values nil t t))))
+  (setq data-pathname (safe-mkstemp (format nil "TMP:ECL~3,'0x" (incf *gazonk-counter*))))
 
   (let*((*load-time-values* 'values) ;; Only the value is kept
 	(c-pathname (compile-file-pathname data-pathname :type :c))
@@ -729,10 +781,7 @@ the environment variable TMPDIR to a different value." template)
       (cmp-delete-file data-pathname)
       (cond ((probe-file so-pathname)
 	     (load so-pathname :verbose nil)
-	     #-(or mingw32 msvc cygwin)
 	     (cmp-delete-file so-pathname)
-	     #+msvc
-	     (delete-msvc-generated-files so-pathname)
 	     (setf name (or name (symbol-value 'GAZONK)))
 	     ;; By unsetting GAZONK we avoid spurious references to the
 	     ;; loaded code.
@@ -747,8 +796,6 @@ the environment variable TMPDIR to a different value." template)
     (when (probe-file h-pathname) (cmp-delete-file h-pathname))
     (when (probe-file so-pathname) (cmp-delete-file so-pathname))
     (when (probe-file data-pathname) (cmp-delete-file data-pathname))
-    #+msvc
-    (delete-msvc-generated-files so-pathname)
     (compiler-output-values name compiler-conditions)))
 
 (defun disassemble (thing &key (h-file nil) (data-file nil)
@@ -813,7 +860,8 @@ from the C language code.  NIL means \"do not create the file\"."
 
 (defun compiler-pass2 (c-pathname h-pathname data-pathname system-p init-name
 		       shared-data &key input-designator)
-  (with-open-file (*compiler-output1* c-pathname :direction :output)
+  (with-open-file (*compiler-output1* c-pathname :direction :output
+				      :if-does-not-exist :create :if-exists :supersede)
     (wt-comment-nl "Compiler: ~A ~A" (lisp-implementation-type) (lisp-implementation-version))
     #-ecl-min
     (multiple-value-bind (second minute hour day month year)
@@ -821,7 +869,8 @@ from the C language code.  NIL means \"do not create the file\"."
       (wt-comment-nl "Date: ~D/~D/~D ~2,'0D:~2,'0D (yyyy/mm/dd)" year month day hour minute)
       (wt-comment-nl "Machine: ~A ~A ~A" (software-type) (software-version) (machine-type)))
     (wt-comment-nl "Source: ~A" input-designator)
-    (with-open-file (*compiler-output2* h-pathname :direction :output)
+    (with-open-file (*compiler-output2* h-pathname :direction :output
+					:if-does-not-exist :create :if-exists :supersede)
       (wt-nl1 "#include " *cmpinclude*)
       (catch *cmperr-tag* (ctop-write init-name
 				      h-pathname

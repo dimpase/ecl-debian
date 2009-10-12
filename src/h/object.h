@@ -84,10 +84,14 @@ typedef enum {
 	t_process,
 	t_lock,
 	t_condition_variable,
+# ifdef ECL_SEMAPHORES
+        t_semaphore,
+# endif
 #endif
 	t_codeblock,
 	t_foreign,
 	t_frame,
+	t_weak_pointer,
 	t_end,
 	t_other,
 	t_contiguous,		/*  contiguous block  */
@@ -259,9 +263,6 @@ struct ecl_package {
 	cl_object usedby;	/*  used-by-list of packages  */
 	cl_object internal;	/*  hashtable for internal symbols  */
 	cl_object external;	/*  hashtable for external symbols  */
-#ifdef ECL_THREADS
-	pthread_mutex_t lock;	/*  thread safe packages  */
-#endif
 };
 
 /*
@@ -340,7 +341,7 @@ struct ecl_hashtable_entry {	/*  hash table entry  */
 };
 
 struct ecl_hashtable {		/*  hash table header  */
-	HEADER2(test,lockable);
+	HEADER1(test);
 	struct ecl_hashtable_entry *data; /*  pointer to the hash table  */
 	cl_index entries;	/*  number of entries  */
 	cl_index size;		/*  hash table size  */
@@ -348,7 +349,7 @@ struct ecl_hashtable {		/*  hash table header  */
 	cl_object threshold;	/*  rehash threshold  */
 	double factor;		/*  cached value of threshold  */
 #ifdef ECL_THREADS
-	pthread_mutex_t lock;	/*  mutex to prevent race conditions  */
+	cl_object lock;		/*  mutex to prevent race conditions  */
 #endif
 };
 
@@ -810,6 +811,11 @@ struct ecl_stack_frame {
 	struct cl_env_struct *env;
 };
 
+struct ecl_weak_pointer {	/*  weak pointer to value  */
+	HEADER;
+	cl_object value;
+};
+
 /*
 	dummy type
 */
@@ -826,12 +832,10 @@ struct ecl_process {
 	pthread_t thread;
 	struct cl_env_struct *env;
 	cl_object interrupt;
-	/*void *stack;*/
-	/*cl_index stack_size;*/
-	void *altstack;
-	cl_index altstack_size;
 	cl_object initial_bindings;
         cl_object parent;
+	cl_object exit_lock;
+	int trap_fpe_bits;
 };
 
 struct ecl_lock {
@@ -847,7 +851,11 @@ struct ecl_condition_variable {
         pthread_cond_t cv;
 };
 
-#endif
+struct ecl_semaphore {
+        HEADER;
+        void *handle;
+};
+#endif /* ECL_THREADS */
 
 #ifdef CLOS
 #define CLASS_OF(x)		(x)->instance.clas
@@ -916,9 +924,13 @@ union cl_lispunion {
 	struct ecl_lock		lock; 		/*  lock  */
         struct ecl_condition_variable condition_variable; /*  condition-variable */
 #endif
+#ifdef ECL_SEMAPHORES
+        struct ecl_semaphore	semaphore;	/*  semaphore  */
+#endif
 	struct ecl_codeblock	cblock;		/*  codeblock  */
 	struct ecl_foreign	foreign; 	/*  user defined data type */
 	struct ecl_stack_frame	frame;		/*  stack frame  */
+	struct ecl_weak_pointer weak;		/*  weak pointers  */
 };
 
 /*

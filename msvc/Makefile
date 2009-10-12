@@ -10,8 +10,8 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 9.8.4
-ECL_VERSION_NUMBER= 90804
+ECL_VERSION       = 9.10.2
+ECL_VERSION_NUMBER= 91002
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
@@ -26,7 +26,10 @@ THEHOST           = win32
 GMP_TYPE      = gc
 
 # Set it to non-empty to include Win32 thread support
-ECL_THREADS   =
+# Currently it is NOT SUPPORTED to build ECL without threads. The reason
+# is that certain exception handlers in Windows always use new threads.
+# Without them, ECL would be an even more fragile piece of software.
+ECL_THREADS   = 1
 
 # Set it to non-empty to include support for Unicode characters
 ECL_UNICODE   =
@@ -90,7 +93,7 @@ GCFLAGS = nodebug=1
 !endif
 
 CFLAGS  = /EHsc /DGC_DLL /DGC_BUILD /nologo /D_CRT_SECURE_NO_DEPRECATE $(CFLAGS_CONFIG)
-LDFLAGS	= /link /nologo /nodefaultlib:libcmt /nodefaultlib:libcmtd /nodefaultlib:libc /nodefaultlib:libcd $(LDFLAGS_CONFIG)
+LDFLAGS	= /link /incremental:no /nologo /nodefaultlib:libcmt /nodefaultlib:libcmtd /nodefaultlib:libc /nodefaultlib:libcd $(LDFLAGS_CONFIG)
 
 
 # Additional configuration for thread support
@@ -99,14 +102,13 @@ LDFLAGS	= /link /nologo /nodefaultlib:libcmt /nodefaultlib:libcmtd /nodefaultlib
 ENV_EXPORT = cl_env,DATA
 !else
 ENV_EXPORT = ecl_process_env
-CFLAGS     = $(CFLAGS) /DECL_THREADS
+CFLAGS     = $(CFLAGS)
 DEF        = ecl-threads.def
 !endif
 
 # Additional configuration for Unicode support
 #
 !if "$(ECL_UNICODE)" != ""
-CFLAGS     = $(CFLAGS) /DECL_UNICODE
 UCDDAT     = ucd.dat
 !endif
 
@@ -205,6 +207,9 @@ ucd.dat: $(top_srcdir)\..\contrib\unicode\ucd.dat
 
 ecl_min$(EXE): $(LIBRARIES) eclmin.lib $(UCDDAT)
 	$(CC) /Fe$@ cinit.obj c\all_symbols.obj eclmin.lib $(LDFLAGS) $(LIBS)
+	if exist ecl_min$(EXE).manifest \
+	 mt -manifest ecl_min.exe.manifest -outputresource:ecl_min.exe;1
+	-$(RM) ecl_min.exp ecl_min.lib ecl_min$(EXE).manifest
 
 .gdbinit: $(srcdir)\util\gdbinit
 	$(CP) $(srcdir)\util\gdbinit $@
@@ -302,7 +307,8 @@ ecl-cc.bat: util\ecl-cc.bat Makefile
 eclmin.lib: eclgmp.lib eclgc.lib lsp/config.lsp
 	cd c
 	$(MAKE) ECL_VERSION_NUMBER=$(ECL_VERSION_NUMBER) \
-	        ECL_THREADS=$(ECL_THREADS) "ECL_CFLAGS=$(CFLAGS) -DGC_BUILD"
+	        ECL_THREADS=$(ECL_THREADS) ECL_UNICODE=$(ECL_UNICODE) \
+		"ECL_CFLAGS=$(CFLAGS) -DGC_BUILD"
 	cd ..
 eclgc.lib:
 	cd gc

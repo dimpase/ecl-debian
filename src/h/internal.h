@@ -25,8 +25,7 @@ extern "C" {
 extern void init_all_symbols(void);
 extern void init_alloc(void);
 extern void init_backq(void);
-extern void init_big(cl_env_ptr);
-extern void init_big_registers(cl_env_ptr);
+extern void init_big();
 #ifdef CLOS
 extern void init_clos(void);
 #endif
@@ -56,6 +55,9 @@ extern void _ecl_dealloc_env(cl_env_ptr);
 
 /* alloc.d/alloc_2.d */
 
+#ifdef GBC_BOEHM
+#define ECL_COMPACT_OBJECT_EXTRA(x) ((void*)((x)->array.displaced))
+#endif
 extern void _ecl_set_max_heap_size(cl_index new_size);
 extern cl_object ecl_alloc_bytecodes(cl_index data_size, cl_index code_size);
 
@@ -237,7 +239,7 @@ extern cl_object si_formatter_aux _ARGS((cl_narg narg, cl_object strm, cl_object
 #endif
 
 /* hash.d */
-extern void ecl_extend_hashtable(cl_object hashtable);
+extern cl_object ecl_extend_hashtable(cl_object hashtable);
 
 /* gfun.d, kernel.lsp */
 
@@ -246,10 +248,6 @@ extern void ecl_extend_hashtable(cl_object hashtable);
 #define GFUN_COMB(x) ((x)->instance.slots[2])
 
 extern cl_object FEnot_funcallable_vararg(cl_narg narg, ...);
-
-/* package.d */
-
-extern cl_object ecl_find_symbol_nolock(cl_object name, cl_object p, int *intern_flag);
 
 /* print.d */
 
@@ -266,28 +264,23 @@ extern void cl_write_object(cl_object x, cl_object stream);
 /* global locks */
 
 #ifdef ECL_THREADS
-# if defined(_MSC_VER) || defined(mingw32)
-#  define pthread_mutex_lock(x) \
-	 (WaitForSingleObject(*(HANDLE*)(x), INFINITE) != WAIT_OBJECT_0)
-#  define pthread_mutex_unlock(x) (ReleaseMutex(*(HANDLE*)(x)) == 0)
-# else
-#  include <pthread.h>
-# endif
-# define HASH_TABLE_LOCK(h) if ((h)->hash.lockable) if (pthread_mutex_lock(&(h)->hash.lock)) ecl_internal_error("")
-# define PACKAGE_LOCK(p) if (pthread_mutex_lock(&(p)->pack.lock)) ecl_internal_error("")
-# define PACKAGE_OP_LOCK() if (pthread_mutex_lock(&cl_core.global_lock)) ecl_internal_error("")
-# define THREAD_OP_LOCK() if (pthread_mutex_lock(&cl_core.global_lock)) ecl_internal_error("")
-# define HASH_TABLE_UNLOCK(h) if ((h)->hash.lockable) if (pthread_mutex_unlock(&(h)->hash.lock)) ecl_internal_error("")
-# define PACKAGE_UNLOCK(p) if (pthread_mutex_unlock(&(p)->pack.lock)) ecl_internal_error("")
-# define PACKAGE_OP_UNLOCK() if (pthread_mutex_unlock(&cl_core.global_lock)) ecl_internal_error("")
-# define THREAD_OP_UNLOCK() if (pthread_mutex_unlock(&cl_core.global_lock)) ecl_internal_error("")
+# define HASH_TABLE_LOCK(h) do {                                        \
+                cl_object lock = (h)->hash.lock;                        \
+                if (lock != Cnil) mp_get_lock_wait(lock);               \
+        } while (0);
+# define HASH_TABLE_UNLOCK(h) do {                                      \
+                cl_object lock = (h)->hash.lock;                        \
+                if (lock != Cnil) mp_giveup_lock(lock);                 \
+        } while (0);
+# define THREAD_OP_LOCK() mp_get_lock_wait(cl_core.global_lock)
+# define THREAD_OP_UNLOCK() mp_giveup_lock(cl_core.global_lock)
+# define PACKAGE_OP_LOCK() THREAD_OP_LOCK()
+# define PACKAGE_OP_UNLOCK() THREAD_OP_UNLOCK()
 # define ERROR_HANDLER_LOCK() THREAD_OP_LOCK()
 # define ERROR_HANDLER_UNLOCK() THREAD_OP_UNLOCK()
 #else
 # define HASH_TABLE_LOCK(h)
 # define HASH_TABLE_UNLOCK(h)
-# define PACKAGE_LOCK(p)
-# define PACKAGE_UNLOCK(p)
 # define PACKAGE_OP_LOCK()
 # define PACKAGE_OP_UNLOCK()
 # define ERROR_HANDLER_LOCK()
@@ -300,6 +293,13 @@ extern void cl_write_object(cl_object x, cl_object stream);
 #define	RTABSIZE	256		/*  read table size  */
 #else
 #define	RTABSIZE	CHAR_CODE_LIMIT	/*  read table size  */
+#endif
+
+/* threads.d */
+
+#ifdef ECL_THREADS
+extern ECL_API cl_object mp_suspend_loop();
+extern ECL_API cl_object mp_break_suspend_loop();
 #endif
 
 /* time.d */
@@ -350,6 +350,7 @@ typedef int fenv_t;
 #define ECL_PI2_L 1.57079632679489661923132169163975144l
 
 void ecl_deliver_fpe(void);
+void ecl_interrupt_process(cl_object process, cl_object function);
 
 /*
  * Fake several ISO C99 mathematical functions

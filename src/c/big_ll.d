@@ -16,32 +16,11 @@
 #include <ecl/ecl.h>
 #include <ecl/internal.h>
 
-cl_object
-big_register0_get(void)
-{
-	cl_env.big_register[0]->big.big_num = 0ll;
-	return cl_env.big_register[0];
-}
-
-cl_object
-big_register1_get(void)
-{
-	cl_env.big_register[1]->big.big_num = 0ll;
-	return cl_env.big_register[1];
-}
-
-cl_object
-big_register2_get(void)
-{
-	cl_env.big_register[2]->big.big_num = 0ll;
-	return cl_env.big_register[2];
-}
-
 void
-big_register_free(cl_object x) {}
+_ecl_big_register_free(cl_object x) {}
 
 cl_object
-big_register_copy(cl_object old)
+_ecl_big_register_copy(cl_object old)
 {
 	cl_object new_big = ecl_alloc_object(t_bignum);
         new_big->big.big_num = old->big.big_num;
@@ -49,13 +28,13 @@ big_register_copy(cl_object old)
 }
 
 cl_object
-big_register_normalize(cl_object x)
+_ecl_big_register_normalize(cl_object x)
 {
 	if (x->big.big_num == 0ll)
                 return(MAKE_FIXNUM(0));
         if (x->big.big_num <= MOST_POSITIVE_FIXNUM && x->big.big_num >= MOST_NEGATIVE_FIXNUM)
                 return(MAKE_FIXNUM(x->big.big_num));
-	return big_register_copy(x);
+	return _ecl_big_register_copy(x);
 }
 
 static cl_object
@@ -68,79 +47,42 @@ big_alloc(int size)
 	return x;
 }
 
-
-cl_object
-bignum1(cl_fixnum val)
-{
-	volatile cl_object z = ecl_alloc_object(t_bignum);
-	z->big.big_num = val;
-	return(z);
-}
-
-cl_object
-bignum2(cl_fixnum hi, cl_fixnum lo)
-{
-	cl_object z;
-
-	z = big_alloc(2);
-	z->big.big_num = hi<<32 + lo;
-	return(z);
-}
-
-cl_object
-big_copy(cl_object x)
+static cl_object
+_ecl_big_copy(cl_object x)
 {
 	volatile cl_object y = ecl_alloc_object(t_bignum);
         y->big.big_num = x->big.big_num;
-	return(y);
-}
-
-/*
-	big_minus(x) returns the complement of bignum x.
-*/
-cl_object
-big_minus(cl_object x)
-{
-	volatile cl_object y = big_copy(x);
-        y->big.big_num = -x->big.big_num;
 	return y;
 }
 
 cl_object
-big_plus(cl_object x, cl_object y)
+_ecl_big_gcd(cl_object gcd, cl_object x, cl_object y)
 {
-	volatile cl_object z = big_register0_get();
-        z->big.big_num = x->big.big_num + y->big.big_num;
-	return(big_register_copy(z));
+        big_num_t i = x->big.big_num, j = y->big.big_num;
+        while ( 1 ) {
+                big_num_t k;
+                if ( i<j ) {
+                        k = i;
+                        i = j;
+                        j = k;
+                }
+                if ( j == 0 ) {
+                        gcd->big.big_num = k;
+                        break;
+                }
+                k = i % j;
+                i = j;
+                j = k;
+        }
 }
 
-cl_object
-big_normalize(cl_object x)
-{
-	if (x->big.big_num == 0ll)
-		return(MAKE_FIXNUM(0));
-	if (x->big.big_num <= MOST_POSITIVE_FIXNUM && x->big.big_num >= MOST_NEGATIVE_FIXNUM)
-		return(MAKE_FIXNUM(x->big.big_num));
-	return(x);
-}
-
-int big_num_t_sgn(big_num_t x)
+int
+_ecl_big_num_t_sgn(big_num_t x)
 {
 	return ( x == (big_num_t)0 ) ? 0 : (x < (big_num_t)0) ? -1 : 1;
-}
-
-
-void init_big_registers(void)
-{
-	int i;
-	for (i = 0; i < 3; i++) {
-		cl_env.big_register[i] = ecl_alloc_object(t_bignum);
-                cl_env.big_register[i]->big.big_num = 0ll;
-	}
 }
 
 void
 init_big(void)
 {
-	init_big_registers();
 }

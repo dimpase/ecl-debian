@@ -68,6 +68,9 @@ static cl_fixnum option_values[ECL_OPT_LIMIT+1] = {
 	1,		/* ECL_OPT_TRAP_SIGINT */
 	1,		/* ECL_OPT_TRAP_SIGILL */
 	1,		/* ECL_OPT_TRAP_SIGBUS */
+	1,		/* ECL_OPT_TRAP_INTERRUPT_SIGNAL */
+	1,		/* ECL_OPT_SIGNAL_HANDLING_THREAD */
+	128,		/* ECL_OPT_SIGNAL_QUEUE_SIZE */
 	0,		/* ECL_OPT_BOOTED */
 	8192,		/* ECL_OPT_BIND_STACK_SIZE */
 	128,		/* ECL_OPT_BIND_STACK_SAFETY_AREA */
@@ -81,6 +84,7 @@ static cl_fixnum option_values[ECL_OPT_LIMIT+1] = {
 	256*1024*1024, 	/* ECL_OPT_HEAP_SIZE */
 	1024*1024, 	/* ECL_OPT_HEAP_SAFETY_AREA */
         0,		/* ECL_OPT_THREAD_INTERRUPT_SIGNAL */
+        1,		/* ECL_OPT_SET_GMP_MEMORY_FUNCTIONS */
 	0};
 
 #if !defined(GBC_BOEHM)
@@ -102,6 +106,9 @@ static const char *feature_names[] = {
 #endif
 #ifdef ECL_THREADS
 	"THREADS",
+#endif
+#ifdef ECL_SEMAPHORES
+	"SEMAPHORES",
 #endif
 #ifdef CLOS
 	"CLOS",
@@ -241,7 +248,18 @@ ecl_init_env(cl_env_ptr env)
 	env->method_hash_clear_list = Cnil;
 #endif
 #endif
+        env->pending_interrupt = Cnil;
+
 	init_stacks(env, &i);
+
+        {
+	int i;
+	for (i = 0; i < 3; i++) {
+                cl_object x = ecl_alloc_object(t_bignum);
+                _ecl_big_init2(x, ECL_BIG_REGISTER_SIZE);
+		env->big_register[i] = x;
+	}
+        }
 
         env->trap_fpe_bits = 0;
 }
@@ -251,11 +269,23 @@ ecl_init_env(cl_env_ptr env)
 void
 _ecl_dealloc_env(cl_env_ptr env)
 {
+        /*
+         * Environment cleanup
+         */
+        int i;
+        for (i = 0; i < 3; i++) {
+                _ecl_big_clear(env->big_register[i]);
+        }
 #if defined(ECL_USE_MPROTECT)
 	if (munmap(env, sizeof(*env)))
 		ecl_internal_error("Unable to deallocate environment structure.");
 #else
+# if defined(ECL_USE_GUARD_PAGE)
+        if (VirtualFree(env, sizeof(*env), MEM_RELEASE))
+                ecl_internal_error("Unable to deallocate environment structure.");
+# else
 	ecl_dealloc(env);
+# endif
 #endif
 }
 
@@ -274,6 +304,12 @@ _ecl_alloc_env()
 	if (output == MAP_FAILED)
 		ecl_internal_error("Unable to allocate environment structure.");
 #else
+# if defined(ECL_USE_GUARD_PAGE)
+	output = VirtualAlloc(0, sizeof(*output), MEM_COMMIT,
+			      PAGE_READWRITE);
+	if (output == NULL)
+		ecl_internal_error("Unable to allocate environment structure.");
+# else
 	static struct cl_env_struct first_env;
 	if (!ecl_get_option(ECL_OPT_BOOTED)) {
 		/* We have not set up any environment. Hence, we cannot call ecl_alloc()
@@ -283,6 +319,7 @@ _ecl_alloc_env()
 	} else {
 		output = ecl_alloc(sizeof(*output));
 	}
+# endif
 #endif
 	/*
 	 * An uninitialized environment _always_ disables interrupts. They
@@ -328,9 +365,7 @@ read_char_database()
 		if (!fseek(f, 0, SEEK_END)) {
 			size = ftell(f);
 			fseek(f, 0, SEEK_SET);
-			output = si_make_vector(@'ext::byte8', MAKE_FIXNUM(size),
-						Cnil, Cnil, Cnil, Cnil);
-	    
+			output = ecl_alloc_simple_vector(size, aet_b8);	    
 			read = 0;
 			while (read < size) {
 				cl_index res;
@@ -378,6 +413,8 @@ cl_boot(int argc, char **argv)
 		return 1;
 	}
 
+	/*ecl_set_option(ECL_OPT_SIGNAL_HANDLING_THREAD, 0);*/
+
 #if !defined(GBC_BOEHM)
 	setbuf(stdin,  stdin_buf);
 	setbuf(stdout, stdout_buf);
@@ -386,6 +423,11 @@ cl_boot(int argc, char **argv)
 	ARGC = argc;
 	ARGV = argv;
 	ecl_self = argv[0];
+
+#ifdef ECL_THREADS
+        cl_core.processes = Cnil;
+#endif
+        cl_core.default_sigmask = 0;
 
 	init_unixint(0);
 	init_alloc();
@@ -455,12 +497,10 @@ cl_boot(int argc, char **argv)
 		ecl_make_package(make_constant_base_string("CLOS"),
 				 Cnil, ecl_list1(cl_core.lisp_package));
 #endif
-#ifdef ECL_THREADS
 	cl_core.mp_package =
 		ecl_make_package(make_constant_base_string("MP"),
 				 ecl_list1(make_constant_base_string("MULTIPROCESSING")),
 				 ecl_list1(cl_core.lisp_package));
-#endif
 #ifdef ECL_CLOS_STREAMS
 	cl_core.gray_package = ecl_make_package(make_constant_base_string("GRAY"),
 						Cnil,
@@ -486,6 +526,7 @@ cl_boot(int argc, char **argv)
 	 * This cannot come later, because some routines need the
 	 * frame stack immediately (for instance SI:PATHNAME-TRANSLATIONS).
 	 */
+        init_big();
 	ecl_init_env(env);
 #if !defined(GBC_BOEHM)
 	/* We need this because a lot of stuff is to be created */
@@ -560,15 +601,6 @@ cl_boot(int argc, char **argv)
 	   a vector of weak pointers thanks to the magic in
 	   gbc.d/alloc_2.d */
 	cl_core.libraries = Cnil;
-#if 0
-	/* FINALIZERS and FINALIZABLE_OBJECTS are also like LIBRARIES */
-	cl_core.finalizable_objects = si_make_vector(@'t', MAKE_FIXNUM(512),
-						     @'t', MAKE_FIXNUM(0),
-						     @'nil', @'nil');
-	cl_core.finalizers = si_make_vector(@'t', MAKE_FIXNUM(512),
-					    @'t', MAKE_FIXNUM(0),
-					    @'nil', @'nil');
-#endif
 	cl_core.to_be_finalized = Cnil;
 	cl_core.bytes_consed = Cnil;
 	cl_core.gc_counter = Cnil;
@@ -588,6 +620,8 @@ cl_boot(int argc, char **argv)
 	cl_core.gentemp_prefix = make_constant_base_string("T");
 	cl_core.gentemp_counter = MAKE_FIXNUM(0);
 
+	init_number();
+
 	ECL_SET(@'si::c-int-max', ecl_make_integer(INT_MAX));
 	ECL_SET(@'si::c-int-min', ecl_make_integer(INT_MIN));
 	ECL_SET(@'si::c-long-max', ecl_make_integer(LONG_MAX));
@@ -595,7 +629,6 @@ cl_boot(int argc, char **argv)
 	ECL_SET(@'si::c-uint-max', ecl_make_unsigned_integer(UINT_MAX));
 	ECL_SET(@'si::c-ulong-max', ecl_make_unsigned_integer(ULONG_MAX));
 
-	init_number();
 	init_unixtime();
 
 #ifdef ECL_THREADS
@@ -680,13 +713,32 @@ cl_boot(int argc, char **argv)
 
 /************************* ENVIRONMENT ROUTINES ***********************/
 
-@(defun ext::quit (&optional (code MAKE_FIXNUM(0)))
-	cl_fixnum i;
+@(defun ext::quit (&optional (code MAKE_FIXNUM(0)) (kill_all_threads Ct))
 @
-	if (!FIXNUMP(code))
-		FEerror("Illegal exit code: ~S.", 1, code);
-	i = fix(code);
-	exit(i);
+{
+#ifdef ECL_THREADS
+        if (!Null(kill_all_threads)) {
+                cl_object this = the_env->own_process;
+                cl_object p, all_threads = mp_all_processes();
+                for (p = all_threads; !Null(p); p = ECL_CONS_CDR(p)) {
+                        cl_object process = ECL_CONS_CAR(p);
+                        if (process != this) mp_process_kill(process);
+                }
+                for (p = all_threads; !Null(p); p = ECL_CONS_CDR(p)) {
+                        cl_object process = ECL_CONS_CAR(p);
+                        if (process != this) mp_process_join(process);
+                }
+        }
+#endif
+        the_env->nvalues = 1;
+        the_env->values[0] = code;
+        if (the_env->frs_org <= the_env->frs_top)
+                ecl_unwind(the_env, the_env->frs_org);
+        CEerror(Ct, "QUIT: there is no frame to return to. "
+                "Using continue will just abort.", 0);
+        cl_shutdown();
+        exit(FIXNUMP(code)? fix(code) : 0);
+}
 @)
 
 cl_object

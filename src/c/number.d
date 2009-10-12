@@ -128,13 +128,9 @@ cl_object
 ecl_make_integer(cl_fixnum l)
 {
 	if (l > MOST_POSITIVE_FIXNUM || l < MOST_NEGATIVE_FIXNUM) {
-		cl_object z = ecl_alloc_object(t_bignum);
-#ifdef WITH_GMP
-		mpz_init_set_si(z->big.big_num, l);
-#else  /* WITH_GMP */
-                z->big.big_num = l;
-#endif /* WITH_GMP */
-		return z;
+                cl_object z = _ecl_big_register0();
+                _ecl_big_set_si(z, l);
+                return _ecl_big_register_copy(z);
 	}
 	return MAKE_FIXNUM(l);
 }
@@ -143,13 +139,9 @@ cl_object
 ecl_make_unsigned_integer(cl_index l)
 {
 	if (l > MOST_POSITIVE_FIXNUM) {
-		cl_object z = ecl_alloc_object(t_bignum);
-#ifdef WITH_GMP
-		mpz_init_set_ui(z->big.big_num, l);
-#else  /* WITH_GMP */
-                z->big.big_num = l;
-#endif /* WITH_GMP */
-		return z;
+                cl_object z = _ecl_big_register0();
+                _ecl_big_set_ui(z, l);
+                return _ecl_big_register_copy(z);
 	}
 	return MAKE_FIXNUM(l);
 }
@@ -268,7 +260,7 @@ ecl_to_uint64_t(cl_object x) {
                         } else if (mpz_fits_ulong_p(x->big.big_num)) {
                                 return (ecl_uint64_t)mpz_get_ui(x->big.big_num);
                         } else {
-                                cl_object copy = big_register0_get();
+                                cl_object copy = _ecl_big_register0();
                                 mpz_fdiv_q_2exp(copy->big.big_num, x->big.big_num, 32);
                                 if (mpz_fits_ulong_p(copy->big.big_num)) {
                                         volatile ecl_uint64_t output;
@@ -295,7 +287,7 @@ ecl_to_int64_t(cl_object x) {
                 } else if (mpz_fits_slong_p(x->big.big_num)) {
                         return (ecl_int64_t)mpz_get_si(x->big.big_num);
                 } else {
-                        cl_object copy = big_register0_get();
+                        cl_object copy = _ecl_big_register0();
                         mpz_fdiv_q_2exp(copy->big.big_num, x->big.big_num, 32);
                         if (mpz_fits_slong_p(copy->big.big_num)) {
                                 ecl_int64_t output;
@@ -389,14 +381,14 @@ ecl_to_unsigned_long_long(cl_object x) {
                         } else if (mpz_fits_ulong_p(x->big.big_num)) {
                                 return (ecl_ulong_long_t)mpz_get_ui(x->big.big_num);
                         } else {
-                                cl_object copy = big_register0_get();
-                                int i = ECL_LONG_LONG_BITS - CL_FIXNUM_BITS;
+                                cl_object copy = _ecl_big_register0();
+                                int i = ECL_LONG_LONG_BITS - FIXNUM_BITS;
                                 mpz_fdiv_q_2exp(copy->bit.big_num, x->big.big_num, i);
                                 if (mpz_fits_ulong_p(copy->big.big_num)) {
                                         volatile ecl_ulong_long_t output;
                                         output = mpz_get_ui(copy->big.big_num);
-                                        for (i -= CL_FIXNUM_BITS; i; i-= CL_FIXNUM_BITS) {
-                                                output = (output << CL_FIXNUM_BITS);
+                                        for (i -= FIXNUM_BITS; i; i-= FIXNUM_BITS) {
+                                                output = (output << FIXNUM_BITS);
                                                 output += mpz_get_ui(x->big.big_num);
                                         }
                                         return output;
@@ -421,14 +413,14 @@ ecl_to_long_long(cl_object x)
                 } else if (mpz_fits_slong_p(x->big.big_num)) {
                         return (ecl_long_long_t)mpz_get_si(x->big.big_num);
                 } else {
-                        cl_object copy = big_register0_get();
-                        int i = ECL_LONG_LONG_BITS - CL_FIXNUM_BITS;
+                        cl_object copy = _ecl_big_register0();
+                        int i = ECL_LONG_LONG_BITS - FIXNUM_BITS;
                         mpz_fdiv_q_2exp(copy->bit.big_num, x->big.big_num, i);
                         if (mpz_fits_ulong_p(copy->big.big_num)) {
                                 volatile ecl_long_long_t output;
                                 output = mpz_get_si(copy->big.big_num);
-                                for (i -= CL_FIXNUM_BITS; i; i-= CL_FIXNUM_BITS) {
-                                        output = (output << CL_FIXNUM_BITS);
+                                for (i -= FIXNUM_BITS; i; i-= FIXNUM_BITS) {
+                                        output = (output << FIXNUM_BITS);
                                         output += mpz_get_ui(x->big.big_num);
                                 }
                                 return output;
@@ -758,7 +750,7 @@ ecl_to_double(cl_object x)
 		return((double)(fix(x)));
 
 	case t_bignum:
-		return(big_to_double(x));
+		return(_ecl_big_to_double(x));
 
 	case t_ratio: {
 #ifdef WITH_GMP
@@ -890,13 +882,9 @@ double_to_integer(double d)
 	if (d <= MOST_POSITIVE_FIXNUM && d >= MOST_NEGATIVE_FIXNUM)
 		return MAKE_FIXNUM((cl_fixnum)d);
 	else {
-		cl_object x = big_register0_get();
-#ifdef WITH_GMP
-		mpz_set_d(x->big.big_num, d);
-#else  /* WITH_GMP */
-                x->big.big_num = (big_num_t)d;
-#endif /* WITH_GMP */
-		return big_register_copy(x);
+                cl_object z = _ecl_big_register0();
+                _ecl_big_set_d(z, d);
+                return _ecl_big_register_copy(z);
 	}
 }
 
@@ -906,13 +894,9 @@ float_to_integer(float d)
 	if (d <= MOST_POSITIVE_FIXNUM && d >= MOST_NEGATIVE_FIXNUM)
 		return MAKE_FIXNUM((cl_fixnum)d);
 	else {
-		cl_object x = big_register0_get();
-#ifdef WITH_GMP
-		mpz_set_d(x->big.big_num, d);
-#else  /* WITH_GMP */
-                x->big.big_num = (big_num_t)d;
-#endif /* WITH_GMP */
-		return big_register_copy(x);
+                cl_object z = _ecl_big_register0();
+                _ecl_big_set_d(z, d);
+                return _ecl_big_register_copy(z);
 	}
 }
 
@@ -1011,8 +995,5 @@ init_number(void)
 #else
 	ECL_SET(@'pi', ecl_make_doublefloat((double)ECL_PI_D));
 #endif
-
-	init_big(&cl_env);
-
         ECL_SET(@'*random-state*', ecl_make_random_state(Ct));
 }

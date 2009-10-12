@@ -1,141 +1,171 @@
-ECL 9.8.4:
-==========
+ECL 9.10.2:
+===========
 
 * Bugs fixed:
 
- - si_{set,get}_finalizer were not exported from ecl.dll and thus the library
-   TRIVIAL-GARBAGE failed to build in Windows
+ - Fixed typo in src/c/unixint.d that affected single-threaded builds
 
- - The MSVC port did not define @ECL_LDRPATH@ and failed to build ecl.dll
+ - The GMP library did not build in OS X Snow Leopard in 64-bits mode.
 
- - The sequence functions did not understand the newest specialized array types.
+ - The package MP is needed also in single-threaded versions (for fake
+   mp:with-lock, which is used in CLX).
 
-* Visible changes:
+ - In CLX, there were a couple of typos in the code related to locks and ECL.
+   These typos only revealed in multithreaded builds of the CLX library.
 
- - The configuration flag --with-__thread now defaults to NO because many
-   platforms do not support it and GCC does not complain, making reliable
-   detection impossible.
+ - In Linux there is a problem with handlers for SIGFPE being totally ignored
+   by the system. The problem seems to be solved by avoiding the use of
+   feenableexcept() and restricting to C99 exception tests. That is bad because
+   we can not reliably and cheaply detect underflow exceptions.
 
- - For further compatibility with SBCL, ECL now supports two additional
-   buffer types :FULL and :LINE which are compatible with :FULLY-BUFFERED
-   and :LINE-BUFFERED (Thanks to Matthew Mondor)
+ - Under OS X, --enable-rpath works again. It was broken for about a year
+   due to my misunderstanding of how -install_name works and the differences
+   between that and -rpath.
 
- - The sockets library can now be loaded using either (REQUIRE 'SOCKETS)
-   or (REQUIRE 'SB-BSD-SOCKETS).
+ECL 9.10.1:
+===========
 
-ECL 9.8.3:
-==========
+* Configuration flags:
 
-* Bugs fixed:
+ - The option --enable-slow-config is now always on in Solaris and it does not
+   take more time than an ordinary build using --with-system-gmp=no
 
- - FLOAT-SIGN ignored the second argument.
+ - A new compiler macro ECL_NO_LEGACY can be defined to remove all deprecated
+   macros and functions. Have a look at the end of src/h/external.h to see
+   what functions are deprecated on each release -- typically they are functions
+   that have been renamed with one of the prefixes, ecl_, cl_, si_, ext_ or _ecl.
 
-ECL 9.8.2:
-==========
+ - Under OS X, you can use the environment variable ABI to select between
+   32-bits (ABI=32) or 64-bits pointers (ABI=64).
 
-* Bugs fixed:
+* Bignums:
 
- - The C inline expansion for sin, cos, and tan were wrong due to three
-   recently introduced typos.
+ - When embedded, ECL may coexist with code that uses the GMP library in
+   different ways, and sometimes that code may use different memory allocation
+   routines. In order to solve this problem ECL introduces a new option,
+   ECL_OPT_SET_GMP_MEMORY_FUNCTIONS, which determines whether GMP will use the
+   Boehm-Weiser garbage collector to allocate memory or not.
 
- - The C inline form of SQRT did not work when ECL was built with
-   --enable-longdouble.
+ - The previous change also implies that ECL must do all bignum computations
+   using GMP-allocated numbers that are then automatically freed. More
+   precisely, this is done using big_register[0-2]_get() and
+   big_register_normalize() everywhere and operating destructively on those
+   numbers. These functions have been made aware of the fact that GMP may
+   use other allocation routines and always call mpz_clear() to free memory.
 
- - When building FASL files, the output file name was not surrounded by
-   double quotes, thus breaking when the file name had spaces (only
-   mingw32).
+ - The internal functions dealing with bignums have been renamed with the usual
+   prefix "_ecl", and some of them have been turned into macros. Do not use
+   those functions if possible.
 
-* Visible changes:
+ - Bignums are now allocated as a compact IMMUTABLE unit that combines the lisp
+   object and the data for the GMP integer itself. Since it can be now
+   allocated as an atomic (i.e. pointerless) region of memory, the garbage
+   collector has to work less for marking and collecting them.
 
- - A new configuration flag, --enable-rpath, allows hardcoding in ECL the
-   location of its shared library. This is not needed in Windows, it should
-   work on all supported platforms and its purpose is to simplify the
-   installation of ECL in nonstandard locations.
+ - The function ecl_alloc_simple_vector() also creates arrays as a compact unit
+   with pointerfree memory whenever possible.
 
+ - The functions cl_alloc_simple_{base,extended}_string() now carry the prefix
+   ecl_ instead of cl_, and they are simple aliases for ecl_alloc_simple_vector.
 
-ECL 9.8.1:
-==========
+ - ECL now implements weak pointers. The interface is
+	(ext:make-weak-pointer value) => weak-pointer
+	(ext:weak-pointer-value weak-pointer) => value
+   and it defines a new built-in type, EXT:WEAK-POINTER
 
-* Important notes:
+ - When running in multithreaded mode, the streams for *terminal-io*,
+   *standard-input* and *standard-output* are created using non-locking
+   C pipes, instead of locking C streams. This is essential to allow background
+   threads gain control of the console.
 
- - The GMP library had to be patched to build with latest versions of GCC.
-   Since our patch only covers the main header and there might be some corners
-   left, it is recommended to build ECL against a better maintained version of
-   the library, such as MPIR or the versions supplied by your operating system.
+* Native threads:
 
- - ECL now builds properly on a large number of platforms, including Windows
-   with and without Microsoft compilers. However, not always are all the
-   configuration options available or well supported. The fault is not always
-   ECL's, but also the libraries it depends on. Some of these problems are
-   detailed below, some are to be found. As a guide, the minimally supported
-   flags for each platform are those use for the automated testing process
-       http://ecls.sourceforge.net/logs.html
+ - ECL now implements WITHOUT-INTERRUPTS and WITH-INTERRUPTS similarly to SBCL.
+   It creates three local macros, ALLOW-WITH-INTERRUPTS and
+   WITH-LOCAL-INTERRUPTS, and an additional one WITH-RESTORED-INTERRUPTS,
+   which executes the forms with the value of interrupts of the forms that
+   surround WITHOUT-INTERRUPTS.
 
-* Ports:
+ - Symbol SI:*INTERRUPT-DISABLE* changes name to SI:*INTERRUPTS-DISABLED*.
 
- - The Windows/MSVC port now boots also when built without support for Unicode.
+ - New function MP:PROCESS-JOIN, waits for a thread to terminate (J.C.Beaudoin)
+   For this to work, threads are always created in a joinable state, and they
+   only detach themselves when exiting and no process is waiting.
 
- - The Windows/mingw32 port builds without threads. For multithreading, the
-   user will have to build version 7.2-alpha2 of the garbage collector
-   manually and build ECL with it.
+ - EXT:QUIT now has a different definition
+	(ext:quit &optional (exit-code 0) (kill-all-threads nil))
+   The first difference is that QUIT will execute all unwind-protect forms
+   that surrounds the form that caused the exit. The second one is that we
+   can explicitely kill all threads and wait for them to exit before exiting.
 
- - The NetBSD port builds with default values using the garbage collector
-   in the pkgsrc distribution.
+ - Two new functions MP:PROCESS-SUSPEND and MP:PROCESS-RESUME allow suspending
+   and resuming a thread.
 
- - The Solaris port (Intel and Sparc) now builds with the given libraries (GMP
-   and Boehm).
+ - The C function ecl_import_current_thread() now automatically registers the
+   thread with the garbage collector. You should use ecl_release_current_thread()
+   before the thread exits, for consistency.
 
-* Compiler:
-
- - The compiler now understands FFI types :[u]int{8,16,32,64}-t.
-
- - The FFI code emitted to convert from a lisp type to :uint or :unsigned-int
-   rejected bignum inputs, even if they were in the range from 0 to UINT_MAX.
-   Similar problem with :int
-
-* Visible changes:
-
- - New functions ecl_make_[u]int(), ecl_make_[u]long(), ecl_to_[u]int(),
-   ecl_to_[u]long(), ecl_to_bool(), ecl_make_bool(), convert between C types
-   and cl_object.
-
- - The C structures ecl_array, ecl_vector, ecl_base_string and ecl_string have
-   changed. Instead of using bitfields for hasfillp and adjustable we now
-   use a single integer field, and handle the bits manually. See the
-   new macros ECL_ADJUSTABLE_ARRAY_P and ECL_ARRAY_HAS_FILL_POINTER_P.
-
- - Four new command-line arguments, --encoding, --input-encoding,
-   --output-encoding and --error-encoding, allow the user to change the 
-   external formats of the default streams.
-
- - For places defined with the simple form of DEFSETF, SETF now produces
-   a simpler expansion, without a surrounding LET* form.
-
- - The dynamic FFI is now implemented using libffi. This extends the portability
-   and removes the previous, error prone implementation.
-
- - A new function, (SI:SAFE-EVAL form env &optional error-value), can be used
-   to evaluate lisp forms in a safe way. If supplied three values, when an
-   error happens, it returns ERROR-VALUE; otherwise it will invoke a debugger.
-
- - Two new functions, ecl_read_from_cstring(s) and
-   ecl_read_from_cstring_safe(s,v) read an object from a C string (char *). The
-   first one is unsafe and will enter a debugger when there is a syntax
-   error. The second one will return V when an error happens.
-
- - Modules which are loaded with REQUIRE, but which belong to ECL, are now
-   registered with ASDF and can be used in dependencies.
+ - Due to the change in ecl_import_current_thread(), ECL now needs a slightly
+   more modern version of the Boehm-Weiser garbage collector. Hence, even if you
+   try to enforce --enable-boehm=system, you may find that ECL ignores the
+   pre-installed library in favor of the one shipped with it.
 
 * Bugs fixed:
 
- - SI:GET-LIBRARY-PATHNAME did not work properly in Windows.
+ - WITH-LOCK might run into a race condition when the lock acquisition process
+   was interrupted.
 
- - STEP did not work properly because the bytecompiler introduced an extra
-   opcode after STEPCALL.
+ - The following functions are now interrupt safe: MP:MAKE-LOCK.
 
- - --enable-slow-config works again.
+ - The use of GIVEUP-LOCK in WITH-LOCK is now protected against interrupts.
 
- - EXT:CHDIR got broken when using Unicode.
+ - Forms in toplevel EVAL-WHEN or PROGN statements did not have a proper value
+   of bytecodes.definition, causing the debugger to enter an infinite chain
+   of errors
+
+ - In Solaris 8 ECL failed because it did not find inttypes.h
+
+ - When signbit() is not available, ECL now looks for existence of copysign.
+
+* Signals and environment:
+
+ - The toplevel now allows handling multiple processes in the same console.
+   Two new commands, :w and :s, allow reading the list of processes waiting for
+   grabbing the console and switching to that given process.
+
+ - ECL now has a signal handling thread running in the background. When
+   Ctrl-C or Ctrl-Break is pressed or the process gets a SIGINT signal, then
+   a separate thread is spawned for handling that event. This thread typically
+   enters the debugger, allowing either to continue or to interrupt specific
+   processes.
+
+* Packages:
+
+ - The package hash tables are not destructively extended, but rather a new
+   hash table is created when we need more room. ecl_sethash() now returns
+   the pointer to the possibly reallocated hashtable.
+
+ - ECL now follows the SBCL model, by which there is a global lock for
+   destructive package operations (INTERN, EXPORT, etc), but not for
+   query only operations (FIND-SYMBOL, PACKAGE-USE-LIST), etc.
+
+* Windows:
+
+ - The latest version of Visual Studio introduced a number of automatically
+   generated files (*.implib, *.manifest, *.expdef) which are not used at
+   all by ECL, but which were also not deleted, causing the temporary
+   directory to be filled with garbage.
+
+ - FASLs created by COMPILE and LOAD in the directory for temporary files are
+   now properly deleted before exiting ECL.
+
+ - ECL now embeds the manifest file in the generated executables and shared
+   libraries.
+
+* Other errors:
+
+ - Extended strings (i.e. strings with characters that are not base-characters)
+   were not identified as valid documentation strings by the interpreter.
 
 ;;; Local Variables: ***
 ;;; mode:text ***

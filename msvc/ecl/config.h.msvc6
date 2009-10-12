@@ -46,25 +46,31 @@
 /* Always use CLOS							*/
 #define CLOS
 
-/* Use Boehm's garbage collector					*/
-#define GBC_BOEHM 0
-#ifdef GBC_BOEHM
-#include <ecl/gc/gc.h>
-#define ECL_DYNAMIC_VV
-#endif
-
 /* Use GNU Multiple Precision library for bignums                       */ 
 #define WITH_GMP 1
 #include <ecl/gmp.h>
 
 /* Userland threads?							*/
-/* #undef ECL_THREADS */
-#ifdef ECL_THREADS
+#define ECL_THREADS @ECL_THREADS@
+#if ECL_THREADS
 # define GC_WIN32_THREADS
+# define GC_THREADS
+# define ECL_WINDOWS_THREADS
+#else
+# undef ECL_THREADS
 #endif
 
 /* __thread thread-local variables?                                     */
 /* #undef WITH___THREAD */
+
+/* Use Boehm's garbage collector					*/
+#define GBC_BOEHM 0
+#ifdef GBC_BOEHM
+# define GC_WIN32_THREADS	/* For older versions */
+# define GC_THREADS             /* For >= 7.2 */
+# include <ecl/gc/gc.h>
+# define ECL_DYNAMIC_VV
+#endif
 
 /* Network streams							*/
 #define TCP 1
@@ -76,7 +82,10 @@
 #define ECL_FFI
 
 /* Support for Unicode strings */
-/* #undef ECL_UNICODE */
+#define ECL_UNICODE @ECL_UNICODE@
+#if !ECL_UNICODE
+# undef ECL_UNICODE
+#endif
 
 /* Allow STREAM operations to work on arbitrary objects			*/
 #define ECL_CLOS_STREAMS 1
@@ -101,6 +110,9 @@
 
 /* Use mprotect for fast interrupt dispatch				*/
 /* #undef ECL_USE_MPROTECT */
+#if defined(_MSC_VER) || defined(mingw32)
+# define ECL_USE_GUARD_PAGE
+#endif
 
 /* Integer types                        				*/
 #define ecl_uint8_t unsigned char

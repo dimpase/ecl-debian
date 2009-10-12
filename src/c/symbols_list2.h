@@ -1053,7 +1053,7 @@ cl_symbols[] = {
 {SYS_ "*IGNORE-EOF-ON-TERMINAL-IO*",NULL},
 {SYS_ "*INDENT-FORMATTED-OUTPUT*",NULL},
 {SYS_ "*INIT-FUNCTION-PREFIX*",NULL},
-{SYS_ "*INTERRUPT-ENABLE*",NULL},
+{SYS_ "*INTERRUPTS-ENABLED*",NULL},
 {SYS_ "*KEEP-DEFINITIONS*",NULL},
 {SYS_ "*LOAD-HOOKS*",NULL},
 {SYS_ "*LOAD-SEARCH-LIST*",NULL},
@@ -1491,11 +1491,15 @@ cl_symbols[] = {
 {MP_ "PROCESS-PRESET","mp_process_preset"},
 {MP_ "PROCESS-RUN-FUNCTION","mp_process_run_function"},
 {MP_ "PROCESS-WHOSTATE","mp_process_whostate"},
+{MP_ "PROCESS-JOIN","mp_process_join"},
 {MP_ "MAKE-LOCK","mp_make_lock"},
 {KEY_ "RECURSIVE",NULL},
 {MP_ "RECURSIVE-LOCK-P","mp_recursive_lock_p"},
 {MP_ "LOCK-NAME","mp_lock_name"},
 {MP_ "LOCK-HOLDER","mp_lock_holder"},
+{MP_ "LOCK-COUNT","mp_lock_count"},
+{MP_ "LOCK-MINE-P","mp_lock_mine_p"},
+{MP_ "LOCK-COUNT-MINE","mp_lock_count_mine"},
 {MP_ "GET-LOCK","mp_get_lock"},
 {MP_ "GIVEUP-LOCK","mp_giveup_lock"},
 {MP_ "MAKE-CONDITION-VARIABLE","mp_make_condition_variable"},
@@ -1507,7 +1511,20 @@ cl_symbols[] = {
 {MP_ "INTERRUPT-PROCESS","mp_interrupt_process"},
 {MP_ "+LOAD-COMPILE-LOCK+",NULL},
 {MP_ "WITH-LOCK",NULL},
-{MP_ "WITHOUT-INTERRUPTS",NULL},
+{MP_ "BLOCK-SIGNALS","mp_block_signals"},
+{MP_ "RESTORE-SIGNALS","mp_restore_signals"},
+{MP_ "PROCESS-SUSPEND","mp_process_suspend"},
+{MP_ "PROCESS-RESUME","mp_process_resume"},
+{MP_ "SUSPEND-LOOP","mp_suspend_loop"},
+{MP_ "BREAK-SUSPEND-LOOP","mp_break_suspend_loop"},
+# ifdef ECL_SEMAPHORES
+{MP_ "SEMAPHORE",NULL},
+{MP_ "MAKE-SEMAPHORE","mp_make_semaphore"},
+{MP_ "SEMAPHORE-WAIT","mp_semaphore_wait"},
+{MP_ "SEMAPHORE-TRYWAIT","mp_semaphore_trywait"},
+{MP_ "SEMAPHORE-SIGNAL","mp_semaphore_signal"},
+{MP_ "SEMAPHORE-CLOSE","mp_semaphore_close"},
+# endif
 #endif
 
 {SYS_ "WHILE",NULL},
@@ -1802,6 +1819,23 @@ cl_symbols[] = {
 
 {KEY_ "SYSV",NULL},
 {KEY_ "UNIX64",NULL},
+
+{EXT_ "WEAK-POINTER",NULL},
+{EXT_ "MAKE-WEAK-POINTER","si_make_weak_pointer"},
+{EXT_ "WEAK-POINTER-VALUE","si_weak_pointer_value"},
+
+{MP_ "*ALLOW-WITH-INTERRUPTS*",NULL},
+
+{EXT_ "WITH-UNIQUE-NAMES",NULL},
+
+{SYS_ "HANDLE-SIGNAL","si_handle_signal"},
+
+{EXT_ "WITH-INTERRUPTS",NULL},
+{EXT_ "WITHOUT-INTERRUPTS",NULL},
+{EXT_ "WITH-LOCAL-INTERRUPTS",NULL},
+{EXT_ "ALLOW-WITH-INTERRUPTS",NULL},
+
+{SYS_ "*QUIT-TAG*",NULL},
 
 /* Tag for end of list */
 {NULL,NULL}};
