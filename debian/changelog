@@ -1,4 +1,4 @@
-ecl (9.10.2-1) UNRELEASED; urgency=low
+ecl (9.10.2-1) unstable; urgency=low
 
   * New upstream release. 
   * use buildin boehm gc for now
