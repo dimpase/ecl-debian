@@ -3,8 +3,9 @@ ecl (9.12.3-1) UNRELEASED; urgency=low
   * New upstream.
   * Changed copyright link to LGPL-2
   * fix spelling typo in src/clx/image.lisp
+  * fix spelling typo in contrib/sockets/sockets.lisp
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 31 Dec 2009 09:53:13 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 31 Dec 2009 09:55:15 +0100
 
 ecl (9.10.2-1) unstable; urgency=low
 
