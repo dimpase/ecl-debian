@@ -16,11 +16,14 @@
 ;;;
 ;;; COMPILE-OP / LOAD-OP
 ;;;
-;;; We change these operations to produce both system and FASL files.
+;;; We change these operations to produce both FASL files and the
+;;; object files that they are built from. Having both of them allows
+;;; us to later on reuse the object files for bundles, libraries,
+;;; standalone executables, etc.
 ;;;
 
 (defmethod initialize-instance :after ((instance compile-op) &key &allow-other-keys)
-  (setf (slot-value instance 'system-p) t))
+  (setf (slot-value instance 'flags) '(:system-p t)))
 
 (defmethod output-files ((o compile-op) (c cl-source-file))
   (list (compile-file-pathname (component-pathname c) :type :object)
@@ -39,13 +42,13 @@
        collect (let ((output (compile-file-pathname i)))
                  (load output))))
 
-#+nil
-(defmethod output-files ((o load-op) (c cl-source-file))
-  (loop for i in (input-files o c)
-	collect (compile-file-pathname i :type :fasl)))
-
 ;;;
 ;;; BUNDLE-OP
+;;;
+;;; This operation takes all components from one or more systems and
+;;; creates a single output file, which may be a FASL, a statically
+;;; linked library, a shared library, etc The different targets are
+;;; defined by specialization.
 ;;;
 
 (defclass bundle-op (operation)
@@ -64,7 +67,9 @@
   ((type :initform :dll)))
 
 (defclass monolithic-bundle-op (bundle-op)
-  ((monolithic :initform t)))
+  ((monolithic :initform t)
+   (prologue-code :accessor monolithic-op-prologue-code)
+   (epilogue-code :accessor monolithic-op-epilogue-code)))
 
 (defclass monolithic-fasl-op (fasl-op monolithic-bundle-op) ())
 
@@ -75,8 +80,7 @@
   ((type :initform :dll)))
 
 (defclass program-op (monolithic-bundle-op)
-  ((type :initform :program)
-   (epilogue-code-arg :accessor program-op-epilogue-code-arg)))
+  ((type :initform :program)))
 
 (defmethod initialize-instance :after ((instance bundle-op) &rest initargs
 				       &key (name-suffix nil name-suffix-p)
@@ -84,72 +88,84 @@
   (unless name-suffix-p
     (setf (slot-value instance 'name-suffix)
 	  (if (bundle-op-monolithic-p instance) "-mono" "")))
-  (when (typep instance 'program-op)
-    (destructuring-bind (&rest original-initargs &key epilogue-code &allow-other-keys) (slot-value instance 'original-initargs)
-      (setf (slot-value instance 'original-initargs) (remove-keys '(epilogue-code) original-initargs)
-            (program-op-epilogue-code-arg instance) epilogue-code)))
+  (when (typep instance 'monolithic-bundle-op)
+    (destructuring-bind (&rest original-initargs
+                         &key prologue-code epilogue-code &allow-other-keys)
+        (slot-value instance 'original-initargs)
+      (setf (slot-value instance 'original-initargs)
+            (remove-keys '(epilogue-code prologue-code) original-initargs)
+            (monolithic-op-prologue-code instance) prologue-code
+            (monolithic-op-epilogue-code instance) epilogue-code)))
   (setf (bundle-op-build-args instance)
 	(remove-keys '(type monolithic name-suffix)
 		     (slot-value instance 'original-initargs))))
+
+(defvar *force-load-p* nil)
+
+(defmethod operation-done-p :around ((operation load-op) c)
+  (if *force-load-p* nil (call-next-method)))
 
 (defun gather-components (op-type system &key filter-system filter-type include-self)
   ;; This function creates a list of components, matched together with an
   ;; operation. This list may be restricted to sub-components of SYSTEM if
   ;; GATHER-ALL = NIL (default), and it may include the system itself.
-  (let ((operation (make-instance op-type)))
+  (let* ((operation (make-instance op-type))
+         (*force-load-p* t)
+         (tree (traverse (make-instance 'load-op) system)))
     (append
-     (loop for (op . component) in (traverse (make-instance 'load-op :force t) system)
+     (loop for (op . component) in tree
 	when (and (typep op 'load-op)
 		  (typep component filter-type)
-		  (or (not filter-system) (eq (component-system component) filter-systeme)))
+		  (or (not filter-system) (eq (component-system component) filter-system)))
 	collect (progn
 		  (when (eq component system) (setf include-self nil))
 		  (cons operation component)))
      (and include-self (list (cons operation system))))))
 
-;; BUNDLE-SUB-OPERATIONS
-;;
-;; Builds a list of pairs (operation . component) which contains all the
-;; dependencies of this bundle. This list is used by TRAVERSE and also
-;; by INPUT-FILES. The dependencies depend on the strategy, as explained
-;; below.
-;;
+;;;
+;;; BUNDLE-SUB-OPERATIONS
+;;;
+;;; Builds a list of pairs (operation . component) which contains all the
+;;; dependencies of this bundle. This list is used by TRAVERSE and also
+;;; by INPUT-FILES. The dependencies depend on the strategy, as explained
+;;; below.
+;;;
 (defgeneric bundle-sub-operations (operation component))
-;;
-;; First we handle monolithic bundles. These are standalone systems
-;; which contain everything, including other ASDF systems required
-;; by the current one. A PROGRAM is always monolithic.
-;;
-;; MONOLITHIC SHARED LIBRARIES, PROGRAMS, FASL
-;;
-;; Gather the static libraries of all components.
-;;
+;;;
+;;; First we handle monolithic bundles. These are standalone systems
+;;; which contain everything, including other ASDF systems required
+;;; by the current one. A PROGRAM is always monolithic.
+;;;
+;;; MONOLITHIC SHARED LIBRARIES, PROGRAMS, FASL
+;;;
+;;; Gather the static libraries of all components.
+;;;
 (defmethod bundle-sub-operations ((o monolithic-bundle-op) c)
   (gather-components 'lib-op c :filter-type 'system :include-self t))
-;;
-;; STATIC LIBRARIES
-;;
-;; Gather the object files of all components and, if monolithic, also
-;; of systems and subsystems.
-;;
+;;;
+;;; STATIC LIBRARIES
+;;;
+;;; Gather the object files of all components and, if monolithic, also
+;;; of systems and subsystems.
+;;;
 (defmethod bundle-sub-operations ((o lib-op) c)
   (gather-components 'compile-op c
-		     :filter-system (and (bundle-op-monolithic-p o) c)
+		     :filter-system (and (not (bundle-op-monolithic-p o)) c)
 		     :filter-type '(not system)))
-;;
-;; SHARED LIBRARIES
-;;
-;; Gather the dynamically linked libraries of all components.
-;; They will be linked into this new shared library, together
-;; with the static library of this module.
-;;
+;;;
+;;; SHARED LIBRARIES
+;;;
+;;; Gather the dynamically linked libraries of all components.
+;;; They will be linked into this new shared library, together
+;;; with the static library of this module.
+;;;
 (defmethod bundle-sub-operations ((o dll-op) c)
   (list (cons (make-instance 'lib-op) c)))
-;;
-;; FASL FILES
-;;
-;; Gather the statically linked library of this component.
-;;
+;;;
+;;; FASL FILES
+;;;
+;;; Gather the statically linked library of this component.
+;;;
 (defmethod bundle-sub-operations ((o fasl-op) c)
   (list (cons (make-instance 'lib-op) c)))
 
@@ -191,9 +207,12 @@
     (ensure-directories-exist (first output))
     (apply #'c::builder (bundle-op-type o) (first output) :lisp-files object-files
 	   (append (bundle-op-build-args o)
-                   (when (and (typep o 'program-op)
-                              (program-op-epilogue-code-arg o))
-                     `(:epilogue-code ,(program-op-epilogue-code-arg o)))))))
+                   (when (and (typep o 'monolithic-bundle-op)
+                              (monolithic-op-prologue-code o))
+                     `(:prologue-code ,(monolithic-op-prologue-code o)))
+                   (when (and (typep o 'monolithic-bundle-op)
+                              (monolithic-op-epilogue-code o))
+                     `(:epilogue-code ,(monolithic-op-epilogue-code o)))))))
 
 (defun select-operation (monolithic type)
   (ecase type
@@ -207,21 +226,22 @@
      'program-op)))
     
 
-(defun make-build (system &rest args &key (monolithic nil) (type :fasl) &allow-other-keys)
+(defun make-build (system &rest args &key (monolithic nil) (type :fasl)
+                   &allow-other-keys)
   (apply #'operate (select-operation monolithic type)
 	 system
 	 (remove-keys '(monolithic type) args)))
 
-;;
-;; LOAD-FASL-OP
-;;
-;; This is like ASDF's LOAD-OP, but using monolithic fasl files.
-;;
+;;;
+;;; LOAD-FASL-OP
+;;;
+;;; This is like ASDF's LOAD-OP, but using monolithic fasl files.
+;;;
 
 (defclass load-fasl-op (operation) ())
 
 (defun trivial-system-p (c)
-  (every #'(lambda (c) (typep c 'ecl-binary-file)) (module-components c)))
+  (every #'(lambda (c) (typep c 'compiled-file)) (module-components c)))
 
 (defmethod component-depends-on ((o load-fasl-op) (c system))
   (unless (trivial-system-p c)
@@ -244,10 +264,39 @@
             do (setf (gethash 'load-op (component-operation-times i))
                      (get-universal-time))))))
 
+;;;
+;;; PRECOMPILED FILES
+;;;
+;;; This component can be used to distribute ASDF libraries in precompiled
+;;; form. Only useful when the dependencies have also been precompiled.
+;;;
+
+(defclass compiled-file (component) ())
+(defmethod component-relative-pathname ((component compiled-file))
+  (compile-file-pathname
+   (merge-component-relative-pathname
+    (slot-value component 'relative-pathname)
+    (component-name component)
+    "fas")))
+
+(defmethod output-files (o (c compiled-file))
+  nil)
+(defmethod input-files (o (c compiled-file))
+  nil)
+(defmethod perform ((o load-op) (c compiled-file))
+  (load (component-pathname c)))
+(defmethod perform ((o load-fasl-op) (c compiled-file))
+  (load (component-pathname c)))
+(defmethod perform (o (c compiled-file))
+  nil)
+
+;;;
+;;; Final integration steps
+;;;
+
 (export '(make-build load-fasl-op))
 (push '("fasb" . si::load-binary) si::*load-hooks*)
 
-;; Hook into ECL's require/provide
 (require 'cmp)
 (defvar *require-asdf-operator* 'load-op)
 
@@ -258,21 +307,6 @@
       (when system
         (asdf:operate *require-asdf-operator* name)
         t))))
-
-(defclass ecl-binary-file (component) ())
-(defmethod component-pathname ((c ecl-binary-file))
-  (merge-pathnames (compile-file-pathname (string (component-name c)))
-                   "sys:"))
-(defmethod output-files (o (c ecl-binary-file))
-  nil)
-(defmethod input-files (o (c ecl-binary-file))
-  nil)
-(defmethod perform ((o load-op) (c ecl-binary-file))
-  (load (component-pathname c)))
-(defmethod perform ((o load-fasl-op) (c ecl-binary-file))
-  (load (component-pathname c)))
-(defmethod perform (o (c ecl-binary-file))
-  nil)
 
 (defun register-pre-built-system (name)
   (register-system name (make-instance 'system :name name)))
@@ -286,5 +320,6 @@
                        (values-list l)))))
 #+win32 (push '("asd" . si::load-source) si::*load-hooks*)
 (pushnew 'module-provide-asdf ext:*module-provider-functions*)
+(pushnew (translate-logical-pathname "SYS:") *central-registry*)
 
 (provide 'asdf)

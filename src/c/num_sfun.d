@@ -225,9 +225,17 @@ ecl_log1_complex(cl_object r, cl_object i)
 {
 	cl_object a = ecl_abs(r);
 	cl_object p = ecl_abs(i);
-	if (ecl_number_compare(a, p) > 0) {
+	int rel = ecl_number_compare(a, p);
+	if (rel > 0) {
 		cl_object aux = p;
 		p = a; a = aux;
+	} else if (rel == 0) {
+		/* if a == p, 
+		 * log(sqrt(a^2+p^2)) = log(2a^2)/2
+		 */
+		a = ecl_times(a, a);
+		a = ecl_divide(ecl_log1(ecl_plus(a, a)), MAKE_FIXNUM(2));
+		goto OUTPUT;
 	}
 	/* For the real part of the output we use the formula
 	 *	log(sqrt(p^2 + a^2)) = log(sqrt(p^2*(1 + (a/p)^2)))
@@ -235,6 +243,7 @@ ecl_log1_complex(cl_object r, cl_object i)
 	a = ecl_divide(a, p);
 	a = ecl_plus(ecl_divide(ecl_log1p(ecl_times(a,a)), MAKE_FIXNUM(2)),
 		     ecl_log1(p));
+ OUTPUT:
 	p = ecl_atan2(i, r);
 	return ecl_make_complex(a, p);
 }
@@ -243,49 +252,70 @@ cl_object
 ecl_log1(cl_object x)
 {
         cl_object output;
-	cl_type tx;
         ECL_MATHERR_CLEAR;
  AGAIN:
-	tx = type_of(x);
-	if (!ECL_NUMBER_TYPE_P(tx)) {
-		x = ecl_type_error(@'log',"argument",x,@'number');
-		goto AGAIN;
-	}
-	if (tx == t_complex) {
-		output = ecl_log1_complex(x->complex.real, x->complex.imag);
-	} else if (ecl_minusp(x)) {
-		output = ecl_log1_complex(x, MAKE_FIXNUM(0));
-	} else switch (tx) {
+	switch (type_of(x)) {
 	case t_fixnum:
-	case t_ratio:
+	case t_ratio: {
+		float f = number_to_float(x);
+		if (f < 0) goto COMPLEX;
 		output = ecl_make_singlefloat(logf(number_to_float(x)));
                 break;
+	}
         case t_bignum: {
-                cl_fixnum l = fix(cl_integer_length(x)) - 1;
-                cl_object r = ecl_make_ratio(x, ecl_ash(MAKE_FIXNUM(1), l));
-                float d = logf(number_to_float(r)) + l * logf(2.0);
-                output = ecl_make_singlefloat(d);
+                if (ecl_minusp(x)) {
+                        goto COMPLEX;
+                } else {
+                        cl_fixnum l = ecl_integer_length(x) - 1;
+                        cl_object r = ecl_make_ratio(x, ecl_ash(MAKE_FIXNUM(1), l));
+                        float d = logf(number_to_float(r)) + l * logf(2.0);
+                        output = ecl_make_singlefloat(d);
+                }
                 break;
         }
 #ifdef ECL_SHORT_FLOAT
-	case t_shortfloat:
+	case t_shortfloat: {
+		float f = ecl_short_float(d);
+		if (f < 0) goto COMPLEX;
 		output = make_shortfloat(logf(ecl_short_float(x)));
                 break;
+	}
 #endif
-	case t_singlefloat:
-		output = ecl_make_singlefloat(logf(sf(x)));
+	case t_singlefloat: {
+		float f = sf(x);
+		if (isnan(f)) goto ISNAN;
+		if (f < 0) goto COMPLEX;
+		output = ecl_make_singlefloat(logf(f));
                 break;
-	case t_doublefloat:
-		output = ecl_make_doublefloat(log(df(x)));
+	}
+	case t_doublefloat: {
+		double f = df(x);
+		if (isnan(f)) goto ISNAN;
+		if (f < 0) goto COMPLEX;
+		output = ecl_make_doublefloat(log(f));
                 break;
+	}
 #ifdef ECL_LONG_FLOAT
-	case t_longfloat:
-		output = ecl_make_longfloat(logl(ecl_long_float(x)));
+	case t_longfloat: {
+		long double f = ecl_long_float(x);
+		if (isnan(f)) goto ISNAN;
+		if (f < 0) goto COMPLEX;
+		output = ecl_make_longfloat(logl(f));
                 break;
+	}
 #endif
+	case t_complex:
+		output = ecl_log1_complex(x->complex.real, x->complex.imag);
+		break;
+	ISNAN:
+		output = x;
+		break;
+	COMPLEX:
+		output = ecl_log1_complex(x, MAKE_FIXNUM(0));
+		break;
 	default:
-		/* We do not reach here */
-		(void)0;
+		x = ecl_type_error(@'log',"argument",x,@'number');
+		goto AGAIN;
 	}
         ECL_MATHERR_TEST;
         return output;
@@ -301,45 +331,63 @@ cl_object
 ecl_log1p(cl_object x)
 {
         cl_object output;
-	cl_type tx;
         ECL_MATHERR_CLEAR;
  AGAIN:
-	tx = type_of(x);
-	if (!ECL_NUMBER_TYPE_P(tx)) {
-		x = ecl_type_error(@'log',"argument",x,@'number');
-		goto AGAIN;
-	}
-	if (tx == t_complex) {
-		output = ecl_log1(ecl_plus(MAKE_FIXNUM(1), x));
-	} else if (ecl_number_compare(x, MAKE_FIXNUM(-1)) < 0) {
-		output = ecl_log1p(ecl_make_complex(x, MAKE_FIXNUM(0)));
-	} else {
-	switch (tx) {
+	switch (type_of(x)) {
 	case t_fixnum:
-	case t_bignum:
-	case t_ratio:
+	case t_ratio: {
+		float f = number_to_float(x);
+		if (f < -1) goto COMPLEX;
 		output = ecl_make_singlefloat(log1pf(number_to_float(x)));
                 break;
+	}
+	case t_bignum:
+                return ecl_log1(ecl_one_plus(x));
 #ifdef ECL_SHORT_FLOAT
-	case t_shortfloat:
+	case t_shortfloat: {
+		float f = ecl_short_float(x);
+		if (isnan(f)) goto ISNAN;
+		if (f < -1) goto COMPLEX;
 		output = make_shortfloat(log1pf(ecl_short_float(x)));
                 break;
-#endif
-	case t_singlefloat:
-		output = ecl_make_singlefloat(log1pf(sf(x)));
-                break;
-	case t_doublefloat:
-		output = ecl_make_doublefloat(log1p(df(x)));
-                break;
-#ifdef ECL_LONG_FLOAT
-	case t_longfloat:
-		output = ecl_make_longfloat(log1pl(ecl_long_float(x)));
-                break;
-#endif
-	default:
-		/* We do not reach here */
-		(void)0;
 	}
+#endif
+	case t_singlefloat: {
+		float f = sf(x);
+		if (isnan(f)) goto ISNAN;
+		if (f < -1) goto COMPLEX;
+		output = ecl_make_singlefloat(log1pf(f));
+                break;
+	}
+	case t_doublefloat: {
+		double f = df(x);
+		if (isnan(f)) goto ISNAN;
+		if (f < -1) goto COMPLEX;
+		output = ecl_make_doublefloat(log1p(f));
+                break;
+	}
+#ifdef ECL_LONG_FLOAT
+	case t_longfloat: {
+		long double f = ecl_long_float(x);
+		if (isnan(f)) goto ISNAN;
+		if (f < -1) goto COMPLEX;
+		output = ecl_make_longfloat(log1pl(f));
+                break;
+	}
+#endif
+	case t_complex:
+		output = ecl_log1(ecl_plus(MAKE_FIXNUM(1), x));
+		break;
+	ISNAN:
+		output = x;
+		break;
+	COMPLEX:
+		output = ecl_log1_complex(ecl_plus(x, MAKE_FIXNUM(1)),
+					  MAKE_FIXNUM(0));
+		break;
+	default:
+		x = ecl_type_error(@'log',"argument",x,@'number');
+		goto AGAIN;
         }
         ECL_MATHERR_TEST;
         return output;
@@ -499,11 +547,12 @@ cl_object
 ecl_atan1(cl_object y)
 {
 	if (type_of(y) == t_complex) {
-#if 0 /* FIXME! ANSI states it should be this first part */
-		z = ecl_times(cl_core.imag_unit, y);
-		z = ecl_log1(ecl_one_plus(z)) +
-		    ecl_log1(ecl_minus(MAKE_FIXNUM(1), z));
-		z = ecl_divide(z, ecl_times(MAKE_FIXNUM(2), cl_core.imag_unit));
+#if 0 /* ANSI states it should be this first part */
+		cl_object z = ecl_times(cl_core.imag_unit, y);
+		z = ecl_plus(ecl_log1(ecl_one_plus(z)),
+			     ecl_log1(ecl_minus(MAKE_FIXNUM(1), z)));
+		z = ecl_divide(z, ecl_times(MAKE_FIXNUM(2),
+					    cl_core.imag_unit));
 #else
 		cl_object z1, z = ecl_times(cl_core.imag_unit, y);
 		z = ecl_one_plus(z);

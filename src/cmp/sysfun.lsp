@@ -929,7 +929,8 @@
 
 (proclaim-function ash (integer integer) t)
 (proclaim-function logcount (t) t)
-(proclaim-function integer-length (t) fixnum)
+(proclaim-function integer-length (t) fixnum :predicate t :no-side-effects t)
+(def-inline integer-length :always (t) :cl-index "ecl_integer_length(#0)")
 (proclaim-function si:bit-array-op (*) t)
 (proclaim-function zerop (t) t :predicate t :no-side-effects t)
 (def-inline zerop :always (t) :bool "ecl_zerop(#0)")
@@ -1478,7 +1479,7 @@
 (proclaim-function mp:lock-name (mp:lock) symbol)
 (proclaim-function mp:lock-holder (mp:lock) t)
 (proclaim-function mp:lock-count (mp:lock) fixnum)
-(def-inline si:instance-ref :unsafe (mp:lock) fixnum "((#0)->lock.count)")
+(def-inline mp:lock-count :unsafe (mp:lock) fixnum "((#0)->lock.count)")
 )
 
 ;; Functions only available with CLOS
@@ -1490,6 +1491,10 @@
 (def-inline si:instance-ref :always (t fixnum) t "ecl_instance_ref((#0),(#1))")
 (def-inline si:instance-ref :unsafe (standard-object fixnum) t
  "(#0)->instance.slots[#1]")
+
+(proclaim-function si::instance-sig (standard-object) list :no-side-effects t)
+(def-inline si::instance-sig :unsafe (standard-object) list
+ "(#0)->instance.sig")
 
 (proclaim-function si:instance-set (t fixnum t) t)
 (def-inline si:instance-set :unsafe (t fixnum t) t

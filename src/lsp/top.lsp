@@ -544,7 +544,7 @@ Use special code 0 to cancel this operation.")
         do (mp:process-resume process))
      (when break-process
        (mp:interrupt-process break-process
-			     #'simple-terminal-interrupt))))
+			     #'single-threaded-terminal-interrupt))))
   #-threads
   (single-threaded-terminal-interrupt))
 
@@ -942,11 +942,11 @@ Use special code 0 to cancel this operation.")
 	(if no-values
 	    (do ((vals variables (cddr vals)))
 		((endp vals))
-		(format t "~%  ~A" (car vals))
+		(format t "~%  ~S" (car vals))
 		)
 	  (do ((vals variables (cddr vals)))
 	      ((endp vals))
-	      (format t "~%  ~A: ~S" (car vals) (cadr vals))
+	      (format t "~%  ~S: ~S" (car vals) (cadr vals))
 	   )
 	  )
       (format t "none")
@@ -1412,7 +1412,8 @@ value."
     (unwind-protect
          (if err-value-p
              (let ((*break-enable* nil))
-               (si::eval-with-env form env))
+               (setf output (si::eval-with-env form env)
+                     ok t))
              (handler-bind ((serious-condition #'invoke-debugger))
                (setf output (si::eval-with-env form env)
                      ok t)))

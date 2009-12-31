@@ -183,7 +183,8 @@
   gfun)
 
 (defmethod ensure-generic-function-using-class
-    ((gfun generic-function) name &rest args &key (method-class 'STANDARD-METHOD)
+    ((gfun generic-function) name &rest args &key
+     (method-class 'STANDARD-METHOD method-class-p)
      (generic-function-class (class-of gfun))
      (delete-methods nil))
   ;; modify the existing object
@@ -200,18 +201,19 @@
   (unless (si::subclassp generic-function-class (find-class 'generic-function))
     (error "~A is not a valid :GENERIC-FUNCTION-CLASS argument for ENSURE-GENERIC-FUNCTION."
 	   generic-function-class))
+  (when (and method-class-p (symbolp method-class))
+    (setf args (list* :method-class (find-class method-class) args)))
   (when delete-methods
     (dolist (m (copy-list (generic-function-methods gfun)))
       (when (getf (method-plist m) :method-from-defgeneric-p)
 	(remove-method gfun m))))
-  (unless (classp method-class)
-    (setf args (list* :method-class (find-class method-class) args)))
   (if (eq (class-of gfun) generic-function-class)
       (apply #'reinitialize-instance gfun :name name args)
       (apply #'change-class gfun generic-function-class :name name args)))
 
 (defmethod ensure-generic-function-using-class
-    ((gfun null) name &rest args &key (method-class 'STANDARD-METHOD)
+    ((gfun null) name &rest args &key
+     (method-class 'STANDARD-METHOD method-class-p)
      (generic-function-class 'STANDARD-GENERIC-FUNCTION)
      (delete-methods nil))
   ;; else create a new generic function object
@@ -220,7 +222,7 @@
   (remf args :declare)
   (remf args :environment)
   (remf args :delete-methods)
-  (unless (classp method-class)
+  (when (and method-class-p (symbolp generic-function-class))
     (setf args (list* :method-class (find-class method-class) args)))
   (set-funcallable-instance-function
    (apply #'make-instance generic-function-class :name name args)

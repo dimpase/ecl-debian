@@ -91,7 +91,7 @@
                ((or (endp (cdar return-types))
                     (member (cadar return-types) '(&optional &rest &key)))
                 t)
-               (t (type-filter (cadar return-types)))))
+               (t (type-filter (car return-types) t))))
         (t (type-filter (car return-types)))))
 
 (defun add-function-proclamation (fname decl)
@@ -302,6 +302,19 @@
 	  (when v (setf (var-type v) type1)))
 	(warn "The variable name ~s is not a symbol." var))))
 
+(defun parse-ignore-declaration (decl-args expected-ref-number)
+  (loop with output = '()
+     for name in decl-args
+     do (cond ((symbolp name)
+               (push (cons name expected-ref-number) output))
+              (t
+               (cmpassert (and (consp name)
+                               (= (length name) 2)
+                               (eq (first name) 'function))
+                          "Invalid argument to IGNORE/IGNORABLE declaration:~&~A"
+                          name)))
+     finally (return output)))
+
 (defun c1body (body doc-p &aux
 	            (all-declarations nil)
 		    (ss nil)		; special vars
@@ -335,9 +348,11 @@
 			  "Syntax error in declaration ~s" decl)
 	       (setf ss (append decl-args ss)))
 	      (IGNORE
-	       (cmpassert (proper-list-p decl-args #'symbolp)
-			  "Syntax error in declaration ~s" decl)
-	       (setf is (append decl-args is)))
+               (setf is (nconc (parse-ignore-declaration decl-args -1)
+                               is)))
+	      (IGNORABLE
+	       (setf is (nconc (parse-ignore-declaration decl-args 0)
+                               is)))
 	      (TYPE
 	       (cmpassert decl-args "Syntax error in declaration ~s" decl)
 	       (declare-variables (first decl-args) (rest decl-args)))
@@ -462,14 +477,16 @@
     (c2expr body)))
 
 (defun check-vdecl (vnames ts is)
-  (dolist (x ts)
-    (unless (member (car x) vnames)
-      (cmpwarn "Type declaration was found for not bound variable ~s."
-               (car x))))
-  (dolist (x is)
-    (unless (member x vnames)
-      (cmpwarn "Ignore declaration was found for not bound variable ~s." x)))
-  )
+  (loop for (var . type) in ts
+     unless (member var vnames :test #'eq)
+     do (cmpwarn "Declaration of type~&~4T~A~&was found for not bound variable ~s."
+                 type var))
+  (loop for (var . expected-uses) in is
+     unless (member var vnames :test #'eq)
+     do (cmpwarn (if (minusp expected-uses)
+                     "IGNORE declaration was found for not bound variable ~s."
+                     "IGNORABLE declaration was found for not bound variable ~s.")
+                 var)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
