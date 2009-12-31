@@ -82,7 +82,12 @@ si_put_buffer_string(cl_object string)
 			l = TOKEN_STRING_FILLP(ECL_CONS_CAR(pool));
 		}
 		if (l < ECL_MAX_STRING_POOL_SIZE) {
-			if (TOKEN_STRING_DIM(string) > ECL_BUFFER_STRING_SIZE) {
+			/* Ok, by ignoring the following code, here we
+			 * are doing like SBCL: we simply grow the
+			 * input buffer and do not care about its
+			 * size. */
+#if 0
+			if (TOKEN_STRING_DIM(string) > 32*ECL_BUFFER_STRING_SIZE) {
 				/* String has been enlarged. Cut it. */
 #ifdef ECL_UNICODE
 				string = ecl_alloc_adjustable_extended_string(ECL_BUFFER_STRING_SIZE);
@@ -90,6 +95,7 @@ si_put_buffer_string(cl_object string)
 				string = ecl_alloc_adjustable_base_string(ECL_BUFFER_STRING_SIZE);
 #endif
 			}
+#endif
 			TOKEN_STRING_FILLP(string) = l+1;
 			env->string_pool = CONS(string, pool);
 		}
@@ -1133,7 +1139,7 @@ sharp_dot_reader(cl_object in, cl_object c, cl_object d)
 {
 	if (d != Cnil && !read_suppress)
 		extra_argument('.', in, d);
-	c = ecl_read_object_non_recursive(in);
+	c = ecl_read_object(in);
 	if (c == OBJNULL)
 		FEend_of_file(in);
 	if (read_suppress)
@@ -1214,15 +1220,15 @@ static cl_object
 sharp_eq_reader(cl_object in, cl_object c, cl_object d)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	cl_object pair, value;
+	cl_object definition, pair, value;
 	cl_object sharp_eq_context = ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*');
 
 	if (read_suppress) @(return)
 	if (Null(d))
 		FEreader_error("The #= readmacro requires an argument.", in, 0);
-	if (ecl_assql(d, sharp_eq_context) != Cnil)
+	if (ecl_assq(d, sharp_eq_context) != Cnil)
 		FEreader_error("Duplicate definitions for #~D=.", in, 1, d);
-	pair = ecl_list1(d);
+        pair = CONS(d, Cnil);
 	ECL_SETQ(the_env, @'si::*sharp-eq-context*', CONS(pair, sharp_eq_context));
 	value = ecl_read_object(in);
 	if (value == pair)
@@ -1237,56 +1243,60 @@ sharp_sharp_reader(cl_object in, cl_object c, cl_object d)
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object pair;
 
-	if (read_suppress) @(return Cnil)
+	if (read_suppress)
+                @(return Cnil)
 	if (Null(d))
 		FEreader_error("The ## readmacro requires an argument.", in, 0);
 	pair = ecl_assq(d, ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*'));
-	if (pair != Cnil)
-		@(return pair)
-	FEreader_error("#~D# is undefined.", in, 1, d);
+	if (pair == Cnil)
+                FEreader_error("#~D# is undefined.", in, 1, d);
+        @(return pair)
 }
 
 static cl_object
-do_patch_sharp(cl_object x)
+do_patch_sharp(cl_object x, cl_object table)
 {
 	switch (type_of(x)) {
-	case t_list: {
-	  	cl_object y = x;
-		cl_object *place = &x;
-		if (Null(x))
-			break;
-		do {
-			/* This was the result of a #d# */
-			if (CAR(y) == OBJNULL) {
-				*place = CDR(y);
-				return x;
-			} else {
-				ECL_RPLACA(y, do_patch_sharp(CAR(y)));
-			}
-			place = &ECL_CONS_CDR(y);
-			y = ECL_CONS_CDR(y);
-		} while (CONSP(y));
-		break;
+	case t_list:
+                if (Null(x))
+                        return x;
+	case t_vector:
+	case t_array:
+	case t_complex:
+        case t_bclosure:
+        case t_bytecodes: {
+                cl_object y = ecl_gethash_safe(x, table, table);
+                if (y == table)
+                        break;
+                x = y;
+        }
+	default:
+                return x;
 	}
+	switch (type_of(x)) {
+	case t_list:
+                ECL_RPLACA(x, do_patch_sharp(ECL_CONS_CAR(x), table));
+                ECL_RPLACD(x, do_patch_sharp(ECL_CONS_CDR(x), table));
+		break;
 	case t_vector:
 		if (x->vector.elttype == aet_object) {
 			cl_index i;
 			for (i = 0;  i < x->vector.fillp;  i++)
-				x->vector.self.t[i] = do_patch_sharp(x->vector.self.t[i]);
+				x->vector.self.t[i] =
+                                        do_patch_sharp(x->vector.self.t[i], table);
 		}
 		break;
 	case t_array:
 		if (x->vector.elttype == aet_object) {
-			cl_index i, j;
-			for (i = 0, j = 1;  i < x->array.rank;  i++)
-				j *= x->array.dims[i];
+			cl_index i, j = x->array.dim;
 			for (i = 0;  i < j;  i++)
-				x->array.self.t[i] = do_patch_sharp(x->array.self.t[i]);
+				x->array.self.t[i] =
+                                        do_patch_sharp(x->array.self.t[i], table);
 		}
 		break;
 	case t_complex: {
-		cl_object r = do_patch_sharp(x->complex.real);
-		cl_object i = do_patch_sharp(x->complex.imag);
+		cl_object r = do_patch_sharp(x->complex.real, table);
+		cl_object i = do_patch_sharp(x->complex.imag, table);
 		if (r != x->complex.real || i != x->complex.imag) {
 			cl_object c = ecl_make_complex(r, i);
 			x->complex = c->complex;
@@ -1294,43 +1304,43 @@ do_patch_sharp(cl_object x)
                 break;
 	}
         case t_bclosure: {
-                x->bclosure.lex = do_patch_sharp(x->bclosure.lex);
-                x = x->bclosure.code = do_patch_sharp(x->bclosure.code);
+                x->bclosure.lex = do_patch_sharp(x->bclosure.lex, table);
+                x = x->bclosure.code = do_patch_sharp(x->bclosure.code, table);
+                break;
         }
         case t_bytecodes: {
                 cl_index i = 0;
-                x->bytecodes.name = do_patch_sharp(x->bytecodes.name);
-                x->bytecodes.definition = do_patch_sharp(x->bytecodes.definition);
+                x->bytecodes.name = do_patch_sharp(x->bytecodes.name, table);
+                x->bytecodes.definition = do_patch_sharp(x->bytecodes.definition, table);
                 for (i = 0; i < x->bytecodes.data_size; i++) {
-                        x->bytecodes.data[i] = do_patch_sharp(x->bytecodes.data[i]);
+                        x->bytecodes.data[i] =
+                                do_patch_sharp(x->bytecodes.data[i], table);
                 }
                 break;
         }
 	default:;
 	}
-	return(x);
+        ecl_sethash(x, table, x);
+        return x;
 }
 
 static cl_object
 patch_sharp(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	cl_object sharp_eq_context = ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*');
 	cl_object pairs;
+        cl_object table = 
+                cl__make_hash_table(@'eq', MAKE_FIXNUM(20), /* size */
+                                    ecl_make_singlefloat(1.5f), /* rehash-size */
+                                    ecl_make_singlefloat(0.5f), /* rehash-threshold */
+                                    Cnil); /* thread-safe */
 
-	pairs = sharp_eq_context;
-	loop_for_in(pairs) { 
-		cl_object pair = ECL_CONS_CAR(pairs);
-		ECL_RPLACA(pair, OBJNULL);
-	} end_loop_for_in;
-
-	x = do_patch_sharp(x);
-
-	pairs = sharp_eq_context;
-	loop_for_in(pairs) {
-		cl_object pair = ECL_CONS_CAR(pairs);
-		ECL_RPLACA(pair, Cnil);
-	} end_loop_for_in;
+        pairs = ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*');
+        loop_for_in(pairs) {
+                cl_object pair = ECL_CONS_CAR(pairs);
+                ecl_sethash(pair, table, ECL_CONS_CDR(pair));
+        } end_loop_for_in;
+	x = do_patch_sharp(x, table);
 	return x;
 }
 

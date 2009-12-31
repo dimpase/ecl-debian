@@ -318,6 +318,7 @@ extern ECL_API cl_object cl_array_dimension(cl_object a, cl_object index);
 extern ECL_API cl_object cl_array_total_size(cl_object a);
 extern ECL_API cl_object cl_adjustable_array_p(cl_object a);
 extern ECL_API cl_object cl_array_displacement(cl_object a);
+extern ECL_API cl_object si_array_raw_data(cl_object array);
 extern ECL_API cl_object cl_svref(cl_object x, cl_object index);
 extern ECL_API cl_object si_svset(cl_object x, cl_object index, cl_object v);
 extern ECL_API cl_object cl_array_has_fill_pointer_p(cl_object a);
@@ -537,7 +538,7 @@ extern ECL_API cl_object CEerror(cl_object c, const char *err_str, int narg, ...
 extern ECL_API void FEillegal_index(cl_object x, cl_object i);
 extern ECL_API void FEtype_error_symbol(cl_object obj) /*__attribute__((noreturn))*/;
 extern ECL_API void FElibc_error(const char *msg, int narg, ...) /*__attribute__((noreturn))*/;
-#if defined(mingw32) || defined(_MSC_VER)
+#if defined(mingw32) || defined(_MSC_VER) || defined(cygwin)
 extern ECL_API void FEwin32_error(const char *msg, int narg, ...) /*__attribute__((noreturn))*/;
 #endif
 
@@ -887,6 +888,7 @@ extern ECL_API cl_object si_getenv(cl_object var);
 extern ECL_API cl_object si_setenv(cl_object var, cl_object value);
 extern ECL_API cl_object si_pointer(cl_object x);
 extern ECL_API cl_object si_quit _ARGS((cl_narg narg, ...)) /*__attribute__((noreturn))*/;
+extern ECL_API cl_object si_exit _ARGS((cl_narg narg, ...)) /*__attribute__((noreturn))*/;
 
 typedef enum {
 	ECL_OPT_INCREMENTAL_GC = 0,
@@ -1163,7 +1165,7 @@ extern ECL_API cl_object cl_logeqv _ARGS((cl_narg narg, ...));
 extern ECL_API cl_object ecl_boole(int op, cl_object x, cl_object y);
 extern ECL_API cl_object ecl_ash(cl_object x, cl_fixnum w);
 extern ECL_API int ecl_fixnum_bit_length(cl_fixnum l);
-
+extern ECL_API cl_index ecl_integer_length(cl_object i);
 
 /* num_pred.c */
 

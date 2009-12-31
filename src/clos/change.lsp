@@ -50,7 +50,7 @@
 			     #'shared-initialize (list new-data added-slots))))
     (apply #'shared-initialize new-data added-slots initargs)))
 
-(defmethod change-class ((instance standard-object) (new-class standard-class)
+(defmethod change-class ((instance standard-object) (new-class std-class)
 			 &rest initargs)
   (let* ((old-instance (si::copy-instance instance))
 	 (new-size (class-size new-class))
@@ -131,32 +131,31 @@
 	 (discarded-slots '())
 	 (added-slots '())
 	 (property-list '()))
-    (unless (equal old-slotds new-slotds)
-      (setf instance (si::allocate-raw-instance instance class (class-size class)))
-      (si::instance-sig-set instance)
-      (let* ((new-i 0)
-	     (old-local-slotds (remove :instance old-slotds :test-not #'eq
-				       :key #'slot-definition-allocation))
-	     (new-local-slotds (remove :instance new-slotds :test-not #'eq
-				       :key #'slot-definition-allocation)))
-	(declare (fixnum new-i))
-	(setq discarded-slots
-	      (set-difference (mapcar #'slot-definition-name old-local-slotds)
-			      (mapcar #'slot-definition-name new-local-slotds)))
-	(dolist (slot-name discarded-slots)
-	  (let* ((ndx (position slot-name old-local-slotds :key #'slot-definition-name)))
-	    (push (cons slot-name (si::instance-ref old-instance ndx))
-		  property-list)))
-	(dolist (new-slot new-local-slotds)
-	  (let* ((name (slot-definition-name new-slot))
-		 (old-i (position name old-local-slotds :key #'slot-definition-name)))
-	    (if old-i
-		(si::instance-set instance new-i
-				  (si::instance-ref old-instance old-i))
-		(push name added-slots))
-	    (incf new-i))))
-      (update-instance-for-redefined-class instance added-slots
-					   discarded-slots property-list))))
+    (setf instance (si::allocate-raw-instance instance class (class-size class)))
+    (si::instance-sig-set instance)
+    (let* ((new-i 0)
+           (old-local-slotds (remove :instance old-slotds :test-not #'eq
+                                     :key #'slot-definition-allocation))
+           (new-local-slotds (remove :instance new-slotds :test-not #'eq
+                                     :key #'slot-definition-allocation)))
+      (declare (fixnum new-i))
+      (setq discarded-slots
+            (set-difference (mapcar #'slot-definition-name old-local-slotds)
+                            (mapcar #'slot-definition-name new-local-slotds)))
+      (dolist (slot-name discarded-slots)
+        (let* ((ndx (position slot-name old-local-slotds :key #'slot-definition-name)))
+          (push (cons slot-name (si::instance-ref old-instance ndx))
+                property-list)))
+      (dolist (new-slot new-local-slotds)
+        (let* ((name (slot-definition-name new-slot))
+               (old-i (position name old-local-slotds :key #'slot-definition-name)))
+          (if old-i
+              (si::instance-set instance new-i
+                                (si::instance-ref old-instance old-i))
+              (push name added-slots))
+          (incf new-i))))
+    (update-instance-for-redefined-class instance added-slots
+                                         discarded-slots property-list)))
 
 ;;; ----------------------------------------------------------------------
 ;;; CLASS REDEFINITION PROTOCOL
@@ -165,7 +164,8 @@
 			 :lambda-list '(class &rest initargs))
 
 (defmethod reinitialize-instance ((class class) &rest initargs
-				  &key direct-superclasses (direct-slots nil direct-slots-p))
+				  &key (direct-superclasses () direct-superclasses-p)
+				       (direct-slots nil direct-slots-p))
   (let ((name (class-name class)))
     (when (member name '(CLASS BUILT-IN-CLASS) :test #'eq)
       (error "The kernel CLOS class ~S cannot be changed." name)))
@@ -183,14 +183,19 @@
 		collect (canonical-slot-to-direct-slot class s))))
 
   ;; set up inheritance checking that it makes sense
-  (dolist (l (setf (class-direct-superclasses class)
-		   (check-direct-superclasses class direct-superclasses)))
-    (add-direct-subclass l class))
+  (when direct-superclasses-p
+    (setf direct-superclasses 
+          (check-direct-superclasses class direct-superclasses))
+    (dolist (l (class-direct-superclasses class))
+      (unless (member l direct-superclasses)
+        (remove-direct-subclass l class)))
+    (dolist (l (setf (class-direct-superclasses class)
+		     direct-superclasses))
+      (add-direct-subclass l class)))
 
   ;; if there are no forward references, we can just finalize the class here
   (setf (class-finalized-p class) nil)
-  (unless (find-if #'forward-referenced-class-p (class-direct-superclasses class))
-    (finalize-inheritance class))
+  (finalize-unless-forward class)
 
   class)
 

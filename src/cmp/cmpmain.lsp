@@ -230,6 +230,7 @@ the environment variable TMPDIR to a different value." template)))
 #ifdef __cplusplus
 extern \"C\"
 #endif
+ECL_DLLEXPORT
 void ~A(cl_object cblock)
 {
 	static cl_object Cblock;
@@ -260,10 +261,13 @@ void ~A(cl_object cblock)
 int
 main(int argc, char **argv)
 {
-	~A
 	cl_boot(argc, argv);
+	CL_CATCH_ALL_BEGIN(ecl_process_env()) {
+	~A
 	read_VV(OBJNULL, ~A);
 	~A
+	} CL_CATCH_ALL_END;
+	si_exit(0);
 }")
 
 #+:win32
@@ -274,11 +278,14 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 {
 	char **argv;
 	int argc;
-	~A
 	ecl_get_commandline_args(&argc, &argv);
 	cl_boot(argc, argv);
+	CL_CATCH_ALL_BEGIN(ecl_process_env()) {
+	~A
 	read_VV(OBJNULL, ~A);
 	~A
+	} CL_CATCH_ALL_END;
+	si_exit(0);
 }")
 
 (defun init-function-name (s &key (kind :object))
@@ -402,18 +409,24 @@ filesystem or in the database of ASDF modules."
 		   (princ ";
 cl_object output;
 si_select_package(make_simple_base_string(\"CL-USER\"));
-output = si_safe_eval(3, ecl_read_from_cstring(lisp_code), Cnil, OBJNULL);
-" stream)
-		   (when (eq target :program)
-		     (princ "
-cl_shutdown();
-if (FIXNUMP(output))
-	return fix(output);
-if (Null(output) || (output == OBJNULL))
-	return 0;
-return 1;"
-                            stream))
-		   (princ #\} stream)
+output = si_safe_eval(2, ecl_read_from_cstring(lisp_code), Cnil);
+}" stream)
+		   )))))
+  (cond ((null prologue-code)
+	 (setf prologue-code ""))
+	((stringp prologue-code)
+	 )
+	(t
+	 (with-standard-io-syntax
+	   (setq prologue-code
+		 (with-output-to-string (stream)
+		   (princ "{ const char *lisp_code = " stream)
+		   (wt-filtered-data (write-to-string prologue-code) stream)
+		   (princ ";
+cl_object output;
+si_select_package(make_simple_base_string(\"CL-USER\"));
+output = si_safe_eval(2, ecl_read_from_cstring(lisp_code), Cnil);
+}" stream)
 		   )))))
   ;;
   ;; When a module is built out of several object files, we have to

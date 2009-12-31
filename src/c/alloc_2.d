@@ -70,6 +70,8 @@ out_of_memory(size_t requested_bytes)
         int method = 0;
         if (!interrupts)
                 ecl_disable_interrupts_env(the_env);
+	/* Free the input / output buffers */
+	the_env->string_pool = Cnil;
 #ifdef ECL_THREADS
 	/* The out of memory condition may happen in more than one thread */
         /* But then we have to ensure the error has not been solved */
@@ -269,6 +271,7 @@ ecl_alloc_instance(cl_index slots)
 	i->instance.slots = (cl_object *)ecl_alloc(sizeof(cl_object) * slots);
 	i->instance.length = slots;
         i->instance.entry = FEnot_funcallable_vararg;
+        i->instance.sig = ECL_UNBOUND;
 	return i;
 }
 

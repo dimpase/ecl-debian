@@ -338,27 +338,25 @@ handler_fn_protype(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
 			if (info->si_code == FPE_INTDIV || info->si_code == FPE_FLTDIV) {
 				condition = @'division-by-zero';
 				code = FE_DIVBYZERO;
-			}
-			if (info->si_code == FPE_FLTOVF) {
+			} else if (info->si_code == FPE_FLTOVF) {
 				condition = @'floating-point-overflow';
 				code = FE_OVERFLOW;
-			}
-			if (info->si_code == FPE_FLTUND) {
+			} else if (info->si_code == FPE_FLTUND) {
 				condition = @'floating-point-underflow';
 				code = FE_UNDERFLOW;
-			}
-			if (info->si_code == FPE_FLTRES) {
+			} else if (info->si_code == FPE_FLTRES) {
 				condition = @'floating-point-inexact';
 				code = FE_INEXACT;
-			}
-			if (info->si_code == FPE_FLTINV) {
+			} else if (info->si_code == FPE_FLTINV) {
 				condition = @'floating-point-invalid-operation';
 				code = FE_INVALID;
 			}
 		}
 #endif
+                /*
 		if (code && !(code & the_env->trap_fpe_bits))
 			condition = Cnil;
+                */
 		si_trap_fpe(@'last', Ct);
                 return condition;
 	}
@@ -534,6 +532,7 @@ handle_or_queue(cl_object signal_code, int code)
 	else {
                 errno = old_errno;
                 if (code) unblock_signal(code);
+		si_trap_fpe(@'last', Ct); /* Clear FPE exception flag */
                 handle_signal_now(signal_code);
         }
 }
@@ -999,9 +998,13 @@ install_asynchronous_signal_handlers()
 	mysignal(signal,handler)
 # endif
 #endif
-#if defined(ECL_THREADS) && defined(HAVE_SIGPROCMASK)
+#ifdef HAVE_SIGPROCMASK
 	static sigset_t sigmask;
+# ifdef ECL_THREADS
 	pthread_sigmask(SIG_SETMASK, NULL, &sigmask);
+# else
+        sigprocmask(SIG_SETMASK, NULL, &sigmask);
+# endif
 #endif
 	cl_core.default_sigmask = NULL;
 #ifdef SIGINT
@@ -1009,8 +1012,12 @@ install_asynchronous_signal_handlers()
 		async_handler(SIGINT, non_evil_signal_handler, &sigmask);
 	}
 #endif
-#if defined(ECL_THREADS) && defined(HAVE_SIGPROCMASK)
+#ifdef HAVE_SIGPROCMASK
+# if defined(ECL_THREADS)
 	pthread_sigmask(SIG_SETMASK, &sigmask, NULL);
+# else
+	sigprocmask(SIG_SETMASK, &sigmask, NULL);
+# endif
 	cl_core.default_sigmask = &sigmask;
 #endif
 #ifdef ECL_WINDOWS_THREADS

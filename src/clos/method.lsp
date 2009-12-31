@@ -68,7 +68,8 @@
 	(setf lambda-list
 		(append (subseq lambda-list 0 x)
 			'(&allow-other-keys)
-			(and x (subseq lambda-list x))))))
+			(and x (subseq lambda-list x))
+                        nil))))
     (let* ((class-declarations
 	    (nconc (loop for name in required-parameters
 		      for type in specializers
@@ -118,7 +119,7 @@
 			     .next-methods.))
 		      ,@real-body)))))
 	(values
-	 `(ext::lambda-block ,generic-function-name
+	 `#'(ext::lambda-block ,generic-function-name
 	      ,lambda-list
 	      ,@(and class-declarations `((declare ,@class-declarations)))
 	      ,@real-body)

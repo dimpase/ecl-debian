@@ -79,7 +79,7 @@
     (cond ((and readers writers)
 	   (cmpwarn "When analyzing generic function ~A found both slot reader and writer methods"
 		    fname))
-	  ((not gf)
+	  ((not (or readers writers))
 	   nil)
 	  ((/= (length args) (length (clos::generic-function-spec-list gf)))
 	   (cmpwarn "Too many arguments for generic function ~A" fname)
@@ -114,3 +114,18 @@
 	    (when (si::fixnump index)
 	      (c1expr `(si::instance-set ,(second args) ,index ,(first args))))))))))
 
+(progn .
+  #.(loop for var in '(clos::+standard-generic-function-slots+
+                       clos::+standard-method-slots+
+                       clos::+standard-class-slots+
+                       clos::+class-slots+)
+       for slot-list = (symbol-value var)
+       nconc
+         (loop for i from 0
+            for slot-definition in slot-list
+            for accessor = (cadr (member :accessor slot-definition))
+            when accessor
+            collect `(define-compiler-macro ,accessor (&whole whole obj &environment env)
+                       (if (policy-inline-slot-access-p env)
+                           `(si::instance-ref ,obj ,,i)
+                           whole)))))
