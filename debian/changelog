@@ -1,6 +1,6 @@
-ecl (9.10.2-2) unstable; urgency=low
+ecl (9.12.3-1) UNRELEASED; urgency=low
 
-  * 
+  * New upstream.
 
  -- Peter Van Eynde <pvaneynd@debian.org>  Fri, 16 Oct 2009 07:34:38 +0200
 
