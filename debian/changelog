@@ -1,4 +1,4 @@
-ecl (9.12.3-1) UNRELEASED; urgency=low
+ecl (9.12.3-1) unstable; urgency=low
 
   * New upstream.
   * Changed copyright link to LGPL-2
