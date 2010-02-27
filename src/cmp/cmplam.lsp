@@ -110,6 +110,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	;; a flexible signature.
 	(progn
 	  (multiple-value-setq (minarg maxarg) (get-proclaimed-narg name))
+          (format t "~&;;; Function ~A proclaimed (~A,~A)" name minarg maxarg)
 	  (unless minarg
 	    (setf minarg 0 maxarg call-arguments-limit)))
 	(multiple-value-setq (minarg maxarg)
@@ -353,12 +354,12 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
   (unless (or local-entry-p (not (compiler-check-args)))
     (incf *inline-blocks*)
     (if (and use-narg (not varargs))
-	(wt-nl "if(narg!=" nreq ") FEwrong_num_arguments_anonym();")
+	(wt-nl "if (ecl_unlikely(narg!=" nreq ")) FEwrong_num_arguments_anonym();")
 	(when varargs
 	  (when requireds
-	    (wt-nl "if(narg<" nreq ") FEwrong_num_arguments_anonym();"))
+	    (wt-nl "if (ecl_unlikely(narg<" nreq ")) FEwrong_num_arguments_anonym();"))
 	  (unless (or rest keywords allow-other-keys)
-	    (wt-nl "if(narg>" (+ nreq nopt) ") FEwrong_num_arguments_anonym();"))))
+	    (wt-nl "if (ecl_unlikely(narg>" (+ nreq nopt) ")) FEwrong_num_arguments_anonym();"))))
     (wt-nl "{"))
 
   ;; If the number of required arguments exceeds the number of variables we
@@ -612,6 +613,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
     (when (and key-flag (not allow-other-keys))
       (push `(si::check-keyword ,rest ',all-keys) extra-stmts))
     `(let* ,(nreverse (delete-if-not #'first let-vars))
+       ,@(and apply-var `((declare (ignorable ,apply-var))))
       ,@(multiple-value-bind (decl body)
 	   (si::find-declarations (rest lambda-form))
 	 (append decl extra-stmts body)))))

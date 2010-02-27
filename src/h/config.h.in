@@ -224,6 +224,36 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 /* We can use small, two-words conses, without type information		*/
 #undef ECL_SMALL_CONS
 
+/*
+ * C macros for inlining, denoting probable code paths and other stuff
+ * that makes better code. Most of it is GCC specific.
+ */
+#if defined(__cplusplus) || (defined(__GNUC__) && !defined(__STRICT_ANSI__))
+#define ECL_INLINE inline
+#else
+#define ECL_INLINE
+#endif
+
+#if !defined(__GNUC__)
+# define ecl_likely(form) (form)
+# define ecl_unlikely(form) (form)
+# define ecl_attr_noreturn
+#else
+# if (__GNUC__ < 3)
+#  define ecl_likely(form) (form)
+#  define ecl_unlikely(form) (form)
+# else
+#  define ecl_likely(form) __builtin_expect(form,1)
+#  define ecl_unlikely(form) __builtin_expect(form,0)
+# endif
+# if (__GNUC__ < 4)
+#  define ecl_attr_noreturn
+# else
+#  define ecl_attr_noreturn __attribute__((noreturn))
+# endif
+#endif
+
+
 /* -CUT-: Everything below this mark will not be installed		*/
 /* -------------------------------------------------------------------- *
  *	BUILD OPTIONS WHICH NEED NOT BE EXPORTED			*
@@ -263,6 +293,9 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 
 /* Activate Boehm-Weiser incremental garbage collector			*/
 #undef GBC_BOEHM_GENGC
+
+/* Activate Boehm-Weiser precise garbage collector			*/
+#undef GBC_BOEHM_PRECISE
 
 /*
  * SYSTEM FEATURES:
@@ -365,6 +398,8 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #undef HAVE_SYS_WAIT_H
 /* size of long long            					*/
 #undef ECL_LONG_LONG_BITS
+/* existence of char **environ         					*/
+#undef HAVE_ENVIRON
 
 /*
  * we do not manage to get proper signal handling of floating point

@@ -43,11 +43,11 @@ ecl_apply_from_stack_frame(cl_object frame, cl_object x)
 	cl_object fun = x;
       AGAIN:
         frame->frame.env->function = fun;
-	if (fun == OBJNULL || fun == Cnil)
+	if (ecl_unlikely(fun == OBJNULL || fun == Cnil))
 		FEundefined_function(x);
 	switch (type_of(fun)) {
 	case t_cfunfixed:
-		if (narg != (cl_index)fun->cfun.narg)
+		if (ecl_unlikely(narg != (cl_index)fun->cfun.narg))
 			FEwrong_num_arguments(fun);
 		return APPLY_fixed(narg, fun->cfunfixed.entry_fixed, sp);
 	case t_cfun:
@@ -68,7 +68,7 @@ ecl_apply_from_stack_frame(cl_object frame, cl_object x)
 		goto AGAIN;
 #endif
 	case t_symbol:
-		if (fun->symbol.stype & stp_macro)
+		if (ecl_unlikely(fun->symbol.stype & stp_macro))
 			FEundefined_function(x);
 		fun = SYM_FUN(fun);
 		goto AGAIN;
@@ -85,8 +85,8 @@ cl_objectfn
 ecl_function_dispatch(cl_env_ptr env, cl_object x)
 {
 	cl_object fun = x;
-      AGAIN:
-	if (fun == OBJNULL || fun == Cnil)
+ AGAIN:
+	if (ecl_unlikely(fun == OBJNULL || fun == Cnil))
 		FEundefined_function(x);
 	switch (type_of(fun)) {
 	case t_cfunfixed:
@@ -104,7 +104,7 @@ ecl_function_dispatch(cl_env_ptr env, cl_object x)
                 return fun->instance.entry;
 #endif
 	case t_symbol:
-		if (fun->symbol.stype & stp_macro)
+		if (ecl_unlikely(fun->symbol.stype & stp_macro))
 			FEundefined_function(x);
 		fun = SYM_FUN(fun);
 		goto AGAIN;
@@ -153,9 +153,9 @@ cl_funcall(cl_narg narg, cl_object function, ...)
 				ecl_stack_frame_push(frame, lastarg->frame.base[i]);
 			}
 		} else loop_for_in (lastarg) {
-			if (i >= CALL_ARGUMENTS_LIMIT) {
+                        if (ecl_unlikely(i >= CALL_ARGUMENTS_LIMIT)) {
 				ecl_stack_frame_close(frame);
-				FEprogram_error("CALL-ARGUMENTS-LIMIT exceeded",0);
+				FEprogram_error_noreturn("CALL-ARGUMENTS-LIMIT exceeded",0);
 			}
 			ecl_stack_frame_push(frame, CAR(lastarg));
 			i++;

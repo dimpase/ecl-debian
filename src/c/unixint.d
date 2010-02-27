@@ -245,42 +245,15 @@ interrupts_disabled_by_lisp(cl_env_ptr the_env)
 		ecl_symbol_value(@'si::*interrupts-enabled*') == Cnil);
 }
 
-static void
-jump_to_sigsegv_handler(cl_env_ptr the_env, const char *message)
-{
-	/*
-	 * Right now we have no means of specifying a jump point
-	 * for really bad events. We just jump to the outermost
-	 * frame, which is equivalent to quitting, and wait for
-	 * someone to intercept this jump.
-	 */
-        ecl_frame_ptr destination;
-        cl_object tag;
-
-        /*
-         * We output the error message with very low level routines
-         * because we can not risk another stack overflow.
-         */
-        writestr_stream(message, cl_core.error_output);
-
-        tag = ECL_SYM_VAL(the_env, @'si::*quit-tag*');
-        the_env->nvalues = 0;
-        if (tag) {
-                destination = frs_sch(tag);
-                if (destination) {
-                        ecl_unwind(the_env, destination);
-                }
-        }
-        destination = ecl_process_env()->frs_org;
-	ecl_unwind(the_env, destination);
-}
-
 static cl_object pop_signal(cl_env_ptr env);
 
 static cl_object
 handler_fn_protype(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
 {
 	cl_env_ptr the_env = ecl_process_env();
+        /* The lisp environment might not be installed. */
+        if (the_env == NULL)
+                return;
 #if defined(ECL_THREADS) && !defined(_MSC_VER) && !defined(mingw32)
         if (sig == ecl_get_option(ECL_OPT_THREAD_INTERRUPT_SIGNAL)) {
 		return pop_signal(the_env);
@@ -572,6 +545,9 @@ handler_fn_protype(sigsegv_handler, int sig, siginfo_t *info, void *aux)
 				   " on our thread.");
 	}
 	the_env = ecl_process_env();
+        /* The lisp environment might not be installed. */
+        if (the_env == NULL)
+                return;
 #if defined(SA_SIGINFO) && defined(ECL_USE_MPROTECT)
 	/* We access the environment when it was protected. That
 	 * means there was a pending signal. */
@@ -594,14 +570,14 @@ handler_fn_protype(sigsegv_handler, int sig, siginfo_t *info, void *aux)
 	if ((char*)info->si_addr > the_env->cs_barrier &&
 	    (char*)info->si_addr <= the_env->cs_org) {
                 unblock_signal(SIGSEGV);
-		jump_to_sigsegv_handler(the_env, stack_overflow_msg);
+		ecl_unrecoverable_error(the_env, stack_overflow_msg);
                 return;
 	}
 # else
 	if ((char*)info->si_addr < the_env->cs_barrier &&
 	    (char*)info->si_addr >= the_env->cs_org) {
                 unblock_signal(SIGSEGV);
-		jump_to_sigsegv_handler(the_env, stack_overflow_msg);
+		ecl_unrecoverable_error(the_env, stack_overflow_msg);
                 return;
 	}
 # endif
@@ -611,7 +587,7 @@ handler_fn_protype(sigsegv_handler, int sig, siginfo_t *info, void *aux)
          * up to the outermost toplevel.
 	 */
         unblock_signal(SIGSEGV);
-	jump_to_sigsegv_handler(the_env, segv_msg);
+	ecl_unrecoverable_error(the_env, segv_msg);
 # else
         handle_or_queue(@'ext::segmentation-violation', SIGSEGV);
 # endif
@@ -622,7 +598,7 @@ handler_fn_protype(sigsegv_handler, int sig, siginfo_t *info, void *aux)
 	 * the outermost handler.
 	 */
         unblock_signal(SIGSEGV);
-	jump_to_sigsegv_handler(the_env, segv_msg);
+	ecl_unrecoverable_error(the_env, segv_msg);
 #endif
 }
 
@@ -632,10 +608,13 @@ handler_fn_protype(sigbus_handler, int sig, siginfo_t *info, void *aux)
 {
         cl_env_ptr the_env;
 	reinstall_signal(sig, sigsegv_handler);
+	the_env = ecl_process_env();
+        /* The lisp environment might not be installed. */
+        if (the_env == NULL)
+                return;
 #if defined(SA_SIGINFO) && defined(ECL_USE_MPROTECT)
 	/* We access the environment when it was protected. That
 	 * means there was a pending signal. */
-	the_env = ecl_process_env();
 	if (((char*)the_env <= (char*)info->si_addr) &&
             ((char*)info->si_addr <= (char*)(the_env+1)))
         {
@@ -787,15 +766,16 @@ ecl_interrupt_process(cl_object process, cl_object function)
          *   the thread, which then decides how to act.
          */
         cl_object lock;
-        int ok;
-        function = si_coerce_to_function(function);
-        lock = mp_get_lock(1, cl_core.signal_queue_lock);
-        queue_signal(process->process.env, function);
-        ok = do_interrupt_thread(process);
-        mp_giveup_lock(lock);
-        if (!ok) {
-		FEerror("Cannot interrupt process ~A", 1, process);
+        if (process->process.active == 1) {
+                int ok;
+                function = si_coerce_to_function(function);
+                lock = mp_get_lock_wait(cl_core.signal_queue_lock);
+                queue_signal(process->process.env, function);
+                ok = do_interrupt_thread(process);
+                mp_giveup_lock(lock);
+                if (ok) return;
         }
+        FEerror("Cannot interrupt process ~A", 1, process);
 }
 #endif /* ECL_THREADS */
 
@@ -901,17 +881,32 @@ asynchronous_signal_servicing_thread()
 	sigset_t handled_set;
 	cl_object signal_code;
 	int signo;
+	int interrupt_signal = 0;
+	if (ecl_get_option(ECL_OPT_TRAP_INTERRUPT_SIGNAL)) {
+		interrupt_signal = ecl_get_option(ECL_OPT_THREAD_INTERRUPT_SIGNAL);
+	}
         /*
          * We wait here for all signals that are blocked in all other
          * threads. It would be desirable to be able to wait for _all_
-         * signals, but this can not be done for SIGFPE, SIGSEGV, etc
+         * signals, but this can not be done for SIGFPE, SIGSEGV, etc.
          */
 	pthread_sigmask(SIG_SETMASK, NULL, &handled_set);
+	/*
+	 * Under OS X we also have to explicitely add the signal we
+	 * use to communicate process interrupts. For some unknown
+	 * reason those signals may get lost.
+	 */
+	if (interrupt_signal) {
+		sigaddset(&handled_set, interrupt_signal);
+		pthread_sigmask(SIG_SETMASK, &handled_set, NULL);
+	}
 	CL_CATCH_ALL_BEGIN(ecl_process_env()) {
 	for (;;) {
 		/* Waiting may fail! */
 		int status = sigwait(&handled_set, &signo);
 		if (status == 0) {
+			if (interrupt_signal == signo)
+				goto RETURN;
 			signal_code = call_handler(lisp_signal_handler, signo,
 						   NULL, NULL);
 			if (!Null(signal_code)) {
@@ -922,6 +917,7 @@ asynchronous_signal_servicing_thread()
 		}
 	}
 	} CL_CATCH_ALL_END;
+ RETURN:
 	@(return)
 }
 #endif
@@ -1160,7 +1156,7 @@ init_unixint(int pass)
 		create_signal_queue(ecl_get_option(ECL_OPT_SIGNAL_QUEUE_SIZE));
 		create_signal_code_constants();
 		install_fpe_signal_handlers();
-		install_signal_handling_thread();
+		/*install_signal_handling_thread();*/
 		ECL_SET(@'si::*interrupts-enabled*', Ct);
 		ecl_process_env()->disable_interrupts = 0;
 	}

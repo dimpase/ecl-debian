@@ -41,6 +41,37 @@ ecl_internal_error(const char *s)
 	abort();
 }
 
+
+void
+ecl_unrecoverable_error(cl_env_ptr the_env, const char *message)
+{
+	/*
+	 * Right now we have no means of specifying a jump point
+	 * for really bad events. We just jump to the outermost
+	 * frame, which is equivalent to quitting, and wait for
+	 * someone to intercept this jump.
+	 */
+        ecl_frame_ptr destination;
+        cl_object tag;
+
+        /*
+         * We output the error message with very low level routines
+         * because we can not risk another stack overflow.
+         */
+        writestr_stream(message, cl_core.error_output);
+
+        tag = ECL_SYM_VAL(the_env, @'si::*quit-tag*');
+        the_env->nvalues = 0;
+        if (tag) {
+                destination = frs_sch(tag);
+                if (destination) {
+                        ecl_unwind(the_env, destination);
+                }
+        }
+        destination = ecl_process_env()->frs_org;
+	ecl_unwind(the_env, destination);
+}
+
 /*****************************************************************************/
 /*		Support for Lisp Error Handler				     */
 /*****************************************************************************/
@@ -75,6 +106,31 @@ CEerror(cl_object c, const char *err, int narg, ...)
 
 void
 FEprogram_error(const char *s, int narg, ...)
+{
+	cl_object real_args, text;
+	cl_va_list args;
+	cl_va_start(args, narg, narg, 0);
+	text = make_constant_base_string(s);
+	real_args = cl_grab_rest_args(args);
+	if (cl_boundp(@'si::*current-form*') != Cnil) {
+	    /* When FEprogram_error is invoked from the compiler, we can
+	     * provide information about the offending form.
+	     */
+	    cl_object stmt = ecl_symbol_value(@'si::*current-form*');
+	    if (stmt != Cnil) {
+		real_args = @list(3, stmt, text, real_args);
+		text = make_constant_base_string("In form~%~S~%~?");
+	    }
+	}
+	si_signal_simple_error(4, 
+			       @'program-error', /* condition name */
+			       Cnil, /* not correctable */
+			       text,
+			       real_args);
+}
+
+void
+FEprogram_error_noreturn(const char *s, int narg, ...)
 {
 	cl_object real_args, text;
 	cl_va_list args;

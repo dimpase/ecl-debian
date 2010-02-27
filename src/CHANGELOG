@@ -1,157 +1,103 @@
-ECL 9.12.3:
+ECL 10.2.1:
 ===========
 
-* Visible changes:
-
- - When converting rationals to floats, ECL now rounds instead of using the
-   routine in GMP, which truncates.
-
- - LOAD open streams in buffered mode. It does not cause any significant
-   performance increase except in broken network filesystems that lack
-   buffering such as some implementations of NFS.
-
-ECL 9.12.2:
-===========
+This release has three important focuses: performance improvements in various
+fronts (garbage collection and hash tables), extending the run-process function
+and important fixes to let ECL work better with Slime.
 
 * Bugs fixed:
 
- - RANDOM broken on 64-bits architectures.
+ - DIRECTORY used stat() also on files that did not match the directory masks.
 
- - The debugger now shows the package names of inspected variables.
+ - The syntax for matching strings in DIRECTORY is now the same as in
+   PATHNAME-MATCH-P. Formerly there were small differences, such as DIRECTORY
+   understanding characters #\? and #\\ and PATHNAME-MATCH-P not.
 
- - The code in CLX that dealt with interrupts had become outdated.
+ - Standalone executables do not require the existence of the ECLDIR directory
+   to start up -- it may be required, though, for working Unicode because the
+   encodings are stored there.
 
-* Other changes:
+ - PROCESS-JOIN was exported from the wrong package.
 
- - Methods now show up in the debugger with their original name.
+ - PROCESS-JOIN failed when invoked with a thread that was in the process of
+   being set up.
 
- - Enlarged the string buffers used for reading and parsing lisp data.
+ - The output values of a process or thread are now collected in the process
+   object and returned by PROCESS-JOIN.
 
-ECL 9.12.1:
-===========
+ - ECL's interrupt servicing thread could not be shut down.
 
-* Platform support:
+ - When compiling LET forms, ECL emitted warnings about removal of variables
+   even when they were declared IGNORABLE.
 
- - Support for Itanium.
+ - An internal variable MP:*ALLOW-WITH-INTERRUPTS* was not declared special.
 
- - Support for Solaris and SunStudio compiler.
+ - The compiler now understands function type proclamations with &OPTIONAL
+   values.
 
- - Support for Microsoft Visual Studio C++ 10 beta.
+ - The compiler now accepts THE special forms with a VALUES type.
 
- - Support for Cygwin.
+ - If file A.lsp explicitely loads B.lsp to use a package that is only defined
+   in B, then ECL signaled an error in the compiled version of A even after
+   this one had required B.lsp.
+
+ - ECL accepts FTYPE proclamations for SETF-functions.
+
+ - On platforms where a stack overflow does not trigger a SIGSEGV, ECL was
+   unable to recover from the overflow. Now it jumps to the outermost
+   protection frame (typically the toplevel).
+
+ - Socket streams are now two-way streams. This solves a problem with certain
+   platforms (OS X) where a C stream can not be used to read and write
+   simultaneously by two different threads.
 
 * Visible changes:
 
- - New function EXT:ARRAY-RAW-DATA returns a non-adjustable vector of type
-   (UNSIGNED-BYTE 8) with the content of an array. The returned array overlaps
-   with the original, so any change on one will affect the other.
+ - Hash tables now use hand-coded specialized loops for EQ, EQL, EQUAL, EQUALP
+   and package types, achieving a reduction of about 30% time in lookups.
 
- - LOAD works on special files (/dev/null and the like).
+ - A new function EXT:ENVIRON returns the list of strings that makes up the
+   process environment. This is the equivalent of POSIX (char **environ)
+   and Windows' GetEnvironmentStrings.
 
- - New command line option --version outputs the version number preceded
-   by the implementation name ("ECL 9.11.1" in this particular release).
+ - EXT:RUN-PROGRAM now accepts a keyword argument, :ENVIRON, with a list of
+   strings used to configure the environment of the child process. For instance
+   '("PWD=/home" "PATH=/usr/bin")
 
- - MULTIPLE-VALUE-BIND is optimally replaced with a LET form when the number
-   of variables is 1.
+ - EXT:RUN-PROGRAM returns as third value an EXT:EXTERNAL-PROCESS structure,
+   which supports the queries EXT:EXTERNAL-PROCESS-{PID,INPUT,OUTPUT,STATUS},
+   following CCL's conventions.
 
- - ECL now accepts Windows' UNC pathnames.
-    (with-open-file (s #P"//JUANJO-IMAC/Public Folder/index.html"
-                       :direction :input)
-      (loop for l = (read-line s nil nil)
-            while l
-            do (princ l)))
+ - The new function EXT:EXTERNAL-PROCESS-WAIT can be used to wait indefinitely
+   for termination of a process or simply to query its status.
 
- - The default memory limits are increased up to 512Mb for 32 bit images and
-   4Gb for 64-bits systems.
+ - ECL implements a new garbage collector marking mode which at the overhead of
+   one word per object achieves precise marking of heap objects, reducing
+   accidental data retention and improving the time spent in garbage
+   collection. This mode is only available when using --enable-boehm=system at
+   configuration time.
 
- - The bignums generated by RANDOM did not contain enough random bits.
+ - ECL now ships with ASDF version 1.604
 
-* Bugs fixed:
+ - The variables C:*USER-CC-FLAGS* and C:*USER-LD-FLAGS* are lists of strings
+   which can used to change the behavior of the C compiler and the
+   linker. Note, however, that the flags that ECL uses may take priority.
 
- - In single-threaded builds, ECL did not properly restore the signal mask
-   before jumping out of a signal handler.
+ - In the C code we are beginning to use GCC's attributes (__attribute__) and
+   branch annotation (__builtin_expect). This decreases the size of code that
+   checks for errors and improves performance.
 
- - Floating point exceptions were sometimes ignored, leading to infinite loops.
+ - When printing compiler notes, instead of printing the macroexpanded form,
+   ECL now prints the toplevel form, as follows
+    ;;; Warning: in file src:lsp;autoload.lsp.NEWEST, position 1178 and top form
+    ;;;   (DEFMACRO WITH-COMPILATION-UNIT (OPTIONS &REST BODY) ...)
+    ;;; The variable OPTIONS is not used.
 
- - A new configuration flag is added, --with-dffi. This flag allows
-   deactivating the foreign function interface when the compiler does not
-   support inline assembly with the GCC syntax and libffi is not available.
-
- - In a multithreaded ECL, when handling a Ctr-C/SIGINT asynchronous interrupt,
-   the CONTINUE restart was not always available.
-
- - In cygwin, LOAD was unable to load and execute binary files.
-
- - In cygwin, FASL files can not lack a file extension, because dlopen()
-   then looks for a file ending in ".dll" and fails.
-
- - In cygwin, files that are dlopen'ed must have executable permissions.
-
- - ECL ignored the IGNORABLE declaration.
-
- - The IGNORE/IGNORABLE declarations accept (but ignore) arguments of the 
-   for (FUNCTION function-name).
-
- - SUBTYPEP caused a SIGSEGV when the input was a not finalized class.
-
- - Due to the SUBTYPEP bug, ECL could not compile DEFMETHOD forms whose
-   arguments referenced non-finalized classes
-
- - When supplied an error value, (EXT:SAFE-EVAL form env &optional err-value)
-   never returned the output of the evaluated form.
-
- - FIND-SYMBOL accepted string designators instead of just strings, as
-   mandated by the ANSI specification.
-
- - APPEND copied also the last argument.
-
- - (LOG #C(x x)) now produces a better result when x == 0
-
- - (ATAN #C(0.0 1.0)) no longer produces an infinite recursion.
-
- - Solved a hard to hit bug in DEFCLASS's routine for detecting collisions in
-   slot names
-
- - LOG and LOG1P did not work properly with NaNs under linux.
-
- - ECL had problems combining #. and #n=/#n# reader macros.
-
- - FDEFINITION and SYMBOL-FUNCTION caused an incorrect error condition when
-   acting on NIL.
-
- - The optimizer for TYPEP did not work when passed three arguments.
-
-* Clos:
-
- - CLOS:SET-FUNCALLABLE-INSTANCE-FUNCTION broke the value if SI:INSTANCE-SIG,
-   preventing any further access to the instance slots.
-
- - The optimized slot accessors check that the instances are up to date.
-
- - The use of MAKE-INSTANCES-OBSOLETE now forces UPDATE-INSTANCE-FOR-REDEFINED-CLASS
-   to be invoked even if the slots did not change.
-
- - ENSURE-GENERIC-FUNCTION-USING-CLASS does not provide a default method class.
-
-* Sockets:
-
- - The socket option TCP_NODELAY option has been fixed: it was improperly using
-   the socket interface SOL_SOCKET instead of IPPROTO_TCP (Chun Tian)
-
- - sockopt-linger and (setf sockopt-linger) now work as they should, using
-   the struct linger argument (M. Mondor)
-
-* ASDF:
-
- - ASDF:MAKE-BUILD now accepts also a :PROLOGUE-CODE argument with code to
-   be executed before all lisp files are run.
-
- - C:BUILDER's argument :PROLOGUE-CODE can now be a lisp form. In the case of
-   standalone programs the prologue code is always executed after cl_boot() has
-   been invoked.
-
- - QUIT did not work from standalone executables created with neither ASDF
-   nor with C:BUILDER.
+ - ECL now implements EXT:*INVOKE-DEBUGGER-HOOK*, which works like *DEBUGGER-HOOK*
+   but is also observed by BREAK. (SBCL extension adopted by ECL)
+ 
+ - The UFFI interface now supports C99 types, such as :int8-t, :uint32-t, etc,
+   but only when the corresponding types do exist in the underlying C environment.
 
 ;;; Local Variables: ***
 ;;; mode:text ***

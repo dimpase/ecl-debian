@@ -20,21 +20,27 @@
 	 :accessor compiler-message-file)
    (position :initarg :file :initform *compile-file-position*
 	     :accessor compiler-message-file-position)
-   (form :initarg :form :initform *current-form* :accessor compiler-message-form))
+   (toplevel-form :initarg :form :initform *current-toplevel-form*
+                  :accessor compiler-message-toplevel-form)
+   (form :initarg :form :initform *current-form*
+         :accessor compiler-message-form))
   (:REPORT
    (lambda (c stream)
      (let ((position (compiler-message-file-position c))
            (prefix (compiler-message-prefix c))
            (file (compiler-message-file c))
-           (form (compiler-message-form c)))
+           (form (compiler-message-toplevel-form c)))
        (if (and position
                 (not (minusp position))
                 (not (equalp form '|compiler preprocess|)))
 	   (let* ((*print-length* 3)
                   (*print-level* 2))
-             (unless 
-	     (format stream "~A: in file ~A, position ~D, and form ~%  ~A~%"
-		     prefix file position form)))
+	     (format stream "~A: in file ~A, position ~D and top form~%  ~A~%"
+		     prefix
+                     (make-pathname :name (pathname-name file)
+                                    :type (pathname-type file)
+                                    :version (pathname-version file))
+                     position form))
 	   (format stream "~A: " prefix))
        (format stream "~?"
 	       (simple-condition-format-control c)
@@ -116,8 +122,10 @@
  `(do-compilation-unit #'(lambda () ,@body) ,@options))
 
 (defun compiler-debugger (condition old-hook)
+  #+(or)
   (when *compiler-break-enable*
     (si::default-debugger condition))
+  (si::default-debugger condition)
   (abort))
 
 (defmacro with-compiler-env ((compiler-conditions) &body body)

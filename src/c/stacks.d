@@ -53,6 +53,10 @@ cs_set_size(cl_env_ptr env, cl_index new_size)
 void
 ecl_cs_overflow(void)
 {
+        static const char *stack_overflow_msg =
+                "\n;;;\n;;; Stack overflow.\n"
+                ";;; Jumping to the outermost toplevel prompt\n"
+                ";;;\n\n";
 	cl_env_ptr env = ecl_process_env();
 	cl_index safety_area = ecl_get_option(ECL_OPT_C_STACK_SAFETY_AREA);
 	cl_index size = env->cs_size;
@@ -64,7 +68,7 @@ ecl_cs_overflow(void)
 		env->cs_limit += safety_area;
 #endif
 	else
-		ecl_internal_error("Cannot grow stack size.");
+                ecl_unrecoverable_error(env, stack_overflow_msg);
 	cl_cerror(6, make_constant_base_string("Extend stack size"),
 		  @'ext::stack-overflow', @':size', MAKE_FIXNUM(size),
 		  @':type', @'ext::c-stack');
@@ -72,97 +76,36 @@ ecl_cs_overflow(void)
 	cs_set_size(env, size);
 }
 
-
-/********************* BINDING STACK ************************/
-
-#ifdef ECL_THREADS
 void
-ecl_bds_bind(cl_env_ptr env, cl_object s, cl_object value)
+ecl_cs_set_org(cl_env_ptr env)
 {
-	struct ecl_hashtable_entry *h = ecl_search_hash(s, env->bindings_hash);
-	struct bds_bd *slot = ++env->bds_top;
-	if (slot >= env->bds_limit) {
-		ecl_bds_overflow();
-		slot = env->bds_top;
-	}
-	if (h->key == OBJNULL) {
-		/* The previous binding was at most global */
-		slot->symbol = s;
-		slot->value = s->symbol.value;
-		ecl_sethash(s, env->bindings_hash, value);
-	} else {
-		/* We have to save a dynamic binding */
-		slot->symbol = h->key;
-		slot->value = h->value;
-		h->value = value;
-	}
-	s->symbol.dynamic |= 1;
-}
-
-void
-ecl_bds_push(cl_env_ptr env, cl_object s)
-{
-	struct ecl_hashtable_entry *h = ecl_search_hash(s, env->bindings_hash);
-	struct bds_bd *slot = ++env->bds_top;
-	if (slot >= env->bds_limit) {
-		ecl_bds_overflow();
-		slot = env->bds_top;
-	}
-	if (h->key == OBJNULL) {
-		/* The previous binding was at most global */
-		slot->symbol = s;
-		slot->value = s->symbol.value;
-		ecl_sethash(s, env->bindings_hash, s->symbol.value);
-	} else {
-		/* We have to save a dynamic binding */
-		slot->symbol = h->key;
-		slot->value = h->value;
-	}
-	s->symbol.dynamic |= 1;
-}
-
-void
-ecl_bds_unwind1(cl_env_ptr env)
-{
-	struct bds_bd *slot = env->bds_top--;
-	cl_object s = slot->symbol;
-	struct ecl_hashtable_entry *h = ecl_search_hash(s, env->bindings_hash);
-	if (slot->value == OBJNULL) {
-		/* We have deleted all dynamic bindings */
-		h->key = OBJNULL;
-		h->value = Cnil;
-		env->bindings_hash->hash.entries--;
-	} else {
-		/* We restore the previous dynamic binding */
-		h->value = slot->value;
-	}
-}
-
-cl_object *
-ecl_symbol_slot(cl_env_ptr env, cl_object s)
-{
-	if (Null(s))
-		s = Cnil_symbol;
-	if (s->symbol.dynamic) {
-		struct ecl_hashtable_entry *h = ecl_search_hash(s, env->bindings_hash);
-		if (h->key != OBJNULL)
-			return &h->value;
-	}
-	return &s->symbol.value;
-}
-
-cl_object
-ecl_set_symbol(cl_env_ptr env, cl_object s, cl_object value)
-{
-	if (s->symbol.dynamic) {
-		struct ecl_hashtable_entry *h = ecl_search_hash(s, env->bindings_hash);
-		if (h->key != OBJNULL) {
-			return (h->value = value);
+	/* Rough estimate. Not very safe. We assume that cl_boot()
+	 * is invoked from the main() routine of the program.
+	 */
+	env->cs_org = (char*)(&env);
+	env->cs_barrier = env->cs_org;
+#if defined(HAVE_SYS_RESOURCE_H) && defined(RLIMIT_STACK)
+	{
+		struct rlimit rl;
+		cl_index size;
+		getrlimit(RLIMIT_STACK, &rl);
+		if (rl.rlim_cur != RLIM_INFINITY) {
+			size = rl.rlim_cur / 2;
+			if (size > (cl_index)ecl_get_option(ECL_OPT_C_STACK_SIZE))
+				ecl_set_option(ECL_OPT_C_STACK_SIZE, size);
+#ifdef ECL_DOWN_STACK
+			env->cs_barrier = env->cs_org - rl.rlim_cur - 1024;
+#else
+			env->cs_barrier = env->cs_org + rl.rlim_cur + 1024;
+#endif
 		}
 	}
-	return (s->symbol.value = value);
-}
 #endif
+	cs_set_size(env, ecl_get_option(ECL_OPT_C_STACK_SIZE));
+}
+
+
+/********************* BINDING STACK ************************/
 
 void
 ecl_bds_unwind_n(cl_env_ptr env, int n)
@@ -195,22 +138,27 @@ ecl_bds_set_size(cl_env_ptr env, cl_index size)
 	}
 }
 
-void
+struct bds_bd *
 ecl_bds_overflow(void)
 {
+        static const char *stack_overflow_msg =
+                "\n;;;\n;;; Binding stack overflow.\n"
+                ";;; Jumping to the outermost toplevel prompt\n"
+                ";;;\n\n";
 	cl_env_ptr env = ecl_process_env();
 	cl_index margin = ecl_get_option(ECL_OPT_BIND_STACK_SAFETY_AREA);
 	cl_index size = env->bds_size;
 	bds_ptr org = env->bds_org;
 	bds_ptr last = org + size;
 	if (env->bds_limit >= last) {
-		ecl_internal_error("Bind stack overflow, cannot grow larger.");
+                ecl_unrecoverable_error(env, stack_overflow_msg);
 	}
 	env->bds_limit += margin;
 	cl_cerror(6, make_constant_base_string("Extend stack size"),
 		  @'ext::stack-overflow', @':size', MAKE_FIXNUM(size),
 		  @':type', @'ext::binding-stack');
 	ecl_bds_set_size(env, size + (size / 2));
+        return env->bds_top;
 }
 
 void
@@ -281,6 +229,160 @@ si_bds_val(cl_object arg)
         cl_object v = get_bds_ptr(arg)->value;
 	@(return ((v == OBJNULL)? ECL_UNBOUND : v))
 }
+
+#ifdef ecl_bds_bind
+# undef ecl_bds_bind
+# undef ecl_bds_push
+# undef ecl_bds_unwind1
+#endif
+#ifdef ecl_bds_read
+# undef ecl_bds_read
+# undef ecl_bds_set
+#endif
+
+#ifdef ECL_THREADS
+static cl_index
+ecl_new_binding_index(cl_env_ptr env, cl_object symbol)
+{
+        cl_object pool;
+        cl_index new_index;
+        ecl_disable_interrupts_env(env);
+        THREAD_OP_LOCK();
+        new_index = symbol->symbol.binding;
+        if (new_index == ECL_MISSING_SPECIAL_BINDING) {
+                pool = cl_core.reused_indices;
+                if (!Null(pool)) {
+                        new_index = fix(ECL_CONS_CAR(pool));
+                        cl_core.reused_indices = ECL_CONS_CDR(pool);
+                } else {
+                        new_index = ++cl_core.last_var_index;
+                }
+                symbol->symbol.binding = new_index;
+                symbol->symbol.dynamic |= 1;
+        }
+        THREAD_OP_UNLOCK();
+        ecl_enable_interrupts_env(env);
+        si_set_finalizer(symbol, Ct);
+        return new_index;
+}
+
+static cl_object
+ecl_extend_bindings_array(cl_object vector)
+{
+        cl_index new_size = cl_core.last_var_index * 1.25;
+        cl_object new_vector = si_make_vector(Ct, MAKE_FIXNUM(new_size), Cnil,
+                                              Cnil, Cnil, Cnil);
+        si_fill_array_with_elt(new_vector, OBJNULL, MAKE_FIXNUM(0), Cnil);
+        ecl_copy_subarray(new_vector, 0, vector, 0, vector->vector.dim);
+        return new_vector;
+}
+
+static cl_index
+invalid_or_too_large_binding_index(cl_env_ptr env, cl_object s)
+{
+        cl_object *location;
+        struct bds_bd *slot;
+        cl_index index = s->symbol.binding;
+        if (index == ECL_MISSING_SPECIAL_BINDING) {
+                index = ecl_new_binding_index(env, s);
+        }
+        if (index >= env->thread_local_bindings_size) {
+                cl_object vector = env->bindings_array;
+                env->bindings_array = vector = ecl_extend_bindings_array(vector);
+                env->thread_local_bindings_size = vector->vector.dim;
+                env->thread_local_bindings = vector->vector.self.t;
+        }
+        return index;
+}
+#endif /* ECL_THREADS */
+
+/*
+ * The following routines must match the inline forms in stacks.h
+ */
+void
+ecl_bds_bind(cl_env_ptr env, cl_object s, cl_object v)
+{
+#ifdef ECL_THREADS
+        cl_object *location;
+        struct bds_bd *slot;
+        cl_index index = s->symbol.binding;
+        if (index >= env->thread_local_bindings_size) {
+                index = invalid_or_too_large_binding_index(env,s);
+        }
+        location = env->thread_local_bindings + index;
+        slot = ++env->bds_top;
+        if (slot >= env->bds_limit) slot = ecl_bds_overflow();
+        slot->symbol = s;
+        slot->value = *location;
+        *location = v;
+#else
+	ecl_bds_check(env);
+	(++(env->bds_top))->symbol = s;
+	env->bds_top->value = s->symbol.value; \
+	s->symbol.value = v;
+#endif
+}
+
+void
+ecl_bds_push(cl_env_ptr env, cl_object s)
+{
+#ifdef ECL_THREADS
+        cl_object *location;
+        struct bds_bd *slot;
+        cl_index index = s->symbol.binding;
+        if (index >= env->thread_local_bindings_size) {
+                index = invalid_or_too_large_binding_index(env,s);
+        }
+        location = env->thread_local_bindings + index;
+        slot = ++env->bds_top;
+        if (slot >= env->bds_limit) slot = ecl_bds_overflow();
+        slot->symbol = s;
+        slot->value = *location;
+	if (!(*location)) *location = s->symbol.value;
+#else
+	ecl_bds_check(env);
+	(++(env->bds_top))->symbol = s;
+	env->bds_top->value = s->symbol.value;
+#endif
+}
+
+void
+ecl_bds_unwind1(cl_env_ptr env)
+{
+	struct bds_bd *slot = env->bds_top--;
+	cl_object s = slot->symbol;
+#ifdef ECL_THREADS
+        cl_object *location = env->thread_local_bindings + s->symbol.binding;
+        *location = slot->value;
+#else
+        s->symbol.value = slot->value;
+#endif
+}
+
+#ifdef ECL_THREADS
+cl_object
+ecl_bds_read(cl_env_ptr env, cl_object s)
+{
+        cl_index index = s->symbol.binding;
+        if (index < env->thread_local_bindings_size) {
+                cl_object x = env->thread_local_bindings[index];
+                if (x) return x;
+        }
+        return s->symbol.value;
+}
+
+cl_object
+ecl_bds_set(cl_env_ptr env, cl_object s, cl_object value)
+{
+        cl_index index = s->symbol.binding;
+        if (index < env->thread_local_bindings_size) {
+                cl_object *location = env->thread_local_bindings + index;
+                if (*location)
+                        return (*location) = value;
+        }
+	return (s->symbol.value = value);
+}
+#endif /* ECL_THREADS */
 
 /******************** INVOCATION STACK **********************/
 
@@ -393,13 +495,17 @@ frs_set_size(cl_env_ptr env, cl_index size)
 static void
 frs_overflow(void)		/* used as condition in list.d */
 {
+        static const char *stack_overflow_msg =
+                "\n;;;\n;;; Frame stack overflow.\n"
+                ";;; Jumping to the outermost toplevel prompt\n"
+                ";;;\n\n";
 	cl_env_ptr env = ecl_process_env();
 	cl_index margin = ecl_get_option(ECL_OPT_FRAME_STACK_SAFETY_AREA);
 	cl_index size = env->frs_size;
 	ecl_frame_ptr org = env->frs_org;
 	ecl_frame_ptr last = org + size;
 	if (env->frs_limit >= last) {
-		ecl_internal_error("Frame stack overflow, cannot grow larger.");
+                ecl_unrecoverable_error(env, stack_overflow_msg);
 	}
 	env->frs_limit += margin;
 	cl_cerror(6, make_constant_base_string("Extend stack size"),
@@ -537,7 +643,7 @@ si_get_limit(cl_object type)
 }
 
 void
-init_stacks(cl_env_ptr env, char *new_cs_org)
+init_stacks(cl_env_ptr env)
 {
 	static struct ihs_frame ihs_org = { NULL, NULL, NULL, 0};
 	cl_index size, margin;
@@ -560,27 +666,6 @@ init_stacks(cl_env_ptr env, char *new_cs_org)
 	ihs_org.function = Cnil;
 	ihs_org.lex_env = Cnil;
 	ihs_org.index = 0;
-
-	env->cs_org = new_cs_org;
-	env->cs_barrier = new_cs_org;
-#if defined(HAVE_SYS_RESOURCE_H) && defined(RLIMIT_STACK)
-	{
-		struct rlimit rl;
-		cl_index size;
-		getrlimit(RLIMIT_STACK, &rl);
-		if (rl.rlim_cur != RLIM_INFINITY) {
-			size = rl.rlim_cur / 2;
-			if (size > (cl_index)ecl_get_option(ECL_OPT_C_STACK_SIZE))
-				ecl_set_option(ECL_OPT_C_STACK_SIZE, size);
-#ifdef ECL_DOWN_STACK
-			env->cs_barrier = env->cs_org - rl.rlim_cur - 1024;
-#else
-			env->cs_barrier = env->cs_org + rl.rlim_cur + 1024;
-#endif
-		}
-	}
-#endif
-	cs_set_size(env, ecl_get_option(ECL_OPT_C_STACK_SIZE));
 
 #if 0 /* defined(HAVE_SIGPROCMASK) && defined(SA_SIGINFO) && defined(SA_ONSTACK) */
 	if (ecl_get_option(ECL_OPT_SIGALTSTACK_SIZE)) {

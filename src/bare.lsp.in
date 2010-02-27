@@ -67,7 +67,7 @@
 (princ #+(or cross ecl-min) ";;; About to load cmp/load.lsp"
        #-(or cross ecl-min) ";;; About to load cmp.so")
 
-(load #+(or cross ecl-min) "cmp/load.lsp"
+(load #+(or cross ecl-min) "@ECL_CMPDIR@/load.lsp"
       #-(or cross ecl-min) "cmp.so")
 
 ;;;
@@ -149,3 +149,4 @@
 ;;; Now we are in shape to do something useful.
 ;;; End of bare.lsp")
 (terpri)
+(setf c::*compiler-break-enable* t)
