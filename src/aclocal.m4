@@ -424,9 +424,11 @@ dnl have the right size;
 dnl
 AC_DEFUN(ECL_INTEGER_TYPES,[
 ECL_STDINT_HEADER=""
+ECL_UINT8_T=""
 ECL_UINT16_T=""
 ECL_UINT32_T=""
 ECL_UINT64_T=""
+ECL_INT8_T=""
 ECL_INT16_T=""
 ECL_INT32_T=""
 ECL_INT64_T=""
@@ -872,6 +874,25 @@ AC_MSG_RESULT([$working_sem_init])
 if test $working_sem_init = yes ; then
   AC_DEFINE(ECL_SEMAPHORES)
   AC_DEFINE(HAVE_SEM_INIT)
+fi
+])
+
+
+dnl ----------------------------------------------------------------------
+dnl Check "char **environ" is available
+AC_DEFUN([ECL_POSIX_ENVIRON],
+[AC_MSG_CHECKING(working environ)
+AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#include <stdlib.h>
+extern char **environ;
+int main() {
+  if (environ)
+    exit(0);
+  exit(1);
+}]])],[working_environ=yes],[working_environ=no],[])
+AC_MSG_RESULT([$working_environ])
+if test $working_environ = yes ; then
+  AC_DEFINE(HAVE_ENVIRON)
 fi
 ])
 

@@ -121,14 +121,16 @@ thread_cleanup(void *aux)
 	 * mp_process_kill().
 	 */
 	cl_object process = (cl_object)aux;
+	cl_env_ptr env = process->process.env;
 	process->process.active = 0;
+	process->process.env = NULL;
+        ecl_disable_interrupts_env(env);
 	mp_giveup_lock(process->process.exit_lock);
 	THREAD_OP_LOCK();
 	cl_core.processes = ecl_remove_eq(process, cl_core.processes);
 	THREAD_OP_UNLOCK();
-	if (process->process.env)
-		_ecl_dealloc_env(process->process.env);
-	process->process.env = NULL;
+	ecl_set_process_env(NULL);
+	if (env) _ecl_dealloc_env(env);
 }
 
 #ifdef ECL_WINDOWS_THREADS
@@ -139,33 +141,49 @@ thread_entry_point(void *arg)
 #endif
 {
         cl_object process = (cl_object)arg;
-	cl_env_ptr env;
+	cl_env_ptr env = process->process.env;
 
+	/*
+	 * Upon entering this routine
+	 *	process.env = our environment for lisp
+	 *	process.active = 2
+	 *	signals are disabled in the environment
+	 *
+	 * Since process.active = 2, this process will not recevie
+	 * signals that originate from other processes. Furthermore,
+	 * we expect not to get any other interrupts (SIGSEGV, SIGFPE)
+	 * if we do things right.
+	 */
+	/* 1) Setup the environment for the execution of the thread */
+	ecl_set_process_env(env = process->process.env);
 #ifndef ECL_WINDOWS_THREADS
 	pthread_cleanup_push(thread_cleanup, (void *)process);
 #endif
-	/* 1) Setup the environment for the execution of the thread */
-	process->process.env = env = _ecl_alloc_env();
-	env->own_process = process;
-	ecl_set_process_env(env);
 	THREAD_OP_LOCK();
 	cl_core.processes = CONS(process, cl_core.processes);
 	THREAD_OP_UNLOCK();
-	ecl_init_env(env);
-	env->bindings_hash = process->process.initial_bindings;
-	ecl_enable_interrupts_env(env);
-        env->trap_fpe_bits = process->process.trap_fpe_bits;
+	ecl_cs_set_org(env);
         si_trap_fpe(@'last', Ct);
+	ecl_enable_interrupts_env(env);
 
 	/* 2) Execute the code. The CATCH_ALL point is the destination
 	*     provides us with an elegant way to exit the thread: we just
 	*     do an unwind up to frs_top.
 	*/
-	mp_get_lock(1, process->process.exit_lock);
+	mp_get_lock_wait(process->process.exit_lock);
 	process->process.active = 1;
 	CL_CATCH_ALL_BEGIN(env) {
 		ecl_bds_bind(env, @'mp::*current-process*', process);
-		cl_apply(2, process->process.function, process->process.args);
+		env->values[0] = cl_apply(2, process->process.function,
+                                          process->process.args);
+                {
+                        cl_object output = Cnil;
+                        int i = env->nvalues;
+                        while (i--) {
+                                output = CONS(env->values[i], output);
+                        }
+                        process->process.exit_values = output;
+                }
 		ecl_bds_unwind1(env);
 	} CL_CATCH_ALL_END;
 
@@ -185,24 +203,22 @@ thread_entry_point(void *arg)
 static cl_object
 alloc_process(cl_object name, cl_object initial_bindings)
 {
-	cl_object process = ecl_alloc_object(t_process);
+	cl_object process = ecl_alloc_object(t_process), array;
 	process->process.active = 0;
 	process->process.name = name;
 	process->process.function = Cnil;
 	process->process.args = Cnil;
 	process->process.interrupt = Cnil;
+        process->process.exit_values = Cnil;
 	process->process.env = NULL;
 	if (initial_bindings != OBJNULL) {
-		process->process.initial_bindings
-			= cl__make_hash_table(@'eq', MAKE_FIXNUM(1024),
-					      ecl_make_singlefloat(1.5),
-					      ecl_make_singlefloat(0.7),
-					      Cnil); /* no need for locking */
+		array = si_make_vector(Ct, MAKE_FIXNUM(256),
+                                       Cnil, Cnil, Cnil, Cnil);
+                si_fill_array_with_elt(array, OBJNULL, MAKE_FIXNUM(0), Cnil);
 	} else {
-		cl_env_ptr this_env = ecl_process_env();
-		process->process.initial_bindings
-			= si_copy_hash_table(this_env->bindings_hash);
+		array = cl_copy_seq(ecl_process_env()->bindings_array);
 	}
+        process->process.initial_bindings = array;
 	process->process.exit_lock = mp_make_lock(0);
 	return process;
 }
@@ -247,8 +263,10 @@ ecl_import_current_thread(cl_object name, cl_object bindings)
 	cl_core.processes = CONS(process, cl_core.processes);
 	THREAD_OP_UNLOCK();
 	ecl_init_env(env);
-	env->bindings_hash = process->process.initial_bindings;
-	mp_get_lock(1, process->process.exit_lock);
+	env->bindings_array = process->process.initial_bindings;
+        env->thread_local_bindings_size = env->bindings_array->vector.dim;
+        env->thread_local_bindings = env->bindings_array->vector.self.t;
+	mp_get_lock_wait(process->process.exit_lock);
 	process->process.active = 1;
 	ecl_enable_interrupts_env(env);
 	return 1;
@@ -347,27 +365,55 @@ mp_process_yield(void)
 cl_object
 mp_process_enable(cl_object process)
 {
-	cl_object output;
-#ifdef ECL_WINDOWS_THREADS
-	HANDLE code;
-	DWORD threadId;
-
-	if (mp_process_active_p(process) != Cnil)
+	/*
+	 * We try to grab the process exit lock. If we achieve it that
+	 * means the 1) process is not running or in the finalization
+	 * or 2) it is in the initialization phase. The second case we
+	 * can distinguish because process.active != 0. The first one
+	 * is ok.
+	 */
+	cl_env_ptr process_env;
+	int ok;
+	if (Null(mp_get_lock_nowait(process->process.exit_lock))) {
 		FEerror("Cannot enable the running process ~A.", 1, process);
+		return;
+	}
+	if (process->process.active) {
+		mp_giveup_lock(process->process.exit_lock);
+		FEerror("Cannot enable the running process ~A.", 1, process);
+		return;
+	}
+	process_env = _ecl_alloc_env();
+	ecl_init_env(process_env);
+	process_env->trap_fpe_bits = process->process.trap_fpe_bits;
+	process_env->bindings_array = process->process.initial_bindings;
+        process_env->thread_local_bindings_size = 
+                process_env->bindings_array->vector.dim;
+        process_env->thread_local_bindings =
+                process_env->bindings_array->vector.self.t;
+	process_env->own_process = process;
+
+	process->process.env = process_env;
         process->process.parent = mp_current_process();
 	process->process.trap_fpe_bits =
 		process->process.parent->process.env->trap_fpe_bits;
+	process->process.active = 2;
+
+#ifdef ECL_WINDOWS_THREADS
+	{
+	HANDLE code;
+	DWORD threadId;
+
 	code = (HANDLE)CreateThread(NULL, 0, thread_entry_point, process, 0, &threadId);
-	output = (process->process.thread = code)? process : Cnil;
+	ok = (process->process.thread = code);
+	}
 #else
+	{
 	int code;
         pthread_attr_t pthreadattr;
 
 	pthread_attr_init(&pthreadattr);
 	pthread_attr_setdetachstate(&pthreadattr, PTHREAD_CREATE_DETACHED);
-	if (mp_process_active_p(process) != Cnil)
-		FEerror("Cannot enable the running process ~A.", 1, process);
-        process->process.parent = mp_current_process();
 	/*
 	 * We launch the thread with the signal mask specified in cl_core.
 	 * The reason is that we might need to block certain signals
@@ -382,11 +428,20 @@ mp_process_enable(cl_object process)
 		pthread_sigmask(SIG_SETMASK, &previous, NULL);
 	}
 #else
-	code = pthread_create(&process->process.thread, &pthreadattr, thread_entry_point, process);
+	code = pthread_create(&process->process.thread, &pthreadattr,
+			      thread_entry_point, process);
 #endif
-	output = code? Cnil : process;
+	ok = (code == 0);
+	}
 #endif
-	@(return output)
+	if (!ok) {
+		process->process.active = 0;
+		process->process.env = NULL;
+		_ecl_dealloc_env(process_env);
+	}
+	mp_giveup_lock(process->process.exit_lock);
+
+	@(return (ok? process : Cnil))
 }
 
 cl_object
@@ -434,10 +489,12 @@ mp_process_join(cl_object process)
 {
 	assert_type_process(process);
 	/* We only wait for threads that we have created */
-        if (process->process.active != 1) {
+        if (process->process.active) {
 		cl_object l = process->process.exit_lock;
 		if (!Null(l)) {
-			l = mp_get_lock(1, l);
+                        while (process->process.active > 1)
+                                cl_sleep(MAKE_FIXNUM(0));
+			l = mp_get_lock_wait(l);
 			if (Null(l)) {
 				FEerror("MP:PROCESS-JOIN: Error when "
 					"joining process ~A",
@@ -446,7 +503,7 @@ mp_process_join(cl_object process)
 			mp_giveup_lock(l);
                 }
         }
-        @(return Cnil)
+        return cl_values_list(process->process.exit_values);
 }
 
 cl_object

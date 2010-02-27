@@ -1533,7 +1533,9 @@ cl_symbols[] = {
 {SYS_ "*EXIT-HOOKS*",NULL},
 
 #ifdef CLOS
+{CLOS_ ".COMBINED-METHOD-ARGS.",NULL},
 {CLOS_ "*BUILTIN-CLASSES*",NULL},
+{CLOS_ "*NEXT-METHODS*",NULL},
 {CLOS_ "*OPTIMIZE-SLOT-ACCESS*",NULL},
 {CLOS_ "ACCESSOR-METHOD-SLOT-DEFINITION",NULL},
 {CLOS_ "ADD-DEPENDENT",NULL},
@@ -1824,7 +1826,7 @@ cl_symbols[] = {
 {EXT_ "MAKE-WEAK-POINTER","si_make_weak_pointer"},
 {EXT_ "WEAK-POINTER-VALUE","si_weak_pointer_value"},
 
-{MP_ "*ALLOW-WITH-INTERRUPTS*",NULL},
+{SYS_ "*ALLOW-WITH-INTERRUPTS*",NULL},
 
 {EXT_ "WITH-UNIQUE-NAMES",NULL},
 
@@ -1841,6 +1843,30 @@ cl_symbols[] = {
 
 {EXT_ "*PROGRAM-EXIT-CODE*",NULL},
 {EXT_ "EXIT","si_exit"},
+
+{EXT_ "ENVIRON","si_environ"},
+
+{KEY_ "ENVIRON",NULL},
+
+{EXT_ "MAKE-EXTERNAL-PROCESS",NULL},
+{EXT_ "EXTERNAL-PROCESS",NULL},
+{EXT_ "EXTERNAL-PROCESS-PID",NULL},
+{EXT_ "EXTERNAL-PROCESS-INPUT",NULL},
+{EXT_ "EXTERNAL-PROCESS-OUTPUT",NULL},
+{EXT_ "EXTERNAL-PROCESS-STATUS",NULL},
+
+{KEY_ "RUNNING",NULL},
+{KEY_ "EXITED",NULL},
+{KEY_ "SIGNALED",NULL},
+{KEY_ "STOPPED",NULL},
+
+{EXT_ "EXTERNAL-PROCESS-WAIT","si_external_process_wait"},
+
+#if defined(_MSC_VER) || defined(mingw32)
+{SYS_ "CLOSE-WINDOWS-HANDLE","si_close_windows_handle"},
+#endif
+
+{EXT_ "*INVOKE-DEBUGGER-HOOK*",NULL},
 
 /* Tag for end of list */
 {NULL,NULL}};

@@ -257,6 +257,9 @@ struct ecl_symbol {
 	cl_object name;		/*  print name  */
 	cl_object hpack;	/*  home package  */
 				/*  Cnil for uninterned symbols  */
+#ifdef ECL_THREADS
+        cl_index binding;	/*  index into the bindings array  */
+#endif
 };
 #define SYM_FUN(sym)	((sym)->symbol.gfdef)
 
@@ -351,12 +354,15 @@ struct ecl_hashtable {		/*  hash table header  */
 	struct ecl_hashtable_entry *data; /*  pointer to the hash table  */
 	cl_index entries;	/*  number of entries  */
 	cl_index size;		/*  hash table size  */
+	cl_index limit;		/*  hash table threshold (integer value)  */
 	cl_object rehash_size;	/*  rehash size  */
 	cl_object threshold;	/*  rehash threshold  */
 	double factor;		/*  cached value of threshold  */
 #ifdef ECL_THREADS
 	cl_object lock;		/*  mutex to prevent race conditions  */
 #endif
+	struct ecl_hashtable_entry *(*get)(cl_object, cl_object);
+	cl_object (*set)(cl_object, cl_object, cl_object);
 };
 
 typedef enum {			/*  array element type  */
@@ -845,6 +851,7 @@ struct ecl_process {
         cl_object parent;
 	cl_object exit_lock;
 	int trap_fpe_bits;
+        cl_object exit_values;
 };
 
 struct ecl_lock {

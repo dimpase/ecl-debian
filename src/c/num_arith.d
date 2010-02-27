@@ -32,40 +32,6 @@
 @)
 
 cl_object
-fixnum_times(cl_fixnum i, cl_fixnum j)
-{
-	cl_object x = _ecl_big_register0();
-        _ecl_big_set_si(x, i);
-        _ecl_big_mul_si(x, x, j);
-	return _ecl_big_register_normalize(x);
-}
-
-static cl_object
-_ecl_big_times_fix(cl_object b, cl_fixnum i)
-{
-	cl_object z;
-
-	if (i == 1)
-		return b;
-	z = _ecl_big_register0();
-	if (i == -1) {
-                _ecl_big_complement(z, b);
-        } else {
-                _ecl_big_mul_si(z, b, i);
-        }
-	return _ecl_big_register_normalize(z);
-}
-
-static cl_object
-_ecl_big_times_big(cl_object x, cl_object y)
-{
-	cl_object z;
-	z = _ecl_big_register0();
-        _ecl_big_mul(z, x, y);
-	return _ecl_big_register_normalize(z);
-}
-
-cl_object
 ecl_times(cl_object x, cl_object y)
 {
 	cl_object z, z1;
@@ -74,7 +40,7 @@ ecl_times(cl_object x, cl_object y)
 	case t_fixnum:
 		switch (type_of(y)) {
 		case t_fixnum:
-			return fixnum_times(fix(x),fix(y));
+			return _ecl_fix_times_fix(fix(x),fix(y));
 		case t_bignum:
 			return _ecl_big_times_fix(y, fix(x));
 		case t_ratio:
@@ -298,14 +264,7 @@ ecl_plus(cl_object x, cl_object y)
 		case t_fixnum:
                         return ecl_make_integer(fix(x) + fix(y));
 		case t_bignum:
-			if ((i = fix(x)) == 0)
-				return(y);
-			z = _ecl_big_register0();
-			if (i > 0)
-                                _ecl_big_add_ui(z, y, i);
-			else
-                                _ecl_big_sub_ui(z, y, -i);
-		  	return _ecl_big_register_normalize(z);
+                        return _ecl_big_plus_fix(y, fix(x));
 		case t_ratio:
 			z = ecl_times(x, y->ratio.den);
 			z = ecl_plus(z, y->ratio.num);
@@ -332,18 +291,9 @@ ecl_plus(cl_object x, cl_object y)
 	case t_bignum:
 		switch (type_of(y)) {
 		case t_fixnum:
-			if ((j = fix(y)) == 0)
-				return(x);
-			z = _ecl_big_register0();
-			if (j > 0)
-                                _ecl_big_add_ui(z, x, j);
-			else
-                                _ecl_big_sub_ui(z, x, (-j));
-			return _ecl_big_register_normalize(z);
+                        return _ecl_big_plus_fix(x, fix(y));
 		case t_bignum:
-                        z = _ecl_big_register0();
-                        _ecl_big_add(z, x, y);
-			return _ecl_big_register_normalize(z);
+                        return _ecl_big_plus_big(x, y);
 		case t_ratio:
 			z = ecl_times(x, y->ratio.den);
 			z = ecl_plus(z, y->ratio.num);
@@ -529,14 +479,7 @@ ecl_minus(cl_object x, cl_object y)
 		case t_fixnum:
                         return ecl_make_integer(fix(x) - fix(y));
 		case t_bignum:
-			z = _ecl_big_register0();
-			i = fix(x);
-			if (i > 0)
-                                _ecl_big_sub_ui(z, y, i);
-			else
-                                _ecl_big_add_ui(z, y, -i);
-			_ecl_big_complement(z, z);
-			return _ecl_big_register_normalize(z);
+                        return _ecl_fix_minus_big(fix(x), y);
 		case t_ratio:
 			z = ecl_times(x, y->ratio.den);
 			z = ecl_minus(z, y->ratio.num);
@@ -561,18 +504,9 @@ ecl_minus(cl_object x, cl_object y)
 	case t_bignum:
 		switch (type_of(y)) {
 		case t_fixnum:
-			if ((j = fix(y)) == 0)
-				return(x);
-			z = _ecl_big_register0();
-			if (j > 0)
-                                _ecl_big_sub_ui(z, x, j);
-			else
-                                _ecl_big_add_ui(z, x, -j);
-			return _ecl_big_register_normalize(z);
+                        return _ecl_big_plus_fix(x, -fix(y));
 		case t_bignum:
-                        z = _ecl_big_register0();
-                        _ecl_big_sub(z, x, y);
-                        return _ecl_big_register_normalize(z);
+                        return _ecl_big_minus_big(x, y);
 		case t_ratio:
 			z = ecl_times(x, y->ratio.den);
 			z = ecl_minus(z, y->ratio.num);
@@ -768,17 +702,13 @@ ecl_negate(cl_object x)
 	case t_fixnum:
                 return ecl_make_integer(-fix(x));
 	case t_bignum:
-		z = _ecl_big_register0();
-                _ecl_big_complement(z, x);
-		return _ecl_big_register_normalize(z);
-
+		return _ecl_big_negate(x);
 	case t_ratio:
 		z1 = ecl_negate(x->ratio.num);
 		z = ecl_alloc_object(t_ratio);
 		z->ratio.num = z1;
 		z->ratio.den = x->ratio.den;
 		return z;
-
 #ifdef ECL_SHORT_FLOAT
 	case t_shortfloat:
 		return make_shortfloat(-ecl_shortfloat(x));
@@ -787,7 +717,6 @@ ecl_negate(cl_object x)
 		z = ecl_alloc_object(t_singlefloat);
 		sf(z) = -sf(x);
 		return z;
-
 	case t_doublefloat:
 		z = ecl_alloc_object(t_doublefloat);
 		df(z) = -df(x);
@@ -1019,37 +948,20 @@ ecl_integer_divide(cl_object x, cl_object y)
 			if (y == MAKE_FIXNUM(0))
 				FEdivision_by_zero(x, y);
 			return MAKE_FIXNUM(fix(x) / fix(y));
-		}
-		if (ty == t_bignum) {
-			/* The only number "x" which can be a bignum and be
-			 * as large as "-x" is -MOST_NEGATIVE_FIXNUM. However
-			 * in newer versions of ECL we will probably choose
-			 * MOST_NEGATIVE_FIXNUM = - MOST_POSITIVE_FIXNUM.
-			 */
-			if (-MOST_NEGATIVE_FIXNUM > MOST_POSITIVE_FIXNUM) {
-				if (_ecl_big_cmp_si(y, -fix(x)))
-					return MAKE_FIXNUM(0);
-				else
-					return MAKE_FIXNUM(-1);
-			} else {
-				return MAKE_FIXNUM(0);
-			}
-		}
-		FEtype_error_integer(y);
+		} else if (ty == t_bignum) {
+                        return _ecl_fix_divided_by_big(fix(x), y);
+		} else {
+                        FEtype_error_integer(y);
+                }
 	}
 	if (tx == t_bignum) {
-		cl_object q = _ecl_big_register0();
 		if (ty == t_bignum) {
-			_ecl_big_tdiv_q(q, x, y);
+			return _ecl_big_divided_by_big(x, y);
 		} else if (ty == t_fixnum) {
-			long j = fix(y);
-                        _ecl_big_tdiv_q_ui(q, x, labs(j));
-			if (j < 0)
-				_ecl_big_complement(q, q);
+                        return _ecl_big_divided_by_fix(x, fix(y));
 		} else {
 			FEtype_error_integer(y);
 		}
-		return _ecl_big_register_normalize(q);
 	}
 	FEtype_error_integer(x);
 }
@@ -1073,35 +985,29 @@ ecl_integer_divide(cl_object x, cl_object y)
 cl_object
 ecl_gcd(cl_object x, cl_object y)
 {
-	cl_object gcd, x_big, y_big;
+	cl_object gcd;
+        ECL_WITH_TEMP_BIGNUM(x_big,1);
+        ECL_WITH_TEMP_BIGNUM(y_big,1);
 
 	switch (type_of(x)) {
 	case t_fixnum:
-                x_big = _ecl_big_register0();
                 _ecl_big_set_fixnum(x_big, fix(x));
-		break;
+                x = x_big;
 	case t_bignum:
-                x_big = x;
 		break;
 	default:
 		FEtype_error_integer(x);
 	}
 	switch (type_of(y)) {
 	case t_fixnum:
-                y_big = _ecl_big_register1();
                 _ecl_big_set_fixnum(y_big, fix(y));
-                break;
+                y = y_big;
 	case t_bignum:
-                y_big = y;
                 break;
 	default:
 		FEtype_error_integer(y);
         }
-        gcd = _ecl_big_register2();
-        _ecl_big_gcd(gcd, x_big, y_big);
-        if (x != x_big) _ecl_big_register_free(x_big);
-        if (y != y_big) _ecl_big_register_free(y_big);
-        return _ecl_big_register_normalize(gcd);
+        return _ecl_big_gcd(x, y);
 }
 
 /*  (1+ x)  */

@@ -8,7 +8,7 @@ dnl  AUTOCONF configuration for ECL
 dnl  Giuseppe Attardi 25.1.1994
 dnl
 
-AC_INIT([ecl],[9.12.3],[])
+AC_INIT([ecl],[10.2.1],[])
 AC_REVISION([$Revision$])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
@@ -238,7 +238,13 @@ AC_ARG_ENABLE(gengc,
   AS_HELP_STRING( [--enable-gengc],
 		  [use generational garbage collection. Requires Boehm-Weiser gc.]
 		  [(no|yes, default=NO)]),
-  [], [enable_gengc=no] )
+  [enable_gengc=${enableval}], [enable_gengc=no] )
+
+AC_ARG_ENABLE(precisegc,
+  AS_HELP_STRING( [--enable-precisegc],
+		  [use type information during garbage collection. Requires Boehm-Weiser gc.]
+		  [(no|yes, default=NO)]),
+  [enable_precisegc=${enableval}], [enable_precisegc=yes] )
 
 dnl AC_ARG_ENABLE(debug,
 dnl   AS_HELP_STRING( [--enable-debug],
@@ -257,6 +263,11 @@ AC_ARG_WITH(profile-cflags,
                   [add profiling flags to the compiler invocation]
                   [(yes,no,actual flags,default=NO)]),
   [],[with_profile_cflags="no"])
+
+AC_ARG_WITH(newcmp,
+  AS_HELP_STRING( [--with-newcmp],
+                  [new compiler (yes|no, default=NO)]),
+  [], [with_newcmp=no])
 
 dnl -----------------------------------------------------------------------
 dnl Installation directories
@@ -424,6 +435,15 @@ if test "$with_profile_cflags" != "no"; then
 fi
 
 dnl ----------------------------------------------------------------------
+dnl Version of the compiler
+if test "${with_newcmp}" = "yes"; then
+  ECL_CMPDIR=new-cmp
+else
+  ECL_CMPDIR=cmp
+fi
+AC_SUBST(ECL_CMPDIR)
+
+dnl ----------------------------------------------------------------------
 dnl Native thread support
 if test "${enable_threads}" = "auto"; then
   AC_MSG_CHECKING([for threads support])
@@ -504,8 +524,15 @@ else
   fi
   EXTRA_OBJS="${EXTRA_OBJS} alloc_2.${OBJEXT}"
 fi
-if test "${enable_gengc}" = "yes" ; then
+if test "${enable_gengc}" != "no" ; then
   AC_DEFINE(GBC_BOEHM_GENGC)
+fi
+AC_MSG_CHECKING([if we use Boehm-Demers-Weiser precise garbage collector]);
+if test "${enable_precisegc}" != "no" ; then
+  AC_DEFINE(GBC_BOEHM_PRECISE)
+  AC_MSG_RESULT([yes])
+else
+  AC_MSG_RESULT([no])
 fi
 
 if test ${enable_smallcons} = "yes" ; then
@@ -667,6 +694,8 @@ AC_CHECK_FUNCS( [expf logf sqrtf cosf sinf tanf sinhf coshf tanhf] \
 AC_CHECK_FUNCS( [sched_yield uname fseeko] )
 
 AC_CHECK_HEADER( [sys/mman.h], AC_DEFINE(ECL_USE_MPROTECT) )
+
+ECL_POSIX_ENVIRON
 
 dnl =====================================================================
 dnl Checks for system services
@@ -847,11 +876,12 @@ case "${enable_boehm}" in
 esac
 
 AC_CONFIG_FILES([
-  bare.lsp lsp/load.lsp clos/load.lsp cmp/load.lsp
+  bare.lsp lsp/load.lsp clos/load.lsp cmp/load.lsp new-cmp/load.lsp
   ../Makefile Makefile c/Makefile doc/Makefile doc/ecl.man doc/ecl-config.man
   ecl/configpre.h:h/config.h.in bin/ecl-config.pre:util/ecl-config
   lsp/config.pre:lsp/config.lsp.in compile.pre:compile.lsp.in
   cmp/cmpdefs.pre:cmp/cmpdefs.lsp
+  new-cmp/cmpdefs.pre:new-cmp/cmpdefs.lsp
  ])
 AC_CONFIG_HEADERS([ecl/config.h:ecl/configpre.h]) # FIXME
 AC_OUTPUT

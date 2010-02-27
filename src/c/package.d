@@ -113,22 +113,11 @@ symbol_add_package(cl_object s, cl_object p)
 static cl_object
 make_package_hashtable()
 {
-	cl_object h;
-	cl_index hsize = 128;
-
-	h = ecl_alloc_object(t_hashtable);
-#ifdef ECL_THREADS
-	h->hash.lock = Cnil;
-#endif
-	h->hash.test = htt_pack;
-	h->hash.size = hsize;
-	h->hash.rehash_size = ecl_make_singlefloat(1.5f);
-	h->hash.threshold = ecl_make_singlefloat(0.75f);
-	h->hash.factor = 0.7;
-	h->hash.entries = 0;
-	h->hash.data = NULL; /* for GC sake */
-	h->hash.data = (struct ecl_hashtable_entry *)ecl_alloc(hsize * sizeof(struct ecl_hashtable_entry));
-	return cl_clrhash(h);
+	return cl__make_hash_table(@'package', /* package hash table */
+				   MAKE_FIXNUM(128), /* initial size */
+				   ecl_make_singlefloat(1.5f), /* rehash size */
+				   ecl_make_singlefloat(0.75f), /* rehash threshold */
+				   Cnil); /* lockable */
 }
 
 cl_object
@@ -146,7 +135,6 @@ ecl_make_package(cl_object name, cl_object nicknames, cl_object use_list)
 	PACKAGE_OP_LOCK();
 	if (cl_core.packages_to_be_created != OBJNULL) {
 		cl_object l = cl_core.packages_to_be_created;
-		cl_object tail = l;
 		while (CONSP(l)) {
 			cl_object pair = ECL_CONS_CAR(l);
 			cl_object other_name = ECL_CONS_CAR(pair);
@@ -155,15 +143,11 @@ ecl_make_package(cl_object name, cl_object nicknames, cl_object use_list)
 				    @':test', @'string=') != Cnil)
 			{
 				x = ECL_CONS_CDR(pair);
-				pair = ECL_CONS_CDR(l);
-				if (l == tail) {
-					cl_core.packages_to_be_created = pair;
-				} else {
-					ECL_RPLACD(tail, pair);
-				}
+                                cl_core.packages_to_be_created =
+                                        ecl_remove_eq(pair,
+                                                      cl_core.packages_to_be_created);
 				goto INTERN;
 			}
-			tail = l;
 			l = ECL_CONS_CDR(l);
 		}
 	}
@@ -342,9 +326,9 @@ ecl_intern(cl_object name, cl_object p, int *intern_flag)
                 if (p == cl_core.keyword_package) {
                         ecl_symbol_type_set(s, ecl_symbol_type(s) | stp_constant);
                         ECL_SET(s, s);
-                        p->pack.external = ecl_sethash(name, p->pack.external, s);
+                        p->pack.external = _ecl_sethash(name, p->pack.external, s);
                 } else {
-                        p->pack.internal = ecl_sethash(name, p->pack.internal, s);
+                        p->pack.internal = _ecl_sethash(name, p->pack.internal, s);
                 }
         }
 	PACKAGE_OP_UNLOCK();
@@ -492,7 +476,7 @@ cl_export2(cl_object s, cl_object p)
 	} end_loop_for_on;
 	if (hash != OBJNULL)
 		ecl_remhash(name, hash);
-	p->pack.external = ecl_sethash(name, p->pack.external, s);
+	p->pack.external = _ecl_sethash(name, p->pack.external, s);
  OUTPUT:
 	PACKAGE_OP_UNLOCK();
 }
@@ -579,7 +563,7 @@ cl_unexport2(cl_object s, cl_object p)
 		(void)0;
 	} else {
 		ecl_remhash(name, p->pack.external);
-		p->pack.internal = ecl_sethash(name, p->pack.internal, s);
+		p->pack.internal = _ecl_sethash(name, p->pack.internal, s);
 	}
 	PACKAGE_OP_UNLOCK();
 }
@@ -608,7 +592,7 @@ cl_import2(cl_object s, cl_object p)
 		if (intern_flag == INTERNAL || intern_flag == EXTERNAL)
 			goto OUTPUT;
 	}
-	p->pack.internal = ecl_sethash(name, p->pack.internal, s);
+	p->pack.internal = _ecl_sethash(name, p->pack.internal, s);
 	symbol_add_package(s, p);
  OUTPUT:
 	PACKAGE_OP_UNLOCK();
@@ -643,7 +627,7 @@ ecl_shadowing_import(cl_object s, cl_object p)
 		symbol_remove_package(x, p);
 	}
 	p->pack.shadowings = CONS(s, p->pack.shadowings);
-	p->pack.internal = ecl_sethash(name, p->pack.internal, s);
+	p->pack.internal = _ecl_sethash(name, p->pack.internal, s);
  OUTPUT:
 	PACKAGE_OP_UNLOCK();
 }
@@ -664,7 +648,7 @@ ecl_shadow(cl_object s, cl_object p)
 	x = find_symbol_inner(s, p, &intern_flag);
 	if (intern_flag != INTERNAL && intern_flag != EXTERNAL) {
 		x = cl_make_symbol(s);
-		p->pack.internal = ecl_sethash(s, p->pack.internal, x);
+		p->pack.internal = _ecl_sethash(s, p->pack.internal, x);
 		x->symbol.hpack = p;
 	}
 	p->pack.shadowings = CONS(x, p->pack.shadowings);

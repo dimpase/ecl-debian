@@ -29,6 +29,23 @@
 
 static void finalize_queued();
 
+#ifdef GBC_BOEHM_PRECISE
+# if GBC_BOEHM
+#  undef GBC_BOEHM_PRECISE
+# else
+#  include "gc_typed.h"
+#  include "gc_mark.h"
+#  ifdef GBC_BOEHM_OWN_ALLOCATOR
+#  include "private/gc_priv.h"
+#  endif
+#  define GBC_BOEHM_OWN_MARKER
+#  if defined(GBC_BOEHM_OWN_MARKER) || defined(GBC_BOEHM_OWN_ALLOCATOR)
+static int cl_object_kind, cl_object_mark_proc_index;
+static void **cl_object_free_list;
+#  endif
+# endif
+#endif
+
 /**********************************************************
  *		OBJECT ALLOCATION			  *
  **********************************************************/
@@ -131,11 +148,331 @@ out_of_memory(size_t requested_bytes)
 #undef alloc_object
 #endif
 
-static size_t type_size[t_end];
+static struct ecl_type_information {
+        size_t size;
+#ifdef GBC_BOEHM_PRECISE
+        GC_word descriptor;
+#endif
+        cl_object (*allocator)(register struct ecl_type_information *);
+        size_t t;
+} type_info[t_end];
+
+static void
+error_wrong_tag(cl_type t)
+{
+        ecl_internal_error("Collector called with invalid tag number.");
+}
+
+static cl_object
+allocate_object_atomic(register struct ecl_type_information *type_info)
+{
+	const cl_env_ptr the_env = ecl_process_env();
+        cl_object op;
+        ecl_disable_interrupts_env(the_env);
+        op = GC_MALLOC_ATOMIC(type_info->size);
+        op->d.t = type_info->t;
+        ecl_enable_interrupts_env(the_env);
+        return op;
+}
+
+static cl_object
+allocate_object_full(register struct ecl_type_information *type_info)
+{
+	const cl_env_ptr the_env = ecl_process_env();
+        cl_object op;
+        ecl_disable_interrupts_env(the_env);
+        op = GC_MALLOC(type_info->size);
+        op->d.t = type_info->t;
+        ecl_enable_interrupts_env(the_env);
+        return op;
+}
+
+#ifdef GBC_BOEHM_PRECISE
+static cl_object
+allocate_object_typed(register struct ecl_type_information *type_info)
+{
+	const cl_env_ptr the_env = ecl_process_env();
+        cl_object op;
+        ecl_disable_interrupts_env(the_env);
+        op = GC_malloc_explicitly_typed(type_info->size, type_info->descriptor);
+        op->d.t = type_info->t;
+        ecl_enable_interrupts_env(the_env);
+        return op;
+}
+#endif
+
+#ifdef GBC_BOEHM_OWN_ALLOCATOR
+#error
+static cl_object
+allocate_object_own(register struct ecl_type_information *type_info)
+{
+#define TYPD_EXTRA_BYTES (sizeof(word) - EXTRA_BYTES)
+#define GENERAL_MALLOC(lb,k) (void *)GC_generic_malloc(lb, k)
+	const cl_env_ptr the_env = ecl_process_env();
+	typedef void *ptr_t;
+	ptr_t op;
+	ptr_t * opp;
+	size_t lg, lb;
+	DCL_LOCK_STATE;
+
+        ecl_disable_interrupts_env(the_env);
+	lb = type_info->size + TYPD_EXTRA_BYTES;
+	if (ecl_likely(SMALL_OBJ(lb))) {
+		lg = GC_size_map[lb];
+		opp = &(cl_object_free_list[lg]);
+		LOCK();
+		if( (op = *opp) == 0 ) {
+			UNLOCK();
+			op = (ptr_t)GENERAL_MALLOC((word)lb, cl_object_kind);
+			if (0 == op) return 0;
+			lg = GC_size_map[lb];	/* May have been uninitialized.	*/
+		} else {
+			*opp = obj_link(op);
+			obj_link(op) = 0;
+			GC_bytes_allocd += GRANULES_TO_BYTES(lg);
+			UNLOCK();
+		}
+	} else {
+		op = (ptr_t)GENERAL_MALLOC((word)lb, cl_object_kind);
+                lg = BYTES_TO_GRANULES(GC_size(op));
+	}
+        ((word *)op)[GRANULES_TO_WORDS(lg) - 1] = type_info->descriptor;
+        ((cl_object)op)->d.t = type_info->t;
+        ecl_enable_interrupts_env(the_env);
+        return (cl_object)op;
+}
+#endif /* GBC_BOEHM_OWN_ALLOCATOR */
+
+#ifdef GBC_BOEHM_OWN_MARKER
+#define IGNORABLE_POINTER(obj) (IMMEDIATE(obj) & 2)
+#define GC_MARK_AND_PUSH(obj, msp, lim, src) \
+        ((!IGNORABLE_POINTER(obj) &&				      \
+	  (GC_word)obj >= (GC_word)GC_least_plausible_heap_addr &&    \
+	  (GC_word)obj <= (GC_word)GC_greatest_plausible_heap_addr)?  \
+	 GC_mark_and_push(obj, msp, lim, src) :			      \
+	 msp)
+
+static struct GC_ms_entry *
+cl_object_mark_proc(void *addr, struct GC_ms_entry *msp, struct GC_ms_entry *msl,
+		    GC_word env)
+{
+#if 1
+	cl_type t = ((cl_object)addr)->d.t;
+	if (ecl_likely(t > t_start && t < t_end)) {
+		struct ecl_type_information *info = type_info + t;
+		GC_word d = info->descriptor;
+		GC_word *p;
+		for (p = addr; d; p++, d<<=1) {
+			if ((GC_signed_word)d < 0) {
+				GC_word aux = *p;
+				if ((aux & 2) ||
+				    aux <= (GC_word)GC_least_plausible_heap_addr ||
+				    aux >= (GC_word)GC_greatest_plausible_heap_addr)
+					continue;
+				msp = GC_mark_and_push((void*)aux, (void*)msp,
+						       (void*)msl, (void*)p);
+			}
+		}
+	}
+#else
+#define MAYBE_MARK2(ptr) {						\
+		GC_word aux = (GC_word)(ptr);				\
+		if (!(aux & 2) && \
+		    aux >= (GC_word)GC_least_plausible_heap_addr &&	\
+		    aux <= (GC_word)GC_greatest_plausible_heap_addr)	\
+			msp = GC_mark_and_push((void*)aux, msp, msl, (void*)o); \
+	}
+#define MAYBE_MARK(ptr) {						\
+		GC_word aux = (GC_word)(ptr);				\
+		if (!(aux & 2) && \
+		    aux >= (GC_word)lpa &&	\
+		    aux <= (GC_word)gpa)	\
+			msp = GC_mark_and_push((void*)aux, msp, msl, (void*)o); \
+	}
+	cl_object o = (cl_object)addr;
+	const GC_word lpa = (GC_word)GC_least_plausible_heap_addr;
+	const GC_word gpa = (GC_word)GC_greatest_plausible_heap_addr;
+	switch (o->d.t) {
+	case t_bignum:
+                MAYBE_MARK(o->big.big_limbs);
+		break;
+        case t_ratio:
+                MAYBE_MARK(o->ratio.num);
+                MAYBE_MARK(o->ratio.den);
+		break;
+        case t_complex:
+                MAYBE_MARK(o->complex.real);
+                MAYBE_MARK(o->complex.imag);
+		break;
+        case t_symbol:
+                MAYBE_MARK(o->symbol.hpack);
+                MAYBE_MARK(o->symbol.name);
+                MAYBE_MARK(o->symbol.plist);
+                MAYBE_MARK(o->symbol.gfdef);
+                MAYBE_MARK(o->symbol.value);
+		break;
+        case t_package:
+                MAYBE_MARK(o->pack.external);
+                MAYBE_MARK(o->pack.internal);
+                MAYBE_MARK(o->pack.usedby);
+                MAYBE_MARK(o->pack.uses);
+                MAYBE_MARK(o->pack.shadowings);
+                MAYBE_MARK(o->pack.nicknames);
+                MAYBE_MARK(o->pack.name);
+		break;
+        case t_hashtable:
+# ifdef ECL_THREADS
+                MAYBE_MARK(o->hash.lock);
+# endif
+                MAYBE_MARK(o->hash.threshold);
+                MAYBE_MARK(o->hash.rehash_size);
+                MAYBE_MARK(o->hash.data);
+ 		break;
+	case t_array:
+                MAYBE_MARK(o->array.dims);
+        case t_vector:
+# ifdef ECL_UNICODE
+        case t_string:
+# endif
+	case t_base_string:
+        case t_bitvector:
+                MAYBE_MARK(o->vector.self.t);
+                MAYBE_MARK(o->vector.displaced);
+		break;
+        case t_stream:
+                MAYBE_MARK(o->stream.format_table);
+                MAYBE_MARK(o->stream.format);
+                MAYBE_MARK(o->stream.buffer);
+                MAYBE_MARK(o->stream.byte_stack);
+                MAYBE_MARK(o->stream.object1);
+                MAYBE_MARK(o->stream.object0);
+                MAYBE_MARK(o->stream.ops);
+ 		break;
+       case t_random:
+                MAYBE_MARK(o->random.value);
+  		break;
+      case t_readtable:
+# ifdef ECL_UNICODE
+                MAYBE_MARK(o->readtable.hash);
+# endif
+                MAYBE_MARK(o->readtable.table);
+		break;
+        case t_pathname:
+                MAYBE_MARK(o->pathname.version);
+                MAYBE_MARK(o->pathname.type);
+                MAYBE_MARK(o->pathname.name);
+                MAYBE_MARK(o->pathname.directory);
+                MAYBE_MARK(o->pathname.device);
+                MAYBE_MARK(o->pathname.host);
+		break;
+        case t_bytecodes:
+                MAYBE_MARK(o->bytecodes.file_position);
+                MAYBE_MARK(o->bytecodes.file);
+                MAYBE_MARK(o->bytecodes.data);
+                MAYBE_MARK(o->bytecodes.code);
+                MAYBE_MARK(o->bytecodes.definition);
+                MAYBE_MARK(o->bytecodes.name);
+		break;
+        case t_bclosure:
+                MAYBE_MARK(o->bclosure.lex);
+                MAYBE_MARK(o->bclosure.code);
+		break;
+        case t_cfun:
+                MAYBE_MARK(o->cfun.file_position);
+                MAYBE_MARK(o->cfun.file);
+                MAYBE_MARK(o->cfun.block);
+                MAYBE_MARK(o->cfun.name);
+		break;
+        case t_cfunfixed:
+                MAYBE_MARK(o->cfunfixed.file_position);
+                MAYBE_MARK(o->cfunfixed.file);
+                MAYBE_MARK(o->cfunfixed.block);
+                MAYBE_MARK(o->cfunfixed.name);
+		break;
+        case t_cclosure:
+                MAYBE_MARK(o->cclosure.file_position);
+                MAYBE_MARK(o->cclosure.file);
+                MAYBE_MARK(o->cclosure.block);
+                MAYBE_MARK(o->cclosure.env);
+		break;
+# ifndef CLOS
+        case t_structure:
+                MAYBE_MARK(o->structure.name);
+                MAYBE_MARK(o->structure.self);
+		break;
+# else
+        case t_instance:
+                MAYBE_MARK(o->instance.slots);
+                MAYBE_MARK(o->instance.sig);
+                MAYBE_MARK(o->instance.clas);
+		break;
+# endif
+# ifdef ECL_THREADS
+        case t_process:
+                MAYBE_MARK(o->process.exit_values);
+                MAYBE_MARK(o->process.exit_lock);
+                MAYBE_MARK(o->process.parent);
+                MAYBE_MARK(o->process.initial_bindings);
+                MAYBE_MARK(o->process.interrupt);
+                MAYBE_MARK(o->process.env);
+                MAYBE_MARK(o->process.args);
+                MAYBE_MARK(o->process.function);
+                MAYBE_MARK(o->process.name);
+		break;
+        case t_lock:
+                MAYBE_MARK(o->lock.holder);
+                MAYBE_MARK(o->lock.name);
+		break;
+# endif
+        case t_codeblock:
+                MAYBE_MARK(o->cblock.source);
+                MAYBE_MARK(o->cblock.links);
+                MAYBE_MARK(o->cblock.name);
+                MAYBE_MARK(o->cblock.next);
+                MAYBE_MARK(o->cblock.temp_data);
+                MAYBE_MARK(o->cblock.data);
+		break;
+        case t_foreign:
+                MAYBE_MARK(o->foreign.tag);
+                MAYBE_MARK(o->foreign.data);
+		break;
+        case t_frame:
+                MAYBE_MARK(o->frame.env);
+                MAYBE_MARK(o->frame.base);
+                MAYBE_MARK(o->frame.stack);
+		break;
+	default:
+		break;
+	}
+#endif
+	return msp;
+}
+
+static cl_object
+allocate_object_marked(register struct ecl_type_information *type_info)
+{
+	const cl_env_ptr the_env = ecl_process_env();
+        cl_object op;
+        ecl_disable_interrupts_env(the_env);
+        op = GC_generic_malloc(type_info->size, cl_object_kind);
+        op->d.t = type_info->t;
+        ecl_enable_interrupts_env(the_env);
+        return op;
+}
+#endif
 
 cl_object
 ecl_alloc_object(cl_type t)
 {
+#ifdef GBC_BOEHM_PRECISE
+        struct ecl_type_information *ti;
+        if (ecl_likely(t > t_start && t < t_end)) {
+                ti = type_info + t;
+                return ti->allocator(ti);
+        }
+        error_wrong_tag(t);
+        return OBJNULL;
+#else
 	const cl_env_ptr the_env = ecl_process_env();
 
 	/* GC_MALLOC already resets objects */
@@ -154,7 +491,7 @@ ecl_alloc_object(cl_type t)
 	case t_doublefloat: {
 		cl_object obj;
 		ecl_disable_interrupts_env(the_env);
-		obj = (cl_object)GC_MALLOC_ATOMIC(type_size[t]);
+		obj = (cl_object)GC_MALLOC_ATOMIC(type_info[t].size);
 		ecl_enable_interrupts_env(the_env);
                 obj->d.t = t;
                 return obj;
@@ -191,14 +528,14 @@ ecl_alloc_object(cl_type t)
         case t_lock:
         case t_condition_variable:
 #endif
-#ifdef ECL_SEMAPHORES:
+#ifdef ECL_SEMAPHORES
         case t_semaphores:
 #endif
 	case t_foreign:
 	case t_codeblock: {
 		cl_object obj;
 		ecl_disable_interrupts_env(the_env);
-		obj = (cl_object)GC_MALLOC(type_size[t]);
+		obj = (cl_object)GC_MALLOC(type_info[t].size);
 		ecl_enable_interrupts_env(the_env);
                 obj->d.t = t;
                 return obj;
@@ -207,13 +544,14 @@ ecl_alloc_object(cl_type t)
 		printf("\ttype = %d\n", t);
 		ecl_internal_error("alloc botch.");
 	}
+#endif
 }
 
 cl_object
 ecl_alloc_compact_object(cl_type t, cl_index extra_space)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-        cl_index size = type_size[t];
+        cl_index size = type_info[t].size;
         cl_object x;
         ecl_disable_interrupts_env(the_env);
         x = (cl_object)GC_MALLOC_ATOMIC(size + extra_space);
@@ -345,9 +683,21 @@ extern void (*GC_start_call_back)();
 static void (*old_GC_push_other_roots)();
 static void stacks_scanner();
 
+static cl_index
+to_bitmap(void *x, void *y)
+{
+        cl_index n = (char*)y - (char*)x;
+        if (n % sizeof(void*))
+                ecl_internal_error("Misaligned pointer in ECL structure.");
+        n /= sizeof(void*);
+        return 1 << n;
+}
+
 void
 init_alloc(void)
 {
+        union cl_lispunion o;
+        struct ecl_cons c;
 	int i;
 	if (alloc_initialized) return;
 	alloc_initialized = TRUE;
@@ -370,11 +720,29 @@ init_alloc(void)
 		GC_enable_incremental();
 	}
 	GC_register_displacement(1);
-#if 0
+#ifdef GBC_BOEHM_PRECISE
 	GC_init_explicit_typing();
 #endif
 	GC_clear_roots();
 	GC_disable();
+
+#ifdef GBC_BOEHM_PRECISE
+# ifdef GBC_BOEHM_OWN_ALLOCATOR
+        cl_object_free_list = (void **)GC_new_free_list_inner();
+        cl_object_kind = GC_new_kind_inner(cl_object_free_list,
+                                           (((word)WORDS_TO_BYTES(-1)) | GC_DS_PER_OBJECT),
+                                           TRUE, TRUE);
+# else
+#  ifdef GBC_BOEHM_OWN_MARKER
+        cl_object_free_list = (void **)GC_new_free_list_inner();
+	cl_object_mark_proc_index = GC_new_proc(cl_object_mark_proc);
+        cl_object_kind = GC_new_kind_inner(cl_object_free_list,
+                                           GC_MAKE_PROC(cl_object_mark_proc_index, 0),
+                                           FALSE, TRUE);
+#  endif
+# endif
+#endif /* !GBC_BOEHM_PRECISE */
+
 	GC_set_max_heap_size(cl_core.max_heap_size = ecl_get_option(ECL_OPT_HEAP_SIZE));
         /* Save some memory for the case we get tight. */
 	if (cl_core.max_heap_size == 0) {
@@ -384,57 +752,235 @@ init_alloc(void)
 		cl_core.safety_region = 0;
 	}
 
-#define init_tm(x,y,z) type_size[x] = (z)
+#define init_tm(x,y,z,w) {                                              \
+                type_info[x].size = (z);                                \
+                if ((w) == 0) { type_info[x].allocator = allocate_object_atomic; } }
 	for (i = 0; i < t_end; i++) {
-		type_size[i] = 0;
+                type_info[i].t = i;
+		type_info[i].size = 0;
+                type_info[i].allocator = allocate_object_full;
 	}
-	init_tm(t_singlefloat, "SINGLE-FLOAT", /* 8 */
-		sizeof(struct ecl_singlefloat));
-	init_tm(t_list, "CONS", sizeof(struct ecl_cons)); /* 12 */
-	init_tm(t_doublefloat, "DOUBLE-FLOAT", /* 16 */
-		sizeof(struct ecl_doublefloat));
-	init_tm(t_bytecodes, "BYTECODES", sizeof(struct ecl_bytecodes));
-	init_tm(t_bclosure, "BCLOSURE", sizeof(struct ecl_bclosure));
-	init_tm(t_base_string, "BASE-STRING", sizeof(struct ecl_base_string)); /* 20 */
-#ifdef ECL_UNICODE
-	init_tm(t_string, "STRING", sizeof(struct ecl_string));
-#endif
-	init_tm(t_array, "ARRAY", sizeof(struct ecl_array)); /* 24 */
-	init_tm(t_pathname, "PATHNAME", sizeof(struct ecl_pathname)); /* 28 */
-	init_tm(t_symbol, "SYMBOL", sizeof(struct ecl_symbol)); /* 32 */
-	init_tm(t_package, "PACKAGE", sizeof(struct ecl_package)); /* 36 */
-	init_tm(t_codeblock, "CODEBLOCK", sizeof(struct ecl_codeblock));
-	init_tm(t_bignum, "BIGNUM", sizeof(struct ecl_bignum));
-	init_tm(t_ratio, "RATIO", sizeof(struct ecl_ratio));
-	init_tm(t_complex, "COMPLEX", sizeof(struct ecl_complex));
-	init_tm(t_hashtable, "HASH-TABLE", sizeof(struct ecl_hashtable));
-	init_tm(t_vector, "VECTOR", sizeof(struct ecl_vector));
-	init_tm(t_bitvector, "BIT-VECTOR", sizeof(struct ecl_vector));
-	init_tm(t_stream, "STREAM", sizeof(struct ecl_stream));
-	init_tm(t_random, "RANDOM-STATE", sizeof(struct ecl_random));
-	init_tm(t_readtable, "READTABLE", sizeof(struct ecl_readtable));
-	init_tm(t_cfun, "CFUN", sizeof(struct ecl_cfun));
-	init_tm(t_cfunfixed, "CFUN", sizeof(struct ecl_cfunfixed));
-	init_tm(t_cclosure, "CCLOSURE", sizeof(struct ecl_cclosure));
-#ifndef CLOS
-	init_tm(t_structure, "STRUCTURE", sizeof(struct ecl_structure));
-#else
-	init_tm(t_instance, "INSTANCE", sizeof(struct ecl_instance));
-#endif /* CLOS */
-	init_tm(t_foreign, "FOREIGN", sizeof(struct ecl_foreign));
-#ifdef ECL_THREADS
-	init_tm(t_process, "PROCESS", sizeof(struct ecl_process));
-	init_tm(t_lock, "LOCK", sizeof(struct ecl_lock));
-	init_tm(t_condition_variable, "CONDITION-VARIABLE",
-                sizeof(struct ecl_condition_variable));
-#endif
-#ifdef ECL_SEMAPHORES
-	init_tm(t_semaphores, "SEMAPHORES", sizeof(struct ecl_semaphores));
-#endif
+	init_tm(t_list, "CONS", sizeof(struct ecl_cons), 2);
+	init_tm(t_bignum, "BIGNUM", sizeof(struct ecl_bignum), 2);
+	init_tm(t_ratio, "RATIO", sizeof(struct ecl_ratio), 2);
+	init_tm(t_singlefloat, "SINGLE-FLOAT", sizeof(struct ecl_singlefloat), 0);
+	init_tm(t_doublefloat, "DOUBLE-FLOAT", sizeof(struct ecl_doublefloat), 0);
 #ifdef ECL_LONG_FLOAT
-	init_tm(t_longfloat, "LONG-FLOAT", sizeof(struct ecl_long_float));
+	init_tm(t_longfloat, "LONG-FLOAT", sizeof(struct ecl_long_float), 0);
 #endif
-
+	init_tm(t_complex, "COMPLEX", sizeof(struct ecl_complex), 2);
+	init_tm(t_symbol, "SYMBOL", sizeof(struct ecl_symbol), 5);
+	init_tm(t_package, "PACKAGE", sizeof(struct ecl_package), -1); /* 36 */
+#ifdef ECL_THREADS
+	init_tm(t_hashtable, "HASH-TABLE", sizeof(struct ecl_hashtable), 3);
+#else
+	init_tm(t_hashtable, "HASH-TABLE", sizeof(struct ecl_hashtable), 4);
+#endif
+	init_tm(t_array, "ARRAY", sizeof(struct ecl_array), 3);
+	init_tm(t_vector, "VECTOR", sizeof(struct ecl_vector), 2);
+#ifdef ECL_UNICODE
+	init_tm(t_string, "STRING", sizeof(struct ecl_string), 2);
+#endif
+	init_tm(t_base_string, "BASE-STRING", sizeof(struct ecl_base_string), 2);
+	init_tm(t_bitvector, "BIT-VECTOR", sizeof(struct ecl_vector), 2);
+	init_tm(t_stream, "STREAM", sizeof(struct ecl_stream), 6);
+	init_tm(t_random, "RANDOM-STATE", sizeof(struct ecl_random), -1);
+	init_tm(t_readtable, "READTABLE", sizeof(struct ecl_readtable), 2);
+	init_tm(t_pathname, "PATHNAME", sizeof(struct ecl_pathname), -1);
+	init_tm(t_bytecodes, "BYTECODES", sizeof(struct ecl_bytecodes), -1);
+	init_tm(t_bclosure, "BCLOSURE", sizeof(struct ecl_bclosure), 3);
+	init_tm(t_cfun, "CFUN", sizeof(struct ecl_cfun), -1);
+	init_tm(t_cfunfixed, "CFUNFIXED", sizeof(struct ecl_cfunfixed), -1);
+	init_tm(t_cclosure, "CCLOSURE", sizeof(struct ecl_cclosure), -1);
+#ifndef CLOS
+	init_tm(t_structure, "STRUCTURE", sizeof(struct ecl_structure), 2);
+#else
+	init_tm(t_instance, "INSTANCE", sizeof(struct ecl_instance), 4);
+#endif /* CLOS */
+#ifdef ECL_THREADS
+	init_tm(t_process, "PROCESS", sizeof(struct ecl_process), 8);
+	init_tm(t_lock, "LOCK", sizeof(struct ecl_lock), 2);
+	init_tm(t_condition_variable, "CONDITION-VARIABLE",
+                sizeof(struct ecl_condition_variable), 0);
+# ifdef ECL_SEMAPHORES
+	init_tm(t_semaphore, "SEMAPHORES", sizeof(struct ecl_semaphores), 0);
+# endif
+#endif
+	init_tm(t_codeblock, "CODEBLOCK", sizeof(struct ecl_codeblock), -1);
+	init_tm(t_foreign, "FOREIGN", sizeof(struct ecl_foreign), 2);
+	init_tm(t_frame, "STACK-FRAME", sizeof(struct ecl_stack_frame), 2);
+	init_tm(t_weak_pointer, "WEAK-POINTER", sizeof(struct ecl_weak_pointer), 0);
+#ifdef GBC_BOEHM_PRECISE
+        type_info[t_list].descriptor =
+                to_bitmap(&c, &(c.car)) |
+                to_bitmap(&c, &(c.cdr));
+        type_info[t_bignum].descriptor =
+                to_bitmap(&o, &(o.big.big_limbs));
+        type_info[t_ratio].descriptor =
+                to_bitmap(&o, &(o.ratio.num)) |
+                to_bitmap(&o, &(o.ratio.den));
+        type_info[t_singlefloat].descriptor = 0;
+        type_info[t_doublefloat].descriptor = 0;
+#ifdef ECL_LONG_FLOAT
+        type_info[t_longfloat].descriptor = 0;
+#endif
+        type_info[t_complex].descriptor =
+                to_bitmap(&o, &(o.complex.real)) |
+                to_bitmap(&o, &(o.complex.imag));
+        type_info[t_symbol].descriptor =
+                to_bitmap(&o, &(o.symbol.value)) |
+                to_bitmap(&o, &(o.symbol.gfdef)) |
+                to_bitmap(&o, &(o.symbol.plist)) |
+                to_bitmap(&o, &(o.symbol.name)) |
+                to_bitmap(&o, &(o.symbol.hpack));
+        type_info[t_package].descriptor =
+                to_bitmap(&o, &(o.pack.name)) |
+                to_bitmap(&o, &(o.pack.nicknames)) |
+                to_bitmap(&o, &(o.pack.shadowings)) |
+                to_bitmap(&o, &(o.pack.uses)) |
+                to_bitmap(&o, &(o.pack.usedby)) |
+                to_bitmap(&o, &(o.pack.internal)) |
+                to_bitmap(&o, &(o.pack.external));
+        type_info[t_hashtable].descriptor =
+# ifdef ECL_THREADS
+                to_bitmap(&o, &(o.hash.lock)) |
+# endif
+                to_bitmap(&o, &(o.hash.data)) |
+                to_bitmap(&o, &(o.hash.rehash_size)) |
+                to_bitmap(&o, &(o.hash.threshold));
+        type_info[t_array].descriptor =
+                to_bitmap(&o, &(o.array.dims)) |
+                to_bitmap(&o, &(o.array.self.t)) |
+                to_bitmap(&o, &(o.array.displaced));
+        type_info[t_vector].descriptor =
+                to_bitmap(&o, &(o.vector.self.t)) |
+                to_bitmap(&o, &(o.vector.displaced));
+# ifdef ECL_UNICODE
+        type_info[t_string].descriptor =
+                to_bitmap(&o, &(o.string.self)) |
+                to_bitmap(&o, &(o.string.displaced));
+# endif
+	type_info[t_base_string].descriptor =
+                to_bitmap(&o, &(o.base_string.self)) |
+                to_bitmap(&o, &(o.base_string.displaced));
+        type_info[t_bitvector].descriptor =
+                to_bitmap(&o, &(o.vector.self.t)) |
+                to_bitmap(&o, &(o.vector.displaced));
+        type_info[t_stream].descriptor =
+                to_bitmap(&o, &(o.stream.ops)) |
+                to_bitmap(&o, &(o.stream.object0)) |
+                to_bitmap(&o, &(o.stream.object1)) |
+                to_bitmap(&o, &(o.stream.byte_stack)) |
+                to_bitmap(&o, &(o.stream.buffer)) |
+                to_bitmap(&o, &(o.stream.format)) |
+                to_bitmap(&o, &(o.stream.format_table));
+        type_info[t_random].descriptor =
+                to_bitmap(&o, &(o.random.value));
+        type_info[t_readtable].descriptor =
+# ifdef ECL_UNICODE
+                to_bitmap(&o, &(o.readtable.hash)) |
+# endif
+                to_bitmap(&o, &(o.readtable.table));
+        type_info[t_pathname].descriptor =
+                to_bitmap(&o, &(o.pathname.version)) |
+                to_bitmap(&o, &(o.pathname.type)) |
+                to_bitmap(&o, &(o.pathname.name)) |
+                to_bitmap(&o, &(o.pathname.directory)) |
+                to_bitmap(&o, &(o.pathname.device)) |
+                to_bitmap(&o, &(o.pathname.host));
+        type_info[t_bytecodes].descriptor =
+                to_bitmap(&o, &(o.bytecodes.name)) |
+                to_bitmap(&o, &(o.bytecodes.definition)) |
+                to_bitmap(&o, &(o.bytecodes.code)) |
+                to_bitmap(&o, &(o.bytecodes.data)) |
+                to_bitmap(&o, &(o.bytecodes.file)) |
+                to_bitmap(&o, &(o.bytecodes.file_position));
+        type_info[t_bclosure].descriptor =
+                to_bitmap(&o, &(o.bclosure.code)) |
+                to_bitmap(&o, &(o.bclosure.lex));
+        type_info[t_cfun].descriptor =
+                to_bitmap(&o, &(o.cfun.name)) |
+                to_bitmap(&o, &(o.cfun.block)) |
+                to_bitmap(&o, &(o.cfun.file)) |
+                to_bitmap(&o, &(o.cfun.file_position));
+        type_info[t_cfunfixed].descriptor =
+                to_bitmap(&o, &(o.cfunfixed.name)) |
+                to_bitmap(&o, &(o.cfunfixed.block)) |
+                to_bitmap(&o, &(o.cfunfixed.file)) |
+                to_bitmap(&o, &(o.cfunfixed.file_position));
+        type_info[t_cclosure].descriptor =
+                to_bitmap(&o, &(o.cclosure.env)) |
+                to_bitmap(&o, &(o.cclosure.block)) |
+                to_bitmap(&o, &(o.cclosure.file)) |
+                to_bitmap(&o, &(o.cclosure.file_position));
+# ifndef CLOS
+        type_info[t_structure].descriptor =
+                to_bitmap(&o, &(o.structure.self)) |
+                to_bitmap(&o, &(o.structure.name));
+# else
+        type_info[t_instance].descriptor =
+                to_bitmap(&o, &(o.instance.clas)) |
+                to_bitmap(&o, &(o.instance.sig)) |
+                to_bitmap(&o, &(o.instance.slots));
+# endif
+# ifdef ECL_THREADS
+        type_info[t_process].descriptor =
+                to_bitmap(&o, &(o.process.name)) |
+                to_bitmap(&o, &(o.process.function)) |
+                to_bitmap(&o, &(o.process.args)) |
+                to_bitmap(&o, &(o.process.env)) |
+                to_bitmap(&o, &(o.process.interrupt)) |
+                to_bitmap(&o, &(o.process.initial_bindings)) |
+                to_bitmap(&o, &(o.process.parent)) |
+                to_bitmap(&o, &(o.process.exit_lock)) |
+                to_bitmap(&o, &(o.process.exit_values));
+        type_info[t_lock].descriptor =
+                to_bitmap(&o, &(o.lock.name)) |
+                to_bitmap(&o, &(o.lock.holder));
+	type_info[t_condition_variable].descriptor = 0;
+#   ifdef ECL_SEMAPHORES
+	type_info[t_semaphore].descriptor = 0;
+#   endif
+# endif
+        type_info[t_codeblock].descriptor =
+                to_bitmap(&o, &(o.cblock.data)) |
+                to_bitmap(&o, &(o.cblock.temp_data)) |
+                to_bitmap(&o, &(o.cblock.next)) |
+                to_bitmap(&o, &(o.cblock.name)) |
+                to_bitmap(&o, &(o.cblock.links)) |
+                to_bitmap(&o, &(o.cblock.source));
+        type_info[t_foreign].descriptor =
+                to_bitmap(&o, &(o.foreign.data)) |
+                to_bitmap(&o, &(o.foreign.tag));
+        type_info[t_frame].descriptor =
+                to_bitmap(&o, &(o.frame.stack)) |
+                to_bitmap(&o, &(o.frame.base)) |
+                to_bitmap(&o, &(o.frame.env));
+	type_info[t_weak_pointer].descriptor = 0;
+	for (i = 0; i < t_end; i++) {
+                GC_word descriptor = type_info[i].descriptor;
+                int bits = type_info[i].size / sizeof(GC_word);
+                if (descriptor) {
+#ifdef GBC_BOEHM_OWN_MARKER
+			type_info[i].allocator = allocate_object_marked;
+                        descriptor = GC_make_descriptor(&descriptor, bits);
+			descriptor &= ~GC_DS_TAGS;
+#else
+                        GC_word mask = (1 << (bits-1)) - 1;
+                        mask ^= (descriptor >> 1);
+                        if (mask == 0)
+                                type_info[i].allocator = allocate_object_full;
+                        else
+                                type_info[i].allocator = allocate_object_typed;
+                        descriptor = GC_make_descriptor(&descriptor, bits);
+#endif
+                } else {
+                        type_info[i].allocator = allocate_object_atomic;
+                        descriptor = 0;
+                }
+                type_info[i].descriptor = descriptor;
+	}
+#endif /* GBC_BOEHM_PRECISE */
 	old_GC_push_other_roots = GC_push_other_roots;
 	GC_push_other_roots = stacks_scanner;
 	GC_start_call_back = (void (*)())finalize_queued;
@@ -489,9 +1035,24 @@ standard_finalizer(cl_object o)
 #endif
 #ifdef ECL_SEMAPHORES
 	case t_semaphore: {
+		const cl_env_ptr the_env = ecl_process_env();
+                ecl_disable_interrupts_env(the_env);
                 mp_semaphore_close(o);
+                ecl_enable_interrupts_env(the_env);
 		break;
 	}
+#endif
+#ifdef ECL_THREADS
+        case t_symbol: {
+                cl_object cons = ecl_list1(MAKE_FIXNUM(o->symbol.binding));
+		const cl_env_ptr the_env = ecl_process_env();
+                ecl_disable_interrupts_env(the_env);
+                THREAD_OP_LOCK();
+                ECL_CONS_CDR(cons) = cl_core.reused_indices;
+                cl_core.reused_indices = cons;
+                THREAD_OP_UNLOCK();
+                ecl_enable_interrupts_env(the_env);
+        }
 #endif
 	default:;
 	}
@@ -590,12 +1151,35 @@ si_set_finalizer(cl_object o, cl_object finalizer)
 	@(return)
 }
 
+/* If we do not build our own version of the library, we do not have
+ * control over the existence of this variable.
+ */
+#if 1 /*GBC_BOEHM == 0*/
+extern int GC_print_stats;
+#else
+static int GC_print_stats;
+#endif
+
 cl_object
 si_gc_stats(cl_object enable)
 {
-	const cl_env_ptr the_env = ecl_process_env();
-	cl_object old_status = cl_core.gc_stats? Ct : Cnil;
-	cl_core.gc_stats = (enable != Cnil);
+	cl_object old_status;
+        cl_object size1 = MAKE_FIXNUM(0);
+        cl_object size2 = MAKE_FIXNUM(0);
+        if (cl_core.gc_stats == 0) {
+                old_status = Cnil;
+        } else if (GC_print_stats) {
+                old_status = @':full';
+        } else {
+                old_status = Ct;
+        }
+        if (enable == Cnil) {
+                GC_print_stats = 0;
+                cl_core.gc_stats = 0;
+        } else {
+                cl_core.gc_stats = 1;
+                GC_print_stats = (enable == @':full');
+        }
 	if (cl_core.bytes_consed == Cnil) {
 #ifndef WITH_GMP
 		cl_core.bytes_consed = MAKE_FIXNUM(0);
@@ -606,11 +1190,16 @@ si_gc_stats(cl_object enable)
 		cl_core.gc_counter = ecl_alloc_object(t_bignum);
 		mpz_init2(cl_core.gc_counter->big.big_num, 128);
 #endif
-	}
-	@(return
-	  _ecl_big_register_normalize(cl_core.bytes_consed)
-	  _ecl_big_register_normalize(cl_core.gc_counter)
-	  old_status)
+	} else {
+                /* We need fresh copies of the bignums */
+                size1 = _ecl_big_plus_fix(cl_core.bytes_consed, 1);
+                size2 = _ecl_big_plus_fix(cl_core.gc_counter, 1);
+#ifdef WITH_GMP
+                mpz_set_ui(cl_core.bytes_consed->big.big_num, 0);
+                mpz_set_ui(cl_core.gc_counter->big.big_num, 0);
+#endif
+        }
+	@(return size1 size2 old_status)
 }
 
 /*
@@ -629,7 +1218,7 @@ finalize_queued()
 #if GBC_BOEHM == 0
 		mpz_add_ui(cl_core.bytes_consed->big.big_num,
 			   cl_core.bytes_consed->big.big_num,
-			   GC_get_bytes_since_gc() * sizeof(cl_index));
+			   GC_get_bytes_since_gc());
 #else
 		/* This is not accurate and may wrap around. We try
 		   to detect this assuming that an overflow in an

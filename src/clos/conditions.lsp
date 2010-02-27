@@ -683,6 +683,7 @@ memory limits before executing the program again."))))
 		 (handler-bind ,(mapcar #'(lambda (annotated-case)
 					    (list (cadr annotated-case)
 						  `#'(lambda (temp)
+                                                       (declare (ignorable temp))
 						       ,@(if (caddr annotated-case)
 							     `((setq ,var temp)))
 						       (go ,(car annotated-case)))))
@@ -892,8 +893,6 @@ strings."
       (when (eq (car p) *debug-continue*) (format T "(Continue) "))
       (format T "~A" (car p))
       (format T "~%"))))
-
-(defvar *debugger-hook* NIL)
 
 (defun invoke-debugger (&optional (datum "Debug") &rest arguments)
   (let ((condition

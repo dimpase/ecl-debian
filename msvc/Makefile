@@ -10,8 +10,8 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 9.12.3
-ECL_VERSION_NUMBER= 91203
+ECL_VERSION       = 10.2.1
+ECL_VERSION_NUMBER= 100201
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
@@ -255,7 +255,8 @@ compile.lsp: bare.lsp $(srcdir)/compile.lsp.in Makefile
 	    < $(srcdir)\compile.lsp.in > compile.lsp
 bare.lsp: $(srcdir)/bare.lsp.in lsp/load.lsp clos/load.lsp cmp/load.lsp cmp/cmpdefs.lsp
 	c\cut "@true_srcdir@" "$(srcdir:\=/)" \
-	    "@true_builddir@" "$(MAKEDIR:\=/)" < $(srcdir)\bare.lsp.in > bare.lsp
+	    "@true_builddir@" "$(MAKEDIR:\=/)"\
+	    "@ECL_CMPDIR@" "cmp" < $(srcdir)\bare.lsp.in > bare.lsp
 lsp/load.lsp: $(srcdir)/lsp/load.lsp.in
 	$(CP) $(srcdir)\lsp\load.lsp.in lsp\load.lsp
 clos/load.lsp: $(srcdir)/clos/load.lsp.in

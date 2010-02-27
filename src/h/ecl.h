@@ -73,18 +73,12 @@
 #endif /* _MSC_VER || mingw32 */
 
 #include <ecl/object.h>
-#include <ecl/stacks.h>
 #include <ecl/external.h>
+#include <ecl/stacks.h>
 #include <ecl/eval.h>
 #include <ecl/number.h>
 #ifdef LOCATIVE
 #include <ecl/unify.h>
-#endif
-
-#if defined(__cplusplus) || (defined(__GNUC__) && !defined(__STRICT_ANSI__))
-#define ECL_INLINE inline
-#else
-#define ECL_INLINE
 #endif
 
 typedef void (*ecl_init_function_t)(cl_object block);

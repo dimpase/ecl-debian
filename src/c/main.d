@@ -203,8 +203,6 @@ ecl_set_option(int option, cl_fixnum value)
 void
 ecl_init_env(cl_env_ptr env)
 {
-	char i;
-
 	env->c_env = NULL;
 
 	env->string_pool = Cnil;
@@ -221,17 +219,6 @@ ecl_init_env(cl_env_ptr env)
 	env->indent_stack = ecl_alloc_atomic(ECL_PPRINT_INDENTATION_STACK_SIZE * sizeof(short));
 	env->fmt_aux_stream = ecl_make_string_output_stream(64, 1);
 #endif
-#if !defined(GBC_BOEHM)
-# if defined(THREADS)
-#  error "No means to mark the stack of a thread :-/"
-# else
-	/* Rough estimate. Not very safe. We assume that cl_boot()
-	 * is invoked from the main() routine of the program.
-	 */
-	env->cs_org = (char*)(&env);
-# endif /* THREADS */
-#endif /* !GBC_BOEHM */
-
 #ifdef HAVE_LIBFFI
         env->ffi_args_limit = 0;
         env->ffi_types = 0;
@@ -254,7 +241,7 @@ ecl_init_env(cl_env_ptr env)
 #endif
         env->pending_interrupt = Cnil;
 
-	init_stacks(env, &i);
+	init_stacks(env);
 
         {
 	int i;
@@ -274,12 +261,12 @@ void
 _ecl_dealloc_env(cl_env_ptr env)
 {
         /*
-         * Environment cleanup
+         * Environment cleanup. This is only required when the environment is
+	 * allocated using mmap or some other method. We could do more, cleaning
+	 * up stacks, etc, but we actually do not do it because that would need
+	 * a lisp environment set up -- the allocator assumes one -- and we
+	 * may have already cleaned up the value of ecl_process_env()
          */
-        int i;
-        for (i = 0; i < 3; i++) {
-                _ecl_big_clear(env->big_register[i]);
-        }
 #if defined(ECL_USE_MPROTECT)
 	if (munmap(env, sizeof(*env)))
 		ecl_internal_error("Unable to deallocate environment structure.");
@@ -287,8 +274,6 @@ _ecl_dealloc_env(cl_env_ptr env)
 # if defined(ECL_USE_GUARD_PAGE)
         if (VirtualFree(env, sizeof(*env), MEM_RELEASE))
                 ecl_internal_error("Unable to deallocate environment structure.");
-# else
-	ecl_dealloc(env);
 # endif
 #endif
 }
@@ -455,6 +440,9 @@ cl_boot(int argc, char **argv)
 	Cnil_symbol->symbol.plist = Cnil;
 	Cnil_symbol->symbol.hpack = Cnil;
 	Cnil_symbol->symbol.stype = stp_constant;
+#ifdef ECL_THREADS
+	Cnil_symbol->symbol.binding = ECL_MISSING_SPECIAL_BINDING;
+#endif
 	cl_num_symbols_in_core=1;
 
 	Ct->symbol.t = (short)t_symbol;
@@ -465,6 +453,9 @@ cl_boot(int argc, char **argv)
 	Ct->symbol.plist = Cnil;
 	Ct->symbol.hpack = Cnil;
 	Ct->symbol.stype = stp_constant;
+#ifdef ECL_THREADS
+	Ct->symbol.binding = ECL_MISSING_SPECIAL_BINDING;
+#endif
 	cl_num_symbols_in_core=2;
 
 #ifdef NO_PATH_MAX
@@ -532,6 +523,7 @@ cl_boot(int argc, char **argv)
 	 */
         init_big();
 	ecl_init_env(env);
+	ecl_cs_set_org(env);
 #if !defined(GBC_BOEHM)
 	/* We need this because a lot of stuff is to be created */
 	init_GC();
@@ -548,6 +540,17 @@ cl_boot(int argc, char **argv)
 #else
 	ECL_SET(@'*default-pathname-defaults*',
 		ecl_make_pathname(Cnil, Cnil, Cnil, Cnil, Cnil, Cnil));
+#endif
+
+#ifdef ECL_THREADS
+        cl_core.last_var_index = 0;
+        cl_core.reused_indices = Cnil;
+	env->bindings_array = si_make_vector(Ct, MAKE_FIXNUM(256),
+                                            Cnil, Cnil, Cnil, Cnil);
+        si_fill_array_with_elt(env->bindings_array, OBJNULL, MAKE_FIXNUM(0), Cnil);
+        env->thread_local_bindings_size = env->bindings_array->vector.dim;
+        env->thread_local_bindings = env->bindings_array->vector.self.t;
+	ECL_SET(@'mp::*current-process*', env->own_process);
 #endif
 
         /*
@@ -634,14 +637,6 @@ cl_boot(int argc, char **argv)
 	ECL_SET(@'si::c-ulong-max', ecl_make_unsigned_integer(ULONG_MAX));
 
 	init_unixtime();
-
-#ifdef ECL_THREADS
-	env->bindings_hash = cl__make_hash_table(@'eq', MAKE_FIXNUM(1024),
-						   ecl_make_singlefloat(1.5f),
-						   ecl_make_singlefloat(0.75f),
-						   Cnil); /* no locking */
-	ECL_SET(@'mp::*current-process*', env->own_process);
-#endif
 
 	/*
 	 * Initialize I/O subsystem.
@@ -817,6 +812,30 @@ si_setenv(cl_object var, cl_object value)
 	@(return value)
 }
 #endif
+
+cl_object
+si_environ(void)
+{
+        cl_object output = Cnil;
+#ifdef HAVE_ENVIRON
+        char **p;
+        extern char **environ;
+        for (p = environ; *p; p++) {
+                output = CONS(make_constant_base_string(*p), output);
+        }
+        output = cl_nreverse(output);
+#else
+# if defined(_MSC_VER) || defined(mingw32)
+        LPTCH p;
+        for (p = GetEnvironmentStrings(); *p; ) {
+                output = CONS(make_constant_base_string(p), output);
+                do { (void)0; } while (*(p++));
+        }
+        output = cl_nreverse(output);
+# endif
+#endif /* HAVE_ENVIRON */
+        @(return output)
+}
 
 cl_object
 si_pointer(cl_object x)
