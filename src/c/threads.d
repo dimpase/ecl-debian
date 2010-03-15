@@ -104,7 +104,7 @@ static void
 assert_type_process(cl_object o)
 {
 	if (type_of(o) != t_process)
-		FEwrong_type_argument(@'mp::process', o);
+		FEwrong_type_argument(@[mp::process], o);
 }
 
 static void
@@ -294,7 +294,7 @@ mp_process_preset(cl_narg narg, cl_object process, cl_object function, ...)
 	cl_va_list args;
 	cl_va_start(args, function, narg, 2);
 	if (narg < 2)
-		FEwrong_num_arguments(@'mp::process-preset');
+		FEwrong_num_arguments(@[mp::process-preset]);
 	assert_type_process(process);
 	process->process.function = function;
 	process->process.args = cl_grab_rest_args(args);
@@ -513,7 +513,7 @@ mp_process_run_function(cl_narg narg, cl_object name, cl_object function, ...)
 	cl_va_list args;
 	cl_va_start(args, function, narg, 2);
 	if (narg < 2)
-		FEwrong_num_arguments(@'mp::process-run-function');
+		FEwrong_num_arguments(@[mp::process-run-function]);
 	if (CONSP(name)) {
 		process = cl_apply(2, @'mp::make-process', name);
 	} else {
@@ -610,15 +610,17 @@ mp_condition_variable_wait(cl_object cv, cl_object lock)
 #else
         int count, rc;
         cl_object own_process = mp_current_process();
-	if (type_of(cv) != t_condition_variable)
-		FEwrong_type_argument(@'mp::condition-variable', cv);
-	if (type_of(lock) != t_lock)
-		FEwrong_type_argument(@'mp::lock', lock);
-        if (lock->lock.holder != own_process) {
+	if (ecl_unlikely(type_of(cv) != t_condition_variable))
+                FEwrong_type_nth_arg(@[mp::condition-variable-wait], 1, cv,
+                                     @[mp::condition-variable]);
+	if (ecl_unlikely(type_of(lock) != t_lock))
+                FEwrong_type_nth_arg(@[mp::condition-variable-wait], 2, lock,
+                                     @[mp::lock]);
+        if (ecl_unlikely(lock->lock.holder != own_process)) {
                 FEerror("Attempt to wait on a condition variable using lock~%~S"
                         "~%which is not owned by process~%~S", 2, lock, own_process);
         }
-        if (lock->lock.counter > 1) {
+        if (ecl_unlikely(lock->lock.counter > 1)) {
                 FEerror("mp:condition-variable-wait can not be used with recursive"
                         " locks:~%~S", 1, lock);
         }
@@ -630,7 +632,7 @@ mp_condition_variable_wait(cl_object cv, cl_object lock)
                                &lock->lock.mutex);
         lock->lock.holder = own_process;
         lock->lock.counter = 1;
-        if (rc != 0) {
+        if (ecl_unlikely(rc != 0)) {
                 FEerror("System returned error code ~D "
                         "when waiting on condition variable~%~A~%and lock~%~A.",
                         3, MAKE_FIXNUM(rc), cv, lock);
@@ -651,24 +653,27 @@ mp_condition_variable_timedwait(cl_object cv, cl_object lock, cl_object seconds)
 	struct timespec   ts;
 	struct timeval    tp;
 
-	if (type_of(cv) != t_condition_variable)
-		FEwrong_type_argument(@'mp::condition-variable', cv);
-	if (type_of(lock) != t_lock)
-		FEwrong_type_argument(@'mp::lock', lock);
-        if (lock->lock.holder != own_process) {
+	if (ecl_unlikely(type_of(cv) != t_condition_variable))
+                FEwrong_type_nth_arg(@[mp::condition-variable-timedwait],
+                                     1, cv, @[mp::condition-variable]);
+	if (ecl_unlikely(type_of(lock) != t_lock))
+                FEwrong_type_nth_arg(@[mp::condition-variable-timedwait],
+                                     2, lock, @[mp::lock]);
+        if (ecl_unlikely(lock->lock.holder != own_process)) {
                 FEerror("Attempt to wait on a condition variable using lock~%~S"
                         "~%which is not owned by process~%~S", 2, lock, own_process);
         }
-        if (lock->lock.counter > 1) {
+        if (ecl_unlikely(lock->lock.counter > 1)) {
                 FEerror("mp:condition-variable-wait can not be used with recursive"
                         " locks:~%~S", 1, lock);
         }
 	/* INV: ecl_minusp() makes sure `seconds' is real */
-	if (ecl_minusp(seconds))
+	if (ecl_unlikely(ecl_minusp(seconds))) {
 		cl_error(9, @'simple-type-error', @':format-control',
 			 make_constant_base_string("Not a non-negative number ~S"),
 			 @':format-arguments', cl_list(1, seconds),
 			 @':expected-type', @'real', @':datum', seconds);
+        }
 	gettimeofday(&tp, NULL);
 	/* Convert from timeval to timespec */
 	ts.tv_sec  = tp.tv_sec;
@@ -705,8 +710,10 @@ mp_condition_variable_signal(cl_object cv)
 #ifdef ECL_WINDOWS_THREADS
 	FEerror("Condition variables are not supported under Windows.", 0);
 #else
-	if (type_of(cv) != t_condition_variable)
-		FEwrong_type_argument(@'mp::condition-variable', cv);
+	if (ecl_unlikely(type_of(cv) != t_condition_variable)) {
+                FEwrong_type_only_arg(@[mp::condition-variable-signal],
+                                      cv, @[mp::condition-variable]);
+        }
 	pthread_cond_signal(&cv->condition_variable.cv);
 #endif
 	@(return Ct)
@@ -718,8 +725,10 @@ mp_condition_variable_broadcast(cl_object cv)
 #ifdef ECL_WINDOWS_THREADS
 	FEerror("Condition variables are not supported under Windows.", 0);
 #else
-	if (type_of(cv) != t_condition_variable)
-		FEwrong_type_argument(@'mp::condition-variable', cv);
+	if (ecl_unlikely(type_of(cv) != t_condition_variable)) {
+                FEwrong_type_only_arg(@[mp::condition-variable-broadcast],
+                                      cv, @[mp::condition-variable]);
+        }
 	pthread_cond_broadcast(&cv->condition_variable.cv);
 #endif
 	@(return Ct)
@@ -748,10 +757,21 @@ struct ecl_semaphore_inner {
         output->semaphore.name = name;
         output->semaphore.handle = NULL;
         ecl_set_finalizer_unprotected(output, Ct);
-        max_count = ecl_fixnum_in_range(@'mp:make-semaphore', "maximum count",
-                                        max, 0, 0xFFFF);
-        initial_count = ecl_fixnum_in_range(@'mp:make-semaphore', "initial count",
-                                            count, 0, max_count);
+        if (ecl_unlikely(!ECL_FIXNUMP(max) ||
+                         ecl_fixnum_minusp(max) ||
+                         ecl_fixnum_greaterp(max, MAKE_FIXNUM(0xFFFF)))) {
+                FEwrong_type_nth_arg(@[mp::make-semaphore], 1, max,
+                                     ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                           MAKE_FIXNUM(0xFFFF)));
+        }
+        max_count = fix(max);
+        if (ecl_unlikely(!ECL_FIXNUMP(count) ||
+                         ((initial_count = fix(count)) < 0) ||
+                         initial_count > max_count)) {
+                FEwrong_type_key_arg(@[mp::make-semaphore], @[:count], count,
+                                     ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                           max));
+        }
 #ifdef ECL_WINDOWS_THREADS
         {
                 HANDLE h = CreateSemaphore(NULL,
@@ -784,8 +804,9 @@ cl_object
 mp_semaphore_trywait(cl_object sem)
 {
         cl_object output;
-        if (typeof(sem) != t_semaphore)
-                FEwrong_type_argument(@'mp::semaphore', cv);
+        if (ecl_unlikely(typeof(sem) != t_semaphore)) {
+                FEwrong_type_only_arg(@[mp::semaphore-trywait], sem, @[mp::semaphore]);
+        }
  AGAIN:
 #ifdef ECL_WINDOWS_THREADS
         {
@@ -826,8 +847,9 @@ cl_object
 mp_semaphore_wait(cl_object sem)
 {
         cl_object output;
-        if (typeof(sem) != t_semaphore)
-                FEwrong_type_argument(@'mp::semaphore', cv);
+        if (ecl_unlikely(typeof(sem) != t_semaphore)) {
+                FEwrong_type_only_arg(@[mp::semaphore-wait], sem, @[mp::semaphore]);
+        }
  AGAIN:
 #ifdef ECL_WINDOWS_THREADS
         {
@@ -857,8 +879,9 @@ mp_semaphore_wait(cl_object sem)
 cl_object
 mp_semaphore_signal(cl_object sem)
 {
-        if (typeof(sem) != t_semaphore)
-                FEwrong_type_argument(@'mp::semaphore', cv);
+        if (ecl_unlikely(typeof(sem) != t_semaphore)) {
+                FEwrong_type_only_arg(@[mp::semaphore-signal], sem, @[mp::semaphore]);
+        }
  AGAIN:
 #ifdef ECL_WINDOWS_THREADS
         {
@@ -888,8 +911,9 @@ mp_semaphore_signal(cl_object sem)
 cl_object
 mp_semaphore_close(cl_object sem)
 {
-        if (typeof(sem) != t_semaphore)
-                FEwrong_type_argument(@'mp::semaphore', cv);
+        if (ecl_unlikely(typeof(sem) != t_semaphore)) {
+                FEwrong_type_only_arg(@[mp::semaphore-close], sem, @[mp::semaphore]);
+        }
 #ifdef ECL_WINDOWS_THREADS
         {
                 HANDLE h = (HANDLE)(sem->semaphore.handle);

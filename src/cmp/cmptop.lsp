@@ -15,7 +15,7 @@
 (in-package "COMPILER")
 
 (defun t1expr (form)
-  (let* ((*current-toplevel-form* form)
+  (let* ((*current-toplevel-form* nil)
          (*cmp-env* (cmp-env-new)))
     (push (t1expr* form) *top-level-forms*)))
 
@@ -23,6 +23,7 @@
   '(defun defmacro defvar defparameter defclass defmethod defgeneric))
 
 (defun t1expr* (form &aux
+                     (*current-toplevel-form* (list* form *current-toplevel-form*))
                      (*current-form* form)
                      (*first-error* t)
                      (*setjmps* 0))
@@ -48,8 +49,10 @@
 		    (multiple-value-setq (fd success)
 		      (cmp-expand-macro fd form))
 		    success))
+             (push 'macroexpand *current-toplevel-form*)
 	     (t1expr* fd))
 	    ((setq fd (cmp-macro-function fun))
+             (push 'macroexpand *current-toplevel-form*)
 	     (t1expr* (cmp-expand-macro fd form)))
 	    (t (t1ordinary form))
 	   )))))
@@ -60,7 +63,7 @@
 	((atom form)
 	 (t1ordinary form))
 	(t
-	 (t1expr* form))))	
+         (t1expr* form))))
 
 (defun t2expr (form)
   (when form
@@ -149,9 +152,9 @@
       (wt-nl "flag->cblock.data_text_size = compiler_data_text_size;")
       (wt-nl "flag->cblock.cfuns_size = compiler_cfuns_size;")
       (wt-nl "flag->cblock.cfuns = compiler_cfuns;")
-      (when *compile-file-truename*
+      (when ext:*source-location*
         (wt-nl "flag->cblock.source = make_constant_base_string(\""
-               (namestring *compile-file-truename*) "\");"))
+               (namestring (car ext:*source-location*)) "\");"))
       (wt-nl "return;}")
       (wt-nl "#ifdef ECL_DYNAMIC_VV")
       (wt-nl "VV = Cblock->cblock.data;")

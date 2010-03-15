@@ -143,6 +143,9 @@ static const char *feature_names[] = {
 #ifdef _MSC_VER
 	"MSVC",
 #endif
+#if defined(_MSC_VER) || defined(mingw32)
+        "WINDOWS",
+#endif
 #ifdef ECL_CMU_FORMAT
 	"CMU-FORMAT",
 #endif
@@ -463,6 +466,7 @@ cl_boot(int argc, char **argv)
 #else
 	cl_core.path_max = MAXPATHLEN;
 #endif
+	cl_core.slash = make_constant_base_string("/");
 
 	cl_core.packages = Cnil;
 	cl_core.packages_to_be_created = OBJNULL;

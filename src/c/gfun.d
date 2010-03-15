@@ -68,45 +68,12 @@ reshape_instance(cl_object x, int delta)
 	x->instance = aux->instance;
 }
 
-/* this turns any instance into a funcallable (apart from a builtin generic function)
-   or back into an ordinary instance */
-
-cl_object
-si_set_raw_funcallable(cl_object instance, cl_object function)
-{
-	if (!ECL_INSTANCEP(instance))
-		FEwrong_type_argument(@'ext::instance', instance);
-        if (Null(function)) {
-		if (instance->instance.isgf == 2) {
-                        int        length          = instance->instance.length-1;
-                        cl_object *slots           = (cl_object*)ecl_alloc(sizeof(cl_object)*(length));
-			instance->instance.isgf    = 2;
-                        memcpy(slots, instance->instance.slots, sizeof(cl_object)*(length));
-			instance->instance.slots   = slots;
-			instance->instance.length  = length;
-		        instance->instance.isgf = 0;
-                        instance->instance.entry = FEnot_funcallable_vararg;
-		}
-	} else {
-		if (instance->instance.isgf == 0) {
-                        int        length          = instance->instance.length+1;
-                        cl_object *slots           = (cl_object*)ecl_alloc(sizeof(cl_object)*length);
-                        memcpy(slots, instance->instance.slots, sizeof(cl_object)*(length-1));
-			instance->instance.slots   = slots;
-			instance->instance.length  = length;
-			instance->instance.isgf    = 2;
-                        instance->instance.entry = user_function_dispatch;
-		}
-		instance->instance.slots[instance->instance.length-1] = function;
-	}
-	@(return instance)
-}
-
 cl_object
 clos_set_funcallable_instance_function(cl_object x, cl_object function_or_t)
 {
-	if (!ECL_INSTANCEP(x))
-		FEwrong_type_argument(@'ext::instance', x);
+	if (ecl_unlikely(!ECL_INSTANCEP(x)))
+                FEwrong_type_nth_arg(@[clos::set-funcallable-instance-function],
+                                     1, x, @[ext::instance]);
 	if (x->instance.isgf == ECL_USER_DISPATCH) {
 		reshape_instance(x, -1);
 		x->instance.isgf = ECL_NOT_FUNCALLABLE;
@@ -209,7 +176,7 @@ si_clear_gfun_hash(cl_object what)
 		cl_object process = ECL_CONS_CAR(list);
 		struct cl_env_struct *env = process->process.env;
 		env->method_hash_clear_list = CONS(what, env->method_hash_clear_list);
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(list);
 	THREAD_OP_UNLOCK();
 #else
 	do_clear_method_hash(&cl_env, what);
@@ -345,7 +312,7 @@ get_spec_vector(cl_env_ptr env, cl_object frame, cl_object gf)
 			args[spec_position];
 		if (spec_no > vector->vector.dim)
 			return OBJNULL;
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(spec_how_list);
 	vector->vector.fillp = spec_no;
 	return vector;
 }
@@ -398,7 +365,7 @@ _ecl_standard_dispatch(cl_object frame, cl_object gf)
 		clear_list = env->method_hash_clear_list;
 		loop_for_on_unsafe(clear_list) {
 			do_clear_method_hash(&cl_env, ECL_CONS_CAR(clear_list));
-		} end_loop_for_on;
+		} end_loop_for_on_unsafe(clear_list);
 		env->method_hash_clear_list = Cnil;
 		THREAD_OP_UNLOCK();
 	}

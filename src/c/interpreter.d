@@ -333,13 +333,15 @@ ecl_interpret(cl_object frame, cl_object env, cl_object bytecodes)
 	}
 
 	CASE(OP_CAR); {
-		if (ecl_unlikely(!LISTP(reg0))) FEtype_error_cons(reg0);
+		if (ecl_unlikely(!LISTP(reg0)))
+                        FEwrong_type_only_arg(@[car], reg0, @[cons]);
 		reg0 = CAR(reg0);
 		THREAD_NEXT;
 	}
 
 	CASE(OP_CDR); {
-		if (ecl_unlikely(!LISTP(reg0))) FEtype_error_cons(reg0);
+		if (ecl_unlikely(!LISTP(reg0)))
+                        FEwrong_type_only_arg(@[cdr], reg0, @[cons]);
 		reg0 = CDR(reg0);
 		THREAD_NEXT;
 	}
@@ -817,7 +819,7 @@ ecl_interpret(cl_object frame, cl_object env, cl_object bytecodes)
 
 	CASE(OP_ENDP);
 		if (ecl_unlikely(!LISTP(reg0)))
-                        FEtype_error_list(reg0);
+                        FEwrong_type_only_arg(@[endp], reg0, @[list]);
 	CASE(OP_NOT); {
 		reg0 = (reg0 == Cnil)? Ct : Cnil;
 		THREAD_NEXT;
@@ -1255,7 +1257,7 @@ ecl_interpret(cl_object frame, cl_object env, cl_object bytecodes)
 	}
 }
 
-@(defun si::interpreter_stack ()
+@(defun si::interpreter-stack ()
 @
 	@(return Cnil)
 @)

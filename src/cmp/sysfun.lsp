@@ -107,6 +107,7 @@
 
 (deftype string-designator () '(or string symbol character))
 (deftype byte-specifier () '(cons unsigned-byte unsigned-byte))
+(deftype function-designator () '(or symbol function))
 (deftype natural () '(integer 0 *))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -377,20 +378,17 @@
 
 ;; file stacks.d
 
-(proclaim-function si:ihs-top (t) t)
-(proclaim-function si:ihs-fun (*) t)
-(proclaim-function si:ihs-env (*) t)
-(proclaim-function si:frs-top (*) t)
-(proclaim-function si::frs-vs (*) t)
-(proclaim-function si:frs-bds (*) t)
-(proclaim-function si:frs-tag (*) t)
-(proclaim-function si:frs-ihs (*) t)
-(proclaim-function si:bds-top (*) t)
-(proclaim-function si:bds-var (*) t)
-(proclaim-function si:bds-val (*) t)
-(proclaim-function si::vs-top (*) t)
-(proclaim-function si::vs (*) t)
-(proclaim-function si:sch-frs-base (*) t)
+(proclaim-function si:ihs-top () si::index)
+(proclaim-function si:ihs-fun (si::index) (or null function-designator))
+(proclaim-function si:ihs-env (si::index) t)
+(proclaim-function si:frs-top () si::index)
+(proclaim-function si:frs-bds (si::index) si::index)
+(proclaim-function si:frs-tag (si::index) t)
+(proclaim-function si:frs-ihs (si::index) si::index)
+(proclaim-function si:bds-top () si::index)
+(proclaim-function si:bds-var (si::index) symbol)
+(proclaim-function si:bds-val (si::index) t)
+(proclaim-function si:sch-frs-base (si::index si::index) (or null si::index))
 
 ;; file eval.d
 
@@ -1079,23 +1077,22 @@
 (def-inline null :always (t) :bool "#0==Cnil")
 
 (proclaim-function symbolp (t) t :predicate t :no-side-effects t)
-(def-inline symbolp :always (t) :bool "SYMBOLP(#0)")
+(def-inline symbolp :always (t) :bool "@0;ECL_SYMBOLP(#0)")
 
 (proclaim-function atom (t) t :predicate t :no-side-effects t)
-(def-inline atom :always (t) :bool "ATOM(#0)")
+(def-inline atom :always (t) :bool "@0;ECL_ATOM(#0)")
 
 (proclaim-function consp (t) t :predicate t :no-side-effects t)
-(def-inline consp :always (t) :bool "CONSP(#0)")
+(def-inline consp :always (t) :bool "@0;ECL_CONSP(#0)")
 
 (proclaim-function listp (t) t :predicate t :no-side-effects t)
-(def-inline listp :always (t) :bool "@0;LISTP(#0)")
+(def-inline listp :always (t) :bool "@0;ECL_LISTP(#0)")
 
 (proclaim-function numberp (t) t :predicate t :no-side-effects t)
 (def-inline numberp :always (t) :bool "ecl_numberp(#0)")
 
 (proclaim-function integerp (t) t :predicate t :no-side-effects t)
-(def-inline integerp :always (t) :bool
- "@0;type_of(#0)==t_fixnum||type_of(#0)==t_bignum")
+(def-inline integerp :always (t) :bool "@0;ECL_FIXNUMP(#0)||ECL_BIGNUMP(#0)")
 
 (proclaim-function rationalp (t) t :predicate t)
 (proclaim-function floatp (t) t :predicate t :no-side-effects t)
@@ -1109,13 +1106,13 @@
 (def-inline base-char-p :always (character) :bool "BASE_CHAR_P(#0)")
 
 (proclaim-function stringp (t) t :predicate t :no-side-effects t)
-(def-inline stringp :always (t) :bool "ecl_stringp(#0)")
+(def-inline stringp :always (t) :bool "@0;ECL_STRINGP(#0)")
 
 (proclaim-function base-string-p (t) t :predicate t :no-side-effects t)
-(def-inline base-string-p :always (t) :bool "type_of(#0)==t_base_string")
+(def-inline base-string-p :always (t) :bool "@0;ECL_BASE_STRINGP(#0)")
 
 (proclaim-function bit-vector-p (t) t :predicate t :no-side-effects t)
-(def-inline bit-vector-p :always (t) :bool "(type_of(#0)==t_bitvector)")
+(def-inline bit-vector-p :always (t) :bool "@0;ECL_BIT_VECTOR_P(#0)")
 
 (proclaim-function vectorp (t) t :predicate t :no-side-effects t)
 (def-inline vectorp :always (t) :bool "@0;ECL_VECTORP(#0)")
@@ -1229,7 +1226,8 @@
 (proclaim-function fboundp (symbol) t :predicate t)
 (proclaim-function symbol-value (symbol) t)
 (proclaim-function boundp (symbol) t :predicate t :no-side-effects t)
-(def-inline boundp :always (symbol) :bool "ECL_SYM_VAL(cl_env_copy,#0)!=OBJNULL")
+(def-inline boundp :always (t) :bool "ecl_boundp(cl_env_copy,#0)")
+(def-inline boundp :unsafe ((and symbol (not null))) :bool "ECL_SYM_VAL(cl_env_copy,#0)!=OBJNULL")
 
 (proclaim-function macro-function (symbol) t)
 (proclaim-function special-operator-p (symbol) t :predicate t)
@@ -1479,21 +1477,21 @@
 
 (proclaim-function short-float-p (*) nil :predicate t :no-side-effects t)
 #-short-float
-(def-inline short-float-p :always (t) :bool "type_of(#0)==t_singlefloat")
+(def-inline short-float-p :always (t) :bool "@0;ECL_SINGLE_FLOAT_P(#0)")
 #+short-float
-(def-inline short-float-p :always (t) :bool "type_of(#0)==t_shortfloat")
+(def-inline short-float-p :always (t) :bool "type_of(#0) == t_short_float")
 
 (proclaim-function single-float-p (*) nil :predicate t :no-side-effects t)
-(def-inline single-float-p :always (t) :bool "type_of(#0)==t_singlefloat")
+(def-inline single-float-p :always (t) :bool "@0;ECL_SINGLE_FLOAT_P(#0)")
 
 (proclaim-function double-float-p (*) nil :predicate t :no-side-effects t)
-(def-inline double-float-p :always (t) :bool "type_of(#0)==t_doublefloat")
+(def-inline double-float-p :always (t) :bool "@0;ECL_DOUBLE_FLOAT_P(#0)")
 
 (proclaim-function long-float-p (*) nil :predicate t :no-side-effects t)
 #-long-float
-(def-inline long-float-p :always (t) :bool "type_of(#0)==t_doublefloat")
+(def-inline long-float-p :always (t) :bool "@0;ECL_DOUBLE_FLOAT_P(#0)")
 #+long-float
-(def-inline long-float-p :always (t) :bool "type_of(#0)==t_longfloat")
+(def-inline long-float-p :always (t) :bool "@0;ECL_LONG_FLOAT_P(#0)")
 
 (proclaim-function si:fixnump (*) nil :predicate t :no-side-effects t)
 (def-inline si:fixnump :always (t) :bool "FIXNUMP(#0)")

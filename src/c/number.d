@@ -71,7 +71,7 @@ fixint(cl_object x)
 {
 	if (FIXNUMP(x))
 		return fix(x);
-	if (type_of(x) == t_bignum) {
+	if (ECL_BIGNUMP(x)) {
 #ifdef WITH_GMP
 		if (mpz_fits_slong_p(x->big.big_num)) {
 			return mpz_get_si(x->big.big_num);
@@ -81,7 +81,7 @@ fixint(cl_object x)
                         return (cl_fixnum)x->big.big_num;
 #endif /* WITH_GMP */
 	}
-	FEwrong_type_argument(@'fixnum', x);
+	FEwrong_type_argument(@[fixnum], x);
 }
 
 cl_index
@@ -91,7 +91,7 @@ fixnnint(cl_object x)
 		cl_fixnum i = fix(x);
 		if (i >= 0)
 			return i;
-	} else if (type_of(x) == t_bignum) {
+	} else if (ECL_BIGNUMP(x)) {
 #ifdef WITH_GMP
 		if (mpz_fits_ulong_p(x->big.big_num)) {
 			return mpz_get_ui(x->big.big_num);
@@ -107,23 +107,6 @@ fixnnint(cl_object x)
 		    @':format-arguments', cl_list(1,x),
 		    @':expected-type', cl_list(3, @'integer', MAKE_FIXNUM(0), MAKE_FIXNUM(MOST_POSITIVE_FIXNUM)),
 		    @':datum', x);
-}
-
-cl_fixnum
-ecl_fixnum_in_range(cl_object fun, const char *what, cl_object value,
-		    cl_fixnum min, cl_fixnum max)
-{
-	do {
-		if (FIXNUMP(value)) {
-			cl_fixnum output = fix(value);
-			if ((min <= output) && (output <= max)) {
-				return output;
-			}
-		}
-		value = ecl_type_error(fun, what, value,
-				       cl_list(3,@'integer',MAKE_FIXNUM(min),
-					       MAKE_FIXNUM(max)));
-	} while(1);
 }
 
 cl_object
@@ -146,6 +129,13 @@ ecl_make_unsigned_integer(cl_index l)
                 return _ecl_big_register_copy(z);
 	}
 	return MAKE_FIXNUM(l);
+}
+
+int
+ecl_to_bit(cl_object x) {
+        if (ecl_unlikely((x != MAKE_FIXNUM(0)) && (x != MAKE_FIXNUM(1))))
+                FEwrong_type_nth_arg(@[coerce], 1, x, @[bit]);
+        return x == MAKE_FIXNUM(1);
 }
 
 ecl_uint8_t
@@ -257,7 +247,7 @@ ecl_to_uint64_t(cl_object x) {
                 if (!ecl_minusp(x)) {
                         if (FIXNUMP(x)) {
                                 return (ecl_uint64_t)fix(x);
-                        } else if (type_of(x) != t_bignum) {
+                        } else if (!ECL_BIGNUMP(x)) {
                                 (void)0;
                         } else if (mpz_fits_ulong_p(x->big.big_num)) {
                                 return (ecl_uint64_t)mpz_get_ui(x->big.big_num);
@@ -284,7 +274,7 @@ ecl_to_int64_t(cl_object x) {
         do {
                 if (FIXNUMP(x)) {
                         return (ecl_int64_t)fix(x);
-                } else if (type_of(x) != t_bignum) {
+                } else if (!ECL_BIGNUMP(x)) {
                         (void)0;
                 } else if (mpz_fits_slong_p(x->big.big_num)) {
                         return (ecl_int64_t)mpz_get_si(x->big.big_num);
@@ -378,7 +368,7 @@ ecl_to_unsigned_long_long(cl_object x) {
                 if (!ecl_minusp(x)) {
                         if (FIXNUMP(x)) {
                                 return (ecl_ulong_long_t)fix(x);
-                        } else if (type_of(x) != t_bignum) {
+                        } else if (!ECL_BIGNUMP(x)) {
                                 (void)0;
                         } else if (mpz_fits_ulong_p(x->big.big_num)) {
                                 return (ecl_ulong_long_t)mpz_get_ui(x->big.big_num);
@@ -410,7 +400,7 @@ ecl_to_long_long(cl_object x)
         do {
                 if (FIXNUMP(x)) {
                         return (ecl_long_long_t)fix(x);
-                } else if (type_of(x) != t_bignum) {
+                } else if (!ECL_BIGNUMP(x)) {
                         (void)0;
                 } else if (mpz_fits_slong_p(x->big.big_num)) {
                         return (ecl_long_long_t)mpz_get_si(x->big.big_num);
@@ -847,7 +837,7 @@ ecl_to_double(cl_object x)
 		return (double)ecl_long_float(x);
 #endif
 	default:
-		FEtype_error_real(x);
+		FEwrong_type_nth_arg(@[coerce], 1, x, @[real]);
 	}
 }
 
@@ -881,7 +871,7 @@ ecl_to_long_double(cl_object x)
 	case t_longfloat:
 		return ecl_long_float(x);
 	default:
-		FEtype_error_real(x);
+		FEwrong_type_nth_arg(@[coerce], 1, x, @[real]);
 	}
 }
 #endif

@@ -243,6 +243,7 @@ struct cl_core_struct {
         cl_index last_var_index;
         cl_object reused_indices;
 #endif
+	cl_object slash;
 };
 
 extern ECL_API struct cl_core_struct cl_core;
@@ -341,7 +342,6 @@ extern ECL_API cl_object si_make_pure_array(cl_object etype, cl_object dims, cl_
 extern ECL_API cl_object si_fill_array_with_elt(cl_object array, cl_object elt, cl_object start, cl_object end);
 
 extern ECL_API void FEwrong_dimensions(cl_object a, cl_index rank) ecl_attr_noreturn;
-extern ECL_API void FEwrong_index(cl_object a, cl_index ndx, cl_index upper) ecl_attr_noreturn;
 extern ECL_API cl_index ecl_to_index(cl_object n);
 extern ECL_API cl_index ecl_array_dimension(cl_object x, cl_index n);
 extern ECL_API cl_object ecl_aref_unsafe(cl_object x, cl_index index);
@@ -551,8 +551,12 @@ extern ECL_API void FEcannot_open(cl_object fn) ecl_attr_noreturn;
 extern ECL_API void FEend_of_file(cl_object strm) ecl_attr_noreturn;
 extern ECL_API void FEclosed_stream(cl_object strm) ecl_attr_noreturn;
 extern ECL_API void FEwrong_type_argument(cl_object type, cl_object value) ecl_attr_noreturn;
+extern ECL_API void FEwrong_type_only_arg(cl_object function, cl_object type, cl_object value) ecl_attr_noreturn;
+extern ECL_API void FEwrong_type_nth_arg(cl_object function, cl_narg narg, cl_object type, cl_object value) ecl_attr_noreturn;
+extern ECL_API void FEwrong_type_key_arg(cl_object function, cl_object keyo, cl_object type, cl_object value) ecl_attr_noreturn;
 extern ECL_API void FEwrong_num_arguments(cl_object fun) ecl_attr_noreturn;
 extern ECL_API void FEwrong_num_arguments_anonym(void) ecl_attr_noreturn;
+extern ECL_API void FEwrong_index(cl_object function, cl_object a, int which, cl_object ndx, cl_index nonincl_limit) ecl_attr_noreturn;
 extern ECL_API void FEunbound_variable(cl_object sym) ecl_attr_noreturn;
 extern ECL_API void FEinvalid_macro_call(cl_object obj) ecl_attr_noreturn;
 extern ECL_API void FEinvalid_variable(const char *s, cl_object obj) ecl_attr_noreturn;
@@ -562,7 +566,6 @@ extern ECL_API void FEinvalid_function(cl_object obj) ecl_attr_noreturn;
 extern ECL_API void FEinvalid_function_name(cl_object obj) ecl_attr_noreturn;
 extern ECL_API cl_object CEerror(cl_object c, const char *err_str, int narg, ...);
 extern ECL_API void FEillegal_index(cl_object x, cl_object i) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_symbol(cl_object obj) ecl_attr_noreturn;
 extern ECL_API void FElibc_error(const char *msg, int narg, ...) ecl_attr_noreturn;
 #if defined(mingw32) || defined(_MSC_VER) || defined(cygwin)
 extern ECL_API void FEwin32_error(const char *msg, int narg, ...) ecl_attr_noreturn;
@@ -999,10 +1002,9 @@ extern ECL_API cl_object ecl_one_minus(cl_object x);
 
 extern ECL_API cl_fixnum fixint(cl_object x);
 extern ECL_API cl_index  fixnnint(cl_object x);
-extern ECL_API cl_fixnum ecl_fixnum_in_range(cl_object fun, const char *what, cl_object value,
-				     cl_fixnum min, cl_fixnum max);
 extern ECL_API cl_object ecl_make_integer(cl_fixnum i);
 extern ECL_API cl_object ecl_make_unsigned_integer(cl_index i);
+extern ECL_API int ecl_to_bit(cl_object o);
 extern ECL_API ecl_uint8_t ecl_to_uint8_t(cl_object o);
 extern ECL_API ecl_int8_t ecl_to_int8_t(cl_object o);
 #define ecl_make_uint8_t(i) MAKE_FIXNUM(i)
@@ -1466,6 +1468,7 @@ extern ECL_API cl_object cl_symbol_value(cl_object sym);
 extern ECL_API cl_object cl_boundp(cl_object sym);
 extern ECL_API cl_object cl_special_operator_p(cl_object form);
 extern ECL_API cl_object ecl_fdefinition(cl_object fname);
+extern ECL_API bool ecl_boundp(cl_env_ptr env, cl_object o);
 
 /* sequence.c */
 
@@ -1487,6 +1490,7 @@ extern ECL_API cl_fixnum ecl_length(cl_object x);
 extern ECL_API cl_object si_ihs_top(void);
 extern ECL_API cl_object si_ihs_fun(cl_object arg);
 extern ECL_API cl_object si_ihs_env(cl_object arg);
+extern ECL_API cl_object si_ihs_bds(cl_object arg);
 extern ECL_API cl_object si_ihs_next(cl_object arg);
 extern ECL_API cl_object si_ihs_prev(cl_object arg);
 extern ECL_API cl_object si_frs_top(void);
@@ -1546,7 +1550,6 @@ extern ECL_API cl_object ecl_cstring_to_base_string_or_nil(const char *s);
 extern ECL_API bool ecl_string_eq(cl_object x, cl_object y);
 extern ECL_API bool ecl_member_char(ecl_character c, cl_object char_bag);
 extern ECL_API ecl_character ecl_string_push_extend(cl_object s, ecl_character c);
-extern ECL_API void get_string_start_end(cl_object s, cl_object start, cl_object end, cl_index *ps, cl_index *pe);
 extern ECL_API bool ecl_fits_in_base_string(cl_object s);
 extern ECL_API ecl_character ecl_char(cl_object s, cl_index i);
 extern ECL_API ecl_character ecl_char_set(cl_object s, cl_index i, ecl_character c);
@@ -1682,39 +1685,20 @@ extern ECL_API cl_object cl_get_universal_time(void);
 
 extern ECL_API void assert_type_integer(cl_object p);
 extern ECL_API void assert_type_non_negative_integer(cl_object p);
-extern ECL_API void assert_type_package(cl_object p);
-extern ECL_API void assert_type_string(cl_object p);
-extern ECL_API void assert_type_cons(cl_object p);
-extern ECL_API void assert_type_readtable(cl_object p);
-extern ECL_API void assert_type_hash_table(cl_object p);
-extern ECL_API void assert_type_array(cl_object p);
-extern ECL_API void assert_type_vector(cl_object p);
-extern ECL_API void assert_type_list(cl_object p);
 extern ECL_API void assert_type_proper_list(cl_object p);
 extern ECL_API cl_object cl_type_of(cl_object x);
 
-extern ECL_API void FEtype_error_character(cl_object x) ecl_attr_noreturn;
 extern ECL_API void FEtype_error_cons(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_number(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_real(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_float(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_integer(cl_object x) ecl_attr_noreturn;
 extern ECL_API void FEtype_error_list(cl_object x) ecl_attr_noreturn;
 extern ECL_API void FEtype_error_proper_list(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_alist(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_stream(cl_object x) ecl_attr_noreturn;
 extern ECL_API void FEtype_error_sequence(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_instance(cl_object x) ecl_attr_noreturn;
 extern ECL_API void FEcircular_list(cl_object x) ecl_attr_noreturn;
 extern ECL_API void FEtype_error_index(cl_object seq, cl_object ndx) ecl_attr_noreturn;
 extern ECL_API void FEtype_error_array(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_vector(cl_object x) ecl_attr_noreturn;
-extern ECL_API void FEtype_error_string(cl_object x) ecl_attr_noreturn;
 extern ECL_API void FEdivision_by_zero(cl_object x, cl_object y) ecl_attr_noreturn;
 extern ECL_API cl_object ecl_type_error(cl_object function, const char *place, cl_object o, cl_object type);
 extern ECL_API cl_object ecl_check_cl_type(cl_object fun, cl_object p, cl_type t);
-extern ECL_API cl_object ecl_check_type_string(cl_object fun, cl_object p);
-
+extern ECL_API cl_object ecl_make_integer_type(cl_object min, cl_object max);
 
 /* unixfsys.c */
 
@@ -1864,7 +1848,7 @@ extern ECL_API cl_object cl_encode_universal_time _ARGS((cl_narg narg, cl_object
 extern ECL_API cl_object cl_get_decoded_time();
 extern ECL_API cl_object cl_ensure_directories_exist _ARGS((cl_narg narg, cl_object V1, ...));
 extern ECL_API cl_object si_simple_program_error _ARGS((cl_narg narg, cl_object format, ...)) ecl_attr_noreturn;
-extern ECL_API cl_object si_signal_simple_error _ARGS((cl_narg narg, cl_object condition, cl_object continuable, cl_object format, cl_object args, ...)) ecl_attr_noreturn;
+extern ECL_API cl_object si_signal_simple_error _ARGS((cl_narg narg, cl_object condition, cl_object continuable, cl_object format, cl_object args, ...));
 
 /* module.lsp */
 

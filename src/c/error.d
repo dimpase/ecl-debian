@@ -26,6 +26,14 @@
 #endif
 #include <ecl/internal.h>
 
+static cl_object
+cl_symbol_or_object(cl_object x)
+{
+        if (FIXNUMP(x))
+                return (cl_object)(cl_symbols + fix(x));
+        return x;
+}
+
 void
 ecl_internal_error(const char *s)
 {
@@ -219,7 +227,110 @@ FEclosed_stream(cl_object strm)
 void
 FEwrong_type_argument(cl_object type, cl_object value)
 {
+        type = cl_symbol_or_object(type);
 	cl_error(5, @'type-error', @':datum', value, @':expected-type', type);
+}
+
+void
+FEwrong_type_only_arg(cl_object function, cl_object value, cl_object type)
+{
+        const char *message =
+                "In ~:[an anonymous function~;~:*function ~A~], "
+                "the value of the only argument is~&  ~S~&which is "
+                "not of the expected type ~A";
+        cl_env_ptr env = ecl_process_env();
+        struct ihs_frame tmp_ihs;
+        function = cl_symbol_or_object(function);
+        type = cl_symbol_or_object(type);
+        if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
+                ecl_ihs_push(env,&tmp_ihs,function,Cnil);
+        }        
+        si_signal_simple_error(8,
+                               @'type-error', /* condition name */
+                               Cnil, /* not correctable */
+                               make_constant_base_string(message), /* format control */
+                               cl_list(3, function, value, type),
+                               @':expected-type', type,
+                               @':datum', value);
+}
+
+void
+FEwrong_type_nth_arg(cl_object function, cl_narg narg, cl_object value, cl_object type)
+{
+        const char *message =
+                "In ~:[an anonymous function~;~:*function ~A~], "
+                "the value of the ~:R argument is~&  ~S~&which is "
+                "not of the expected type ~A";
+        cl_env_ptr env = ecl_process_env();
+        struct ihs_frame tmp_ihs;
+        function = cl_symbol_or_object(function);
+        type = cl_symbol_or_object(type);
+        if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
+                ecl_ihs_push(env,&tmp_ihs,function,Cnil);
+        }        
+        si_signal_simple_error(8,
+                               @'type-error', /* condition name */
+                               Cnil, /* not correctable */
+                               make_constant_base_string(message), /* format control */
+                               cl_list(4, function, MAKE_FIXNUM(narg),
+                                       value, type),
+                               @':expected-type', type,
+                               @':datum', value);
+}
+
+void
+FEwrong_type_key_arg(cl_object function, cl_object key, cl_object value, cl_object type)
+{
+        const char *message =
+                "In ~:[an anonymous function~;~:*function ~A~], "
+                "the value of the argument ~S is~&  ~S~&which is "
+                "not of the expected type ~A";
+        cl_env_ptr env = ecl_process_env();
+        struct ihs_frame tmp_ihs;
+        function = cl_symbol_or_object(function);
+        type = cl_symbol_or_object(type);
+        key = cl_symbol_or_object(key);
+        if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
+                ecl_ihs_push(env,&tmp_ihs,function,Cnil);
+        }        
+        si_signal_simple_error(8,
+                               @'type-error', /* condition name */
+                               Cnil, /* not correctable */
+                               make_constant_base_string(message), /* format control */
+                               cl_list(4, function, key, value, type),
+                               @':expected-type', type,
+                               @':datum', value);
+}
+
+void
+FEwrong_index(cl_object function, cl_object a, int which, cl_object ndx,
+              cl_index nonincl_limit)
+{
+        const char *message1 =
+                "In ~:[an anonymous function~;~:*function ~A~], "
+                "the ~*index into the object~% ~A.~%"
+                "takes a value ~D out of the range ~A.";
+        const char *message2 =
+                "In ~:[an anonymous function~;~:*function ~A~], "
+                "the ~:R index into the object~% ~A~%"
+                "takes a value ~D out of the range ~A.";
+        cl_object limit = ecl_make_integer(nonincl_limit-1);
+	cl_object type = ecl_make_integer_type(MAKE_FIXNUM(0), limit);
+        cl_object message = make_constant_base_string((which<0) ? message1 : message2);
+        cl_env_ptr env = ecl_process_env();
+        struct ihs_frame tmp_ihs;
+        function = cl_symbol_or_object(function);
+        if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
+                ecl_ihs_push(env,&tmp_ihs,function,Cnil);
+        }        
+        si_signal_simple_error(8,
+                               @'type-error', /* condition name */
+                               Cnil, /* not correctable */
+                               message, /* format control */
+                               cl_list(5, function, MAKE_FIXNUM(which+1), ndx,
+                                       a, type),
+                               @':expected-type', type,
+                               @':datum', ndx);
 }
 
 void
@@ -241,9 +352,7 @@ FEundefined_function(cl_object fname)
 void
 FEwrong_num_arguments(cl_object fun)
 {
-	if (FIXNUMP(fun)) {
-		fun = (cl_object)(cl_symbols + fix(fun));
-	}
+        fun = cl_symbol_or_object(fun);
 	FEprogram_error("Wrong number of arguments passed to function ~S.",
 			1, fun);
 }
@@ -299,12 +408,6 @@ void
 FEillegal_index(cl_object x, cl_object i)
 {
 	FEerror("~S is an illegal index to ~S.", 2, i, x);
-}
-
-void
-FEtype_error_symbol(cl_object obj)
-{
-	FEwrong_type_argument(@'symbol', obj);
 }
 
 void

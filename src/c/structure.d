@@ -36,7 +36,7 @@ structure_subtypep(cl_object x, cl_object y)
 		loop_for_on_unsafe(superiors) {
 			if (structure_subtypep(ECL_CONS_CAR(superiors), y))
 				return TRUE;
-		} end_loop_for_on;
+		} end_loop_for_on_unsafe(superiors);
 		return FALSE;
 	}
 }
@@ -62,7 +62,7 @@ si_structure_subtype_p(cl_object x, cl_object y)
 		     && structure_subtypep(STYPE(x), y)) ? Ct : Cnil))
 }
 
-@(defun si::make_structure (type &rest args)
+@(defun si::make-structure (type &rest args)
 	cl_object x;
 	int i;
 @
@@ -91,8 +91,8 @@ ecl_copy_structure(cl_object x)
 	cl_index j, size;
 	cl_object y;
 
-	if (!si_structurep(x))
-		FEwrong_type_argument(@'structure', x);
+	if (ecl_unlikely(Null(si_structurep(x))))
+		FEwrong_type_only_arg(@[copy-structure], x, @[structure]);
 	y = ecl_alloc_object(T_STRUCTURE);
 	STYPE(y) = STYPE(x);
 	SLENGTH(y) = j = SLENGTH(x);
@@ -124,7 +124,7 @@ cl_copy_structure(cl_object s)
 		s = cl_copy_seq(s);
 		break;
 	default:
-		FEwrong_type_argument(@'structure', s);
+                FEwrong_type_only_arg(@[copy-structure], s, @[structure]);
 	}
 	@(return s)
 }
@@ -134,47 +134,47 @@ cl_copy_structure(cl_object s)
 cl_object
 si_structure_name(cl_object s)
 {
-	if (!si_structurep(s))
-		FEwrong_type_argument(@'structure', s);
+	if (ecl_unlikely(Null(si_structurep(s))))
+                FEwrong_type_only_arg(@[si::structure-name], s, @[structure]);
 	@(return SNAME(s))
 }
 
 cl_object
 si_structure_ref(cl_object x, cl_object type, cl_object index)
 {
-	if (type_of(x) != T_STRUCTURE ||
-	    !structure_subtypep(STYPE(x), type))
-		FEwrong_type_argument(type, x);
+	if (ecl_unlikely(type_of(x) != T_STRUCTURE ||
+                         !structure_subtypep(STYPE(x), type)))
+                FEwrong_type_nth_arg(@[si::structure-ref], 1, x, type);
 	@(return SLOT(x, fix(index)))
 }
 
 cl_object
-ecl_structure_ref(cl_object x, cl_object name, int n)
+ecl_structure_ref(cl_object x, cl_object type, int n)
 {
 
-	if (type_of(x) != T_STRUCTURE ||
-	    !structure_subtypep(STYPE(x), name))
-		FEwrong_type_argument(name, x);
+	if (ecl_unlikely(type_of(x) != T_STRUCTURE ||
+                         !structure_subtypep(STYPE(x), type)))
+                FEwrong_type_nth_arg(@[si::structure-ref], 1, x, type);
 	return(SLOT(x, n));
 }
 
 cl_object
 si_structure_set(cl_object x, cl_object type, cl_object index, cl_object val)
 {
-	if (type_of(x) != T_STRUCTURE ||
-	    !structure_subtypep(STYPE(x), type))
-		FEwrong_type_argument(type, x);
+	if (ecl_unlikely(type_of(x) != T_STRUCTURE ||
+                         !structure_subtypep(STYPE(x), type)))
+                FEwrong_type_nth_arg(@[si::structure-set], 1, x, type);
 	SLOT(x, fix(index)) = val;
 	@(return val)
 }
 
 cl_object
-ecl_structure_set(cl_object x, cl_object name, int n, cl_object v)
+ecl_structure_set(cl_object x, cl_object type, int n, cl_object v)
 {
 
-	if (type_of(x) != T_STRUCTURE ||
-	    !structure_subtypep(STYPE(x), name))
-		FEwrong_type_argument(name, x);
+	if (ecl_unlikely(type_of(x) != T_STRUCTURE ||
+                         !structure_subtypep(STYPE(x), type)))
+                FEwrong_type_nth_arg(@[si::structure-set], 1, x, type);
 	SLOT(x, n) = v;
 	return(v);
 }

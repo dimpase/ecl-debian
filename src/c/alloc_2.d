@@ -28,6 +28,7 @@
 #ifdef GBC_BOEHM
 
 static void finalize_queued();
+static void ecl_mark_env(struct cl_env_struct *env);
 
 #ifdef GBC_BOEHM_PRECISE
 # if GBC_BOEHM
@@ -414,10 +415,11 @@ cl_object_mark_proc(void *addr, struct GC_ms_entry *msp, struct GC_ms_entry *msl
                 MAYBE_MARK(o->process.parent);
                 MAYBE_MARK(o->process.initial_bindings);
                 MAYBE_MARK(o->process.interrupt);
-                MAYBE_MARK(o->process.env);
                 MAYBE_MARK(o->process.args);
                 MAYBE_MARK(o->process.function);
                 MAYBE_MARK(o->process.name);
+                if (o->process.env && o->process.env != Cnil)
+                        ecl_mark_env(o->process.env);
 		break;
         case t_lock:
                 MAYBE_MARK(o->lock.holder);
@@ -1304,7 +1306,7 @@ stacks_scanner()
 			cl_object process = ECL_CONS_CAR(l);
 			struct cl_env_struct *env = process->process.env;
 			ecl_mark_env(env);
-		} end_loop_for_on;
+		} end_loop_for_on_unsafe(l);
 	}
 #else
 	ecl_mark_env(&cl_env);
@@ -1382,8 +1384,9 @@ cl_object
 si_weak_pointer_value(cl_object o)
 {
 	cl_object value;
-	if (type_of(o) != t_weak_pointer)
-		FEwrong_type_argument(@'ext::weak-pointer', o);
+	if (ecl_unlikely(type_of(o) != t_weak_pointer))
+		FEwrong_type_only_arg(@[ext::weak-pointer-value], o,
+                                      @[ext::weak-pointer]);
 	value = (cl_object)GC_call_with_alloc_lock((GC_fn_type)ecl_weak_pointer_value, o);
 	@(return (value? value : Cnil));
 }

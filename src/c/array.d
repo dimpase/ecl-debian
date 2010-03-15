@@ -103,19 +103,17 @@ FEwrong_dimensions(cl_object a, cl_index rank)
         FEwrong_type_argument(type, a);
 }
 
-void
-FEwrong_index(cl_object a, cl_index ndx, cl_index upper)
+static ECL_INLINE cl_index
+checked_index(cl_object function, cl_object a, int which, cl_object index,
+              cl_index nonincl_limit)
 {
-        const char *message =
-                "~D is not a valid index into object ~A.~%"
-                "It should be non-negative and < ~D.";
-	cl_object type = cl_list(3, @'integer', MAKE_FIXNUM(0),
-                                 ecl_make_integer(upper));
-        cl_error(5, @'simple-type-error',
-                 @':format-control',
-                 make_constant_base_string(message),
-                 @':format-arguments',
-                 cl_list(3, ecl_make_integer(ndx), a, ecl_make_integer(upper)));
+        cl_index output;
+        if (ecl_unlikely(!ECL_FIXNUMP(index) || ecl_fixnum_minusp(index)))
+                FEwrong_index(function, a, which, index, nonincl_limit);
+        output = fix(index);
+        if (ecl_unlikely(output >= nonincl_limit))
+                FEwrong_index(function, a, which, index, nonincl_limit);
+        return output;
 }
 
 cl_index
@@ -131,7 +129,7 @@ ecl_to_index(cl_object n)
 	case t_bignum:
 		FEtype_error_index(Cnil, n);
 	default:
-		FEtype_error_integer(n);
+                FEwrong_type_only_arg(@[coerce], n, @[integer]);
 	}
 }
 
@@ -153,15 +151,14 @@ si_row_major_aset(cl_object x, cl_object indx, cl_object val)
 @ {
 	cl_index i, j;
 	cl_index r = narg - 1;
-  AGAIN:
 	switch (type_of(x)) {
 	case t_array:
 		if (r != x->array.rank)
 			FEerror("Wrong number of indices.", 0);
 		for (i = j = 0;  i < r;  i++) {
-			cl_index s =
-			  ecl_fixnum_in_range(@'aref',"index",cl_va_arg(indx),
-					      0, (cl_fixnum)x->array.dims[i]-1);
+			cl_index s = checked_index(@[aref], x, i,
+                                                   cl_va_arg(indx),
+                                                   x->array.dims[i]);
 			j = j*(x->array.dims[i]) + s;
 		}
 		break;
@@ -173,12 +170,10 @@ si_row_major_aset(cl_object x, cl_object indx, cl_object val)
 	case t_bitvector:
 		if (r != 1)
 			FEerror("Wrong number of indices.", 0);
-		j = ecl_fixnum_in_range(@'aref',"index",cl_va_arg(indx),
-					0, (cl_fixnum)x->vector.dim-1);
+		j = checked_index(@[aref], x, -1, cl_va_arg(indx), x->vector.dim);
 		break;
 	default:
-		x = ecl_type_error(@'aref',"argument",x,@'array');
-		goto AGAIN;
+                FEwrong_type_nth_arg(@[aref], 1, x, @[array]);
 	}
 	@(return ecl_aref_unsafe(x, j));
 } @)
@@ -239,25 +234,27 @@ ecl_aref_unsafe(cl_object x, cl_index index)
 cl_object
 ecl_aref(cl_object x, cl_index index)
 {
-        if (ECL_ARRAYP(x)) {
-                if (index < x->array.dim) {
-                        return ecl_aref_unsafe(x, index);
-                }
-		out_of_bounds_error(index, x);
+        if (ecl_unlikely(!ECL_ARRAYP(x))) {
+                FEwrong_type_nth_arg(@[aref], 1, x, @[array]);
         }
-        FEtype_error_array(x);
+        if (ecl_unlikely(index >= x->array.dim)) {
+                FEwrong_index(@[row-major-aref], x, -1, MAKE_FIXNUM(index),
+                              x->array.dim);
+        }
+        return ecl_aref_unsafe(x, index);
 }
 
 cl_object
 ecl_aref1(cl_object x, cl_index index)
 {
-        if (ECL_VECTORP(x)) {
-                if (index < x->array.dim) {
-                        return ecl_aref_unsafe(x, index);
-                }
-		out_of_bounds_error(index, x);
+        if (ecl_unlikely(!ECL_VECTORP(x))) {
+                FEwrong_type_nth_arg(@[aref], 1, x, @[array]);
         }
-        FEtype_error_array(x);
+        if (ecl_unlikely(index >= x->array.dim)) {
+                FEwrong_index(@[aref], x, -1, MAKE_FIXNUM(index),
+                              x->array.dim);
+        }
+        return ecl_aref_unsafe(x, index);
 }
 
 /*
@@ -269,15 +266,14 @@ ecl_aref1(cl_object x, cl_index index)
 @ {
 	cl_index i, j;
 	cl_index r = narg - 2;
-  AGAIN:
 	switch (type_of(x)) {
 	case t_array:
-		if (r != x->array.rank)
+		if (ecl_unlikely(r != x->array.rank))
 			FEerror("Wrong number of indices.", 0);
 		for (i = j = 0;  i < r;  i++) {
-			cl_index s =
-			  ecl_fixnum_in_range(@'si::aset',"index",cl_va_arg(dims),
-					      0, (cl_fixnum)x->array.dims[i]-1);
+			cl_index s = checked_index(@[si::aset], x, i,
+                                                   cl_va_arg(dims),
+                                                   x->array.dims[i]);
 			j = j*(x->array.dims[i]) + s;
 		}
 		break;
@@ -287,14 +283,13 @@ ecl_aref1(cl_object x, cl_index index)
 #endif
 	case t_base_string:
 	case t_bitvector:
-		if (r != 1)
+		if (ecl_unlikely(r != 1))
 			FEerror("Wrong number of indices.", 0);
-		j = ecl_fixnum_in_range(@'si::aset',"index",cl_va_arg(dims),
-					0, (cl_fixnum)x->vector.dim - 1);
+		j = checked_index(@[si::aset], x, -1, cl_va_arg(dims),
+                                  x->vector.dim);
 		break;
 	default:
-		x = ecl_type_error(@'si::aset',"destination",v,@'array');
-		goto AGAIN;
+                FEwrong_type_nth_arg(@[si::aset], 1, x, @[array]);
 	}
 	@(return ecl_aset_unsafe(x, j, v))
 } @)
@@ -316,7 +311,7 @@ ecl_aset_unsafe(cl_object x, cl_index index, cl_object value)
 		break;
 #endif
 	case aet_bit: {
-		cl_fixnum i = ecl_fixnum_in_range(Cnil,"ASET value",value,0,1);
+		cl_fixnum i = ecl_to_bit(value);
 		index += x->vector.offset;
 		if (i == 0)
 			x->vector.self.bit[index/CHAR_BIT] &= ~(0200>>index%CHAR_BIT);
@@ -373,23 +368,25 @@ ecl_aset_unsafe(cl_object x, cl_index index, cl_object value)
 cl_object
 ecl_aset(cl_object x, cl_index index, cl_object value)
 {
-        if (ECL_ARRAYP(x)) {
-                if (index < x->array.dim)
-                        return ecl_aset_unsafe(x, index, value);
+        if (ecl_unlikely(!ECL_ARRAYP(x))) {
+                FEwrong_type_nth_arg(@[si::aset], 1, x, @[array]);
+        }
+        if (ecl_unlikely(index >= x->array.dim)) {
 		out_of_bounds_error(index, x);
         }
-        FEtype_error_array(x);
+        return ecl_aset_unsafe(x, index, value);
 }
 
 cl_object
 ecl_aset1(cl_object x, cl_index index, cl_object value)
 {
-        if (ECL_VECTORP(x)) {
-                if (index < x->array.dim)
-                        return ecl_aset_unsafe(x, index, value);
+        if (ecl_unlikely(!ECL_VECTORP(x))) {
+                FEwrong_type_nth_arg(@[si::aset], 1, x, @[array]);
+        }
+        if (ecl_unlikely(index >= x->array.dim)) {
 		out_of_bounds_error(index, x);
         }
-        FEtype_error_array(x);
+        return ecl_aset_unsafe(x, index, value);
 }
 
 /*
@@ -408,12 +405,12 @@ si_make_pure_array(cl_object etype, cl_object dims, cl_object adj,
 		return si_make_vector(etype, dims, adj, fillp, displ, disploff);
 	}
 	r = ecl_length(dims);
-	if (r >= ARANKLIM) {
+	if (ecl_unlikely(r >= ARANKLIM)) {
 		FEerror("The array rank, ~R, is too large.", 1, MAKE_FIXNUM(r));
 	} else if (r == 1) {
 		return si_make_vector(etype, ECL_CONS_CAR(dims), adj, fillp,
 				      displ, disploff);
-	} else if (!Null(fillp)) {
+	} else if (ecl_unlikely(!Null(fillp))) {
 		FEerror(":FILL-POINTER may not be specified for an array of rank ~D",
 			1, MAKE_FIXNUM(r));
 	}
@@ -425,11 +422,23 @@ si_make_pure_array(cl_object etype, cl_object dims, cl_object adj,
 	x->array.flags = 0; /* no fill pointer, no adjustable */
 	x->array.dims = (cl_index *)ecl_alloc_atomic_align(sizeof(cl_index)*r, sizeof(cl_index));
 	for (i = 0, s = 1;  i < r;  i++, dims = ECL_CONS_CDR(dims)) {
-		j = ecl_fixnum_in_range(@'make-array', "dimension",
-					ECL_CONS_CAR(dims), 0, ADIMLIM);
+                cl_object d = ECL_CONS_CAR(dims);
+                if (ecl_unlikely(!ECL_FIXNUMP(d) ||
+                                 ecl_fixnum_minusp(d) ||
+                                 ecl_fixnum_greater(d, MAKE_FIXNUM(ADIMLIM))))
+                {
+                        cl_object type = ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                               MAKE_FIXNUM(ADIMLIM));
+                        FEwrong_type_nth_arg(@[make-array], 1, d, type);
+                }
+                j = fix(d);
 		s *= (x->array.dims[i] = j);
-		if (s > ATOTLIM)
-			FEerror("The array total size, ~D, is too large.", 1, MAKE_FIXNUM(s));
+		if (ecl_unlikely(s > ATOTLIM)) {
+                        cl_object type = ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                               MAKE_FIXNUM(ATOTLIM));
+                        FEwrong_type_key_arg(@[make-array], @[array-total-size],
+                                             MAKE_FIXNUM(s), type);
+                }
 	}
 	x->array.dim = s;
         if (adj != Cnil) {
@@ -457,7 +466,13 @@ si_make_vector(cl_object etype, cl_object dim, cl_object adj,
 	cl_elttype aet;
  AGAIN:
 	aet = ecl_symbol_to_elttype(etype);
-	d = ecl_fixnum_in_range(@'make-array',"dimension",dim,0,ADIMLIM);
+        if (ecl_unlikely(!ECL_FIXNUMP(dim) || ecl_fixnum_minusp(dim) ||
+                         ecl_fixnum_greater(dim, ADIMLIM))) {
+                cl_object type = ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                       MAKE_FIXNUM(ADIMLIM));
+                FEwrong_type_nth_arg(@[make-array], 1, dim, type);
+        }
+        d = fix(dim);
 	if (aet == aet_bc) {
 		x = ecl_alloc_object(t_base_string);
                 x->base_string.elttype = (short)aet;
@@ -726,24 +741,33 @@ displace(cl_object from, cl_object to, cl_object offset)
 	void *base;
 	cl_elttype totype, fromtype;
 	fromtype = from->array.elttype;
+        if (ecl_unlikely(!ECL_FIXNUMP(offset) || ((j = fix(offset)) < 0))) {
+                FEwrong_type_key_arg(@[adjust-array], @[:displaced-index-offset],
+                                     offset, @[fixnum]);
+        }
 	if (type_of(to) == t_foreign) {
 		if (fromtype == aet_bit || fromtype == aet_object) {
 			FEerror("Cannot displace arrays with element type T or BIT onto foreign data",0);
 		}
 		base = to->foreign.data;
-		j = ecl_fixnum_in_range(@'adjust-array',"array displacement", offset,
-					0, MOST_POSITIVE_FIXNUM);
 		from->array.displaced = to;
 	} else {
+                cl_fixnum maxdim;
 		totype = to->array.elttype;
 		if (totype != fromtype)
-			FEerror("Cannot displace the array,~%\
-because the element types don't match.", 0);
-		if (from->array.dim > to->array.dim)
-			FEerror("Cannot displace the array,~%\
-because the total size of the to-array is too small.", 0);
-		j = ecl_fixnum_in_range(@'adjust-array',"array displacement",offset,
-					0, to->array.dim - from->array.dim);
+			FEerror("Cannot displace the array, "
+                                "because the element types don't match.", 0);
+                maxdim = to->array.dim - from->array.dim;
+		if (maxdim < 0)
+			FEerror("Cannot displace the array, "
+                                "because the total size of the to-array"
+                                "is too small.", 0);
+                if (j > maxdim) {
+                        cl_object type = ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                               MAKE_FIXNUM(maxdim));
+                        FEwrong_type_key_arg(@[adjust-array], @[:displaced-index-offset],
+                                             offset, type);
+                }
 		from->array.displaced = ecl_list1(to);
 		if (Null(to->array.displaced))
 			to->array.displaced = ecl_list1(Cnil);
@@ -794,15 +818,16 @@ si_array_raw_data(cl_object x)
 cl_elttype
 ecl_array_elttype(cl_object x)
 {
-        if (!ECL_ARRAYP(x))
-                FEwrong_type_argument(@'array', x);
+        if (ecl_unlikely(!ECL_ARRAYP(x)))
+                FEwrong_type_argument(@[array], x);
         return x->array.elttype;
 }
 
 cl_object
 cl_array_rank(cl_object a)
 {
-	assert_type_array(a);
+        if (ecl_unlikely(!ECL_ARRAYP(a)))
+                FEwrong_type_only_arg(@[array-rank], a, @[array]);
 	@(return ((type_of(a) == t_array) ? MAKE_FIXNUM(a->array.rank)
 					  : MAKE_FIXNUM(1)))
 }
@@ -818,7 +843,8 @@ ecl_array_dimension(cl_object a, cl_index index)
 {
 	switch (type_of(a)) {
 	case t_array: {
-                if (index > a->array.rank) FEwrong_dimensions(a, index+1);
+                if (ecl_unlikely(index > a->array.rank))
+                        FEwrong_dimensions(a, index+1);
 		return a->array.dims[index];
 	}
 #ifdef ECL_UNICODE
@@ -827,24 +853,27 @@ ecl_array_dimension(cl_object a, cl_index index)
 	case t_base_string:
 	case t_vector:
 	case t_bitvector:
-                if (index) FEwrong_dimensions(a, index+1);
+                if (ecl_unlikely(index))
+                        FEwrong_dimensions(a, index+1);
 		return a->vector.dim;
 	default:
-		FEtype_error_array(a);
+                FEwrong_type_only_arg(@[array-dimension], a, @[array]);
 	}
 }
 
 cl_object
 cl_array_total_size(cl_object a)
 {
-	assert_type_array(a);
+        if (ecl_unlikely(!ECL_ARRAYP(a)))
+                FEwrong_type_only_arg(@[array-total-size], a, @[array]);
 	@(return MAKE_FIXNUM(a->array.dim))
 }
 
 cl_object
 cl_adjustable_array_p(cl_object a)
 {
-	assert_type_array(a);
+        if (ecl_unlikely(!ECL_ARRAYP(a)))
+                FEwrong_type_only_arg(@[adjustable-array-p], a, @[array]);
 	@(return (ECL_ADJUSTABLE_ARRAY_P(a) ? Ct : Cnil))
 }
 
@@ -858,7 +887,8 @@ cl_array_displacement(cl_object a)
 	cl_object to_array;
 	cl_index offset;
 
-	assert_type_array(a);
+        if (ecl_unlikely(!ECL_ARRAYP(a)))
+                FEwrong_type_only_arg(@[array-displacement], a, @[array]);
 	to_array = a->array.displaced;
 	if (Null(to_array)) {
 		offset = 0;
@@ -929,14 +959,14 @@ cl_svref(cl_object x, cl_object index)
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_index i;
 
-	while (type_of(x) != t_vector ||
-	       (x->vector.flags & (ECL_FLAG_ADJUSTABLE | ECL_FLAG_HAS_FILL_POINTER)) ||
-	       CAR(x->vector.displaced) != Cnil ||
-	       (cl_elttype)x->vector.elttype != aet_object)
+	if (ecl_unlikely(type_of(x) != t_vector ||
+                         (x->vector.flags & (ECL_FLAG_ADJUSTABLE | ECL_FLAG_HAS_FILL_POINTER)) ||
+                         CAR(x->vector.displaced) != Cnil ||
+                         (cl_elttype)x->vector.elttype != aet_object))
 	{
-		x = ecl_type_error(@'svref',"argument",x,@'simple-vector');
+                FEwrong_type_nth_arg(@[svref],1,x,@[simple-vector]);
 	}
-	i = ecl_fixnum_in_range(@'svref',"index",index,0,(cl_fixnum)x->vector.dim-1);
+        i = checked_index(@[svref], x, -1, index, x->vector.dim);
 	@(return x->vector.self.t[i])
 }
 
@@ -946,14 +976,14 @@ si_svset(cl_object x, cl_object index, cl_object v)
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_index i;
 
-	while (type_of(x) != t_vector ||
-	       (x->vector.flags & (ECL_FLAG_ADJUSTABLE | ECL_FLAG_HAS_FILL_POINTER)) ||
-	       CAR(x->vector.displaced) != Cnil ||
-	       (cl_elttype)x->vector.elttype != aet_object)
+	if (ecl_unlikely(type_of(x) != t_vector ||
+                         (x->vector.flags & (ECL_FLAG_ADJUSTABLE | ECL_FLAG_HAS_FILL_POINTER)) ||
+                         CAR(x->vector.displaced) != Cnil ||
+                         (cl_elttype)x->vector.elttype != aet_object))
 	{
-		x = ecl_type_error(@'si::svset',"argument",x,@'simple-vector');
+		FEwrong_type_nth_arg(@[si::svset],1,x,@[simple-vector]);
 	}
-	i = ecl_fixnum_in_range(@'svref',"index",index,0,(cl_fixnum)x->vector.dim-1);
+        i = checked_index(@[svref], x, -1, index, x->vector.dim);
 	@(return (x->vector.self.t[i] = v))
 }
 
@@ -962,7 +992,6 @@ cl_array_has_fill_pointer_p(cl_object a)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object r;
- AGAIN:
 	switch (type_of(a)) {
 	case t_array:
 		r = Cnil; break;
@@ -975,9 +1004,7 @@ cl_array_has_fill_pointer_p(cl_object a)
 		r = ECL_ARRAY_HAS_FILL_POINTER_P(a)? Ct : Cnil;
 		break;
 	default:
-		a = ecl_type_error(@'array-has-fill-pointer-p',"argument",
-				   a, @'array');
-		goto AGAIN;
+                FEwrong_type_nth_arg(@[array-has-fill-pointer-p],1,a,@[array]);
 	}
 	@(return r)
 }
@@ -986,10 +1013,11 @@ cl_object
 cl_fill_pointer(cl_object a)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	assert_type_vector(a);
-	if (!ECL_ARRAY_HAS_FILL_POINTER_P(a)) {
-		a = ecl_type_error(@'fill-pointer', "argument",
-				   a, ecl_read_from_cstring("(AND VECTOR (SATISFIES ARRAY-HAS-FILL-POINTER-P))"));
+        if (ecl_unlikely(!ECL_VECTORP(a)))
+                FEwrong_type_only_arg(@[fill-pointer], a, @[vector]);
+	if (ecl_unlikely(!ECL_ARRAY_HAS_FILL_POINTER_P(a))) {
+                const char *type = "(AND VECTOR (SATISFIES ARRAY-HAS-FILL-POINTER-P))";
+		FEwrong_type_nth_arg(@[fill-pointer], 1, a, ecl_read_from_cstring(type));
 	}
 	@(return MAKE_FIXNUM(a->vector.fillp))
 }
@@ -1001,14 +1029,19 @@ cl_object
 si_fill_pointer_set(cl_object a, cl_object fp)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	assert_type_vector(a);
-	if (ECL_ARRAY_HAS_FILL_POINTER_P(a)) {
-		a->vector.fillp = 
-			ecl_fixnum_in_range(@'adjust-array',"fill pointer",fp,
-					    0,a->vector.dim);
-	} else {
-		FEerror("The vector ~S has no fill pointer.", 1, a);
-	}
+        cl_fixnum i;
+        if (ecl_unlikely(!ECL_VECTORP(a) || !ECL_ARRAY_HAS_FILL_POINTER_P(a))) {
+                const char *type = "(AND VECTOR (SATISFIES ARRAY-HAS-FILL-POINTER-P))";
+		FEwrong_type_nth_arg(@[adjust-array], 1, a,
+                                     ecl_read_from_cstring(type));
+        }
+        if (ecl_unlikely(!ECL_FIXNUMP(fp) || ((i = fix(fp)) < 0) ||
+                         (i > a->vector.dim))) {
+                cl_object type = ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                       MAKE_FIXNUM(a->vector.dim-1));
+                FEwrong_type_key_arg(@[adjust-array], @[:fill-pointer], fp, type);
+        }
+        a->vector.fillp = i;
 	@(return fp)
 }
 
@@ -1307,7 +1340,7 @@ si_fill_array_with_elt(cl_object x, cl_object elt, cl_object start, cl_object en
         }
 #endif
 	case aet_bit: {
-                int i = ecl_fixnum_in_range(@'si::aset',"bit",elt,0,1);
+                int i = ecl_to_bit(elt);
 		for (last -= first, first += x->vector.offset; last; --last, ++first) {
                         int mask = 0200>>first%CHAR_BIT;
                         if (i == 0)

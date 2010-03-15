@@ -85,27 +85,27 @@ static ecl_off_t ecl_integer_to_off_t(cl_object offset);
 
 static cl_object alloc_stream();
 
-static cl_object not_a_file_stream(cl_object fn);
-static void not_an_input_stream(cl_object fn);
-static void not_an_output_stream(cl_object fn);
-static void not_a_character_stream(cl_object s);
-static void not_a_binary_stream(cl_object s);
+static cl_object not_a_file_stream(cl_object fn) ecl_attr_noreturn;
+static void not_an_input_stream(cl_object fn) ecl_attr_noreturn;
+static void not_an_output_stream(cl_object fn) ecl_attr_noreturn;
+static void not_a_character_stream(cl_object s) ecl_attr_noreturn;
+static void not_a_binary_stream(cl_object s) ecl_attr_noreturn;
 static int restartable_io_error(cl_object strm);
 static void unread_error(cl_object strm);
 static void unread_twice(cl_object strm);
-static void io_error(cl_object strm);
-static void character_size_overflow(cl_object strm, ecl_character c);
+static void io_error(cl_object strm) ecl_attr_noreturn;
+static void character_size_overflow(cl_object strm, ecl_character c) ecl_attr_noreturn;
 #ifdef ECL_UNICODE
-static void unsupported_character(cl_object strm);
-static void malformed_character(cl_object strm);
+static void unsupported_character(cl_object strm) ecl_attr_noreturn;
+static void malformed_character(cl_object strm) ecl_attr_noreturn;
 static void too_long_utf8_sequence(cl_object strm);
-static void invalid_codepoint(cl_object strm, cl_fixnum c);
+static void invalid_codepoint(cl_object strm, cl_fixnum c) ecl_attr_noreturn;
 #endif
-static void wrong_file_handler(cl_object strm);
-
+static void wrong_file_handler(cl_object strm) ecl_attr_noreturn;
 #if defined(ECL_WSOCK)
-static void wsock_error( const char *err_msg, cl_object strm );
+static void wsock_error( const char *err_msg, cl_object strm ) ecl_attr_noreturn;
 #endif
+
 /**********************************************************************
  * NOT IMPLEMENTED or NOT APPLICABLE OPERATIONS
  */
@@ -558,7 +558,7 @@ generic_read_vector(cl_object strm, cl_object data, cl_index start, cl_index end
 static void
 eformat_unread_char(cl_object strm, ecl_character c)
 {
-	if (c != strm->stream.last_char) {
+	unlikely_if (c != strm->stream.last_char) {
 		unread_twice(strm);
 	}
 	{
@@ -937,7 +937,7 @@ user_decoder(cl_object stream, cl_eformat_read_byte8 read_byte8, cl_object sourc
 		return EOF;
 	}
 	character = ecl_gethash_safe(MAKE_FIXNUM(buffer[0]), table, Cnil);
-	if (Null(character)) {
+	unlikely_if (Null(character)) {
 		invalid_codepoint(stream, buffer[0]);
 	}
 	if (character == Ct) {
@@ -946,7 +946,7 @@ user_decoder(cl_object stream, cl_eformat_read_byte8 read_byte8, cl_object sourc
 		} else {
 			cl_fixnum byte = (buffer[0]<<8) + buffer[1];
 			character = ecl_gethash_safe(MAKE_FIXNUM(byte), table, Cnil);
-			if (Null(character)) {
+			unlikely_if (Null(character)) {
 				invalid_codepoint(stream, byte);
 			}
 		}
@@ -995,7 +995,7 @@ user_multistate_decoder(cl_object stream, cl_eformat_read_byte8 read_byte8,
 		if (CHARACTERP(character)) {
 			return CHAR_CODE(character);
 		}
-		if (Null(character)) {
+		unlikely_if (Null(character)) {
 			invalid_codepoint(stream, buffer[0]);
 		}
 		if (character == Ct) {
@@ -1070,7 +1070,7 @@ utf_8_decoder(cl_object stream, cl_eformat_read_byte8 read_byte8, cl_object sour
 	if ((buffer[0] & 0x80) == 0) {
 		return buffer[0];
 	}
-	if ((buffer[0] & 0x40) == 0)
+	unlikely_if ((buffer[0] & 0x40) == 0)
 		malformed_character(stream);
 	if ((buffer[0] & 0x20) == 0) {
 		buffer[0] &= 0x1F;
@@ -1089,15 +1089,16 @@ utf_8_decoder(cl_object stream, cl_eformat_read_byte8 read_byte8, cl_object sour
 	for (i = 1, cum = buffer[0]; i <= nbytes; i++) {
 		unsigned char c = buffer[i];
 		/*printf(": %04x :", c);*/
-		if ((c & 0xC0) != 0x80)
+		unlikely_if ((c & 0xC0) != 0x80)
 			malformed_character(stream);
 		cum = (cum << 6) | (c & 0x3F);
-		if (cum == 0) too_long_utf8_sequence(stream);
+		unlikely_if (cum == 0)
+                        too_long_utf8_sequence(stream);
 	}
 	if (cum >= 0xd800) {
-		if (cum <= 0xdfff)
+		unlikely_if (cum <= 0xdfff)
 			invalid_codepoint(stream, cum);
-		if (cum >= 0xFFFE && cum <= 0xFFFF)
+		unlikely_if (cum >= 0xFFFE && cum <= 0xFFFF)
 			invalid_codepoint(stream, cum);
 	}
 	/*printf("; %04x ;", cum);*/
@@ -1191,7 +1192,7 @@ clos_stream_read_char(cl_object strm)
 		return EOF;
         else
                 value = -1;
-        if (value < 0 || value > CHAR_CODE_LIMIT)
+        unlikely_if (value < 0 || value > CHAR_CODE_LIMIT)
                 FEerror("Unknown character ~A", 1, output);
         return value;
 }
@@ -1358,7 +1359,7 @@ static cl_object
 str_out_element_type(cl_object strm)
 {
 	cl_object string = STRING_OUTPUT_STRING(strm);
-	if (type_of(string) == t_base_string)
+	if (ECL_BASE_STRING_P(string))
 		return @'base-char';
 	return @'character';
 }
@@ -1433,18 +1434,18 @@ cl_object
 si_make_string_output_stream_from_string(cl_object s)
 {
 	cl_object strm = alloc_stream();
-	if (!ecl_stringp(s) || !ECL_ARRAY_HAS_FILL_POINTER_P(s))
+	unlikely_if (!ECL_STRINGP(s) || !ECL_ARRAY_HAS_FILL_POINTER_P(s))
 		FEerror("~S is not a -string with a fill-pointer.", 1, s);
 	strm->stream.ops = duplicate_dispatch_table(&str_out_ops);
 	strm->stream.mode = (short)smm_string_output;
 	STRING_OUTPUT_STRING(strm) = s;
 	STRING_OUTPUT_COLUMN(strm) = 0;
-#ifndef ECL_UNICODE
+#if !defined(ECL_UNICODE)
 	strm->stream.format = @':default';
 	strm->stream.flags = ECL_STREAM_DEFAULT_FORMAT;
 	strm->stream.byte_size = 8;
 #else
-	if (type_of(s) == t_base_string) {
+	if (ECL_BASE_STRING_P(s)) {
 		strm->stream.format = @':latin-1';
 		strm->stream.flags = ECL_STREAM_LATIN_1;
 		strm->stream.byte_size = 8;
@@ -1496,9 +1497,9 @@ cl_object
 cl_get_output_stream_string(cl_object strm)
 {
 	cl_object strng;
-	if (type_of(strm) != t_stream ||
-	    (enum ecl_smmode)strm->stream.mode != smm_string_output)
-		FEerror("~S is not a string-output stream.", 1, strm);
+	unlikely_if (!ECL_ANSI_STREAM_TYPE_P(strm, smm_string_output))
+                FEwrong_type_only_arg(@[get-output-stream-string],
+                                      strm, @[string-stream]);
 	strng = cl_copy_seq(STRING_OUTPUT_STRING(strm));
 	STRING_OUTPUT_STRING(strm)->base_string.fillp = 0;
 	@(return strng)
@@ -1526,7 +1527,7 @@ static void
 str_in_unread_char(cl_object strm, ecl_character c)
 {
 	cl_fixnum curr_pos = STRING_INPUT_POSITION(strm);
-	if (c <= 0) {
+	unlikely_if (c <= 0) {
 		unread_error(strm);
 	}
 	STRING_INPUT_POSITION(strm) = curr_pos - 1;
@@ -1556,7 +1557,7 @@ static cl_object
 str_in_element_type(cl_object strm)
 {
 	cl_object string = STRING_INPUT_STRING(strm);
-	if (type_of(string) == t_base_string)
+	if (ECL_BASE_STRING_P(string))
 		return @'base-char';
 	return @'character';
 }
@@ -1627,12 +1628,12 @@ ecl_make_string_input_stream(cl_object strng, cl_index istart, cl_index iend)
 	STRING_INPUT_STRING(strm) = strng;
 	STRING_INPUT_POSITION(strm) = istart;
 	STRING_INPUT_LIMIT(strm) = iend;
-#ifndef ECL_UNICODE
+#if !defined(ECL_UNICODE)
 	strm->stream.format = @':default';
 	strm->stream.flags = ECL_STREAM_DEFAULT_FORMAT;
 	strm->stream.byte_size = 8;
 #else
-	if (type_of(strng) == t_base_string) {
+	if (ECL_BASE_STRING_P(strng) == t_base_string) {
 		strm->stream.format = @':latin-1';
 		strm->stream.flags = ECL_STREAM_LATIN_1;
 		strm->stream.byte_size = 8;
@@ -1646,29 +1647,12 @@ ecl_make_string_input_stream(cl_object strng, cl_index istart, cl_index iend)
 }
 
 @(defun make_string_input_stream (strng &o istart iend)
-	cl_index s, e;
+        cl_index_pair p;
 @
 	strng = cl_string(strng);
-	if (Null(istart))
-		s = 0;
-	else if (!FIXNUMP(istart) || FIXNUM_MINUSP(istart))
-		goto E;
-	else
-		s = (cl_index)fix(istart);
-	if (Null(iend))
-		e = strng->base_string.fillp;
-	else if (!FIXNUMP(iend) || FIXNUM_MINUSP(iend))
-		goto E;
-	else
-		e = (cl_index)fix(iend);
-	if (e > strng->base_string.fillp || s > e)
-		goto E;
-	@(return (ecl_make_string_input_stream(strng, s, e)))
-
-E:
-	FEerror("~S and ~S are illegal as :START and :END~%\
-for the string ~S.",
-		3, istart, iend, strng);
+        if (Null(istart)) istart = MAKE_FIXNUM(0);
+        p = ecl_vector_start_end(@[make-string-input-stream], strng, istart, iend);
+	@(return (ecl_make_string_input_stream(strng, p.start, p.end)))
 @)
 
 /**********************************************************************
@@ -1787,6 +1771,16 @@ two_way_column(cl_object strm)
 	return ecl_file_column(TWO_WAY_STREAM_OUTPUT(strm));
 }
 
+static cl_object
+two_way_close(cl_object strm)
+{
+	if (strm->stream.flags & ECL_STREAM_CLOSE_COMPONENTS) {
+		cl_close(1, TWO_WAY_STREAM_INPUT(strm));
+		cl_close(1, TWO_WAY_STREAM_OUTPUT(strm));
+	}
+	return generic_close(strm);
+}
+
 const struct ecl_file_ops two_way_ops = {
 	two_way_write_byte8,
 	two_way_read_byte8,
@@ -1817,7 +1811,7 @@ const struct ecl_file_ops two_way_ops = {
 	generic_always_nil, /* get_position */
 	generic_set_position,
 	two_way_column,
-	generic_close
+	two_way_close
 };
 
 
@@ -1841,16 +1835,18 @@ cl_make_two_way_stream(cl_object istrm, cl_object ostrm)
 cl_object
 cl_two_way_stream_input_stream(cl_object strm)
 {
-	if (type_of(strm) != t_stream || strm->stream.mode != smm_two_way)
-		FEwrong_type_argument(@'two-way-stream', strm);
-	@(return TWO_WAY_STREAM_INPUT(strm))
+	unlikely_if (!ECL_ANSI_STREAM_TYPE_P(strm,smm_two_way))
+		FEwrong_type_only_arg(@[two-way-stream-input-stream],
+                                      strm, @[two-way-stream]);
+	@(return TWO_WAY_STREAM_INPUT(strm));
 }
 
 cl_object
 cl_two_way_stream_output_stream(cl_object strm)
 {
-	if (type_of(strm) != t_stream || strm->stream.mode != smm_two_way)
-		FEwrong_type_argument(@'two-way-stream', strm);
+	unlikely_if (!ECL_ANSI_STREAM_TYPE_P(strm, smm_two_way))
+		FEwrong_type_only_arg(@[two-way-stream-output-stream],
+                                      strm, @[two-way-stream]);
 	@(return TWO_WAY_STREAM_OUTPUT(strm))
 }
 
@@ -1960,6 +1956,15 @@ broadcast_column(cl_object strm)
 	return ecl_file_column(ECL_CONS_CAR(l));
 }
 
+static cl_object
+broadcast_close(cl_object strm)
+{
+	if (strm->stream.flags & ECL_STREAM_CLOSE_COMPONENTS) {
+		cl_mapc(2, @'close', BROADCAST_STREAM_LIST(strm));
+	}
+	return generic_close(strm);
+}
+
 const struct ecl_file_ops broadcast_ops = {
 	broadcast_write_byte8,
 	not_input_read_byte8,
@@ -1990,7 +1995,7 @@ const struct ecl_file_ops broadcast_ops = {
 	broadcast_get_position,
 	broadcast_set_position,
 	broadcast_column,
-	generic_close
+	broadcast_close
 };
 
 @(defun make_broadcast_stream (&rest ap)
@@ -2000,7 +2005,7 @@ const struct ecl_file_ops broadcast_ops = {
 	streams = Cnil;
 	for (i = 0; i < narg; i++) {
 		x = cl_va_arg(ap);
-		if (!ecl_output_stream_p(x))
+		unlikely_if (!ecl_output_stream_p(x))
 			not_an_output_stream(x);
 		streams = CONS(x, streams);
 	}
@@ -2019,8 +2024,9 @@ const struct ecl_file_ops broadcast_ops = {
 cl_object
 cl_broadcast_stream_streams(cl_object strm)
 {
-	if (type_of(strm) != t_stream || strm->stream.mode != smm_broadcast)
-		FEwrong_type_argument(@'broadcast-stream', strm);
+	unlikely_if (!ECL_ANSI_STREAM_TYPE_P(strm, smm_broadcast))
+		FEwrong_type_only_arg(@[broadcast-stream-streams],
+                                      strm, @[broadcast-stream]);
 	return cl_copy_list(BROADCAST_STREAM_LIST(strm));
 }
 
@@ -2078,7 +2084,7 @@ echo_write_char(cl_object strm, ecl_character c)
 static void
 echo_unread_char(cl_object strm, ecl_character c)
 {
-	if (strm->stream.last_code[0] != EOF) {
+	unlikely_if (strm->stream.last_code[0] != EOF) {
 		unread_twice(strm);
 	}
 	strm->stream.last_code[0] = c;
@@ -2136,6 +2142,16 @@ echo_column(cl_object strm)
 	return ecl_file_column(ECHO_STREAM_OUTPUT(strm));
 }
 
+static cl_object
+echo_close(cl_object strm)
+{
+	if (strm->stream.flags & ECL_STREAM_CLOSE_COMPONENTS) {
+		cl_close(1, ECHO_STREAM_INPUT(strm));
+		cl_close(1, ECHO_STREAM_OUTPUT(strm));
+	}
+	return generic_close(strm);
+}
+
 const struct ecl_file_ops echo_ops = {
 	echo_write_byte8,
 	echo_read_byte8,
@@ -2166,16 +2182,16 @@ const struct ecl_file_ops echo_ops = {
 	generic_always_nil, /* get_position */
 	generic_set_position,
 	echo_column,
-	generic_close
+	echo_close
 };
 
 cl_object
 cl_make_echo_stream(cl_object strm1, cl_object strm2)
 {
 	cl_object strm;
-	if (!ecl_input_stream_p(strm1))
+	unlikely_if (!ecl_input_stream_p(strm1))
 		not_an_input_stream(strm1);
-	if (!ecl_output_stream_p(strm2))
+	unlikely_if (!ecl_output_stream_p(strm2))
 		not_an_output_stream(strm2);
 	strm = alloc_stream();
 	strm->stream.format = cl_stream_external_format(strm1);
@@ -2189,16 +2205,18 @@ cl_make_echo_stream(cl_object strm1, cl_object strm2)
 cl_object
 cl_echo_stream_input_stream(cl_object strm)
 {
-	if (type_of(strm) != t_stream || strm->stream.mode != smm_echo)
-		FEwrong_type_argument(@'echo-stream', strm);
+	unlikely_if (!ECL_ANSI_STREAM_TYPE_P(strm, smm_echo))
+		FEwrong_type_only_arg(@[echo-stream-input-stream],
+                                      strm, @[echo-stream]);
 	@(return ECHO_STREAM_INPUT(strm))
 }
 
 cl_object
 cl_echo_stream_output_stream(cl_object strm)
 {
-	if (type_of(strm) != t_stream || strm->stream.mode != smm_echo)
-		FEwrong_type_argument(@'echo-stream', strm);
+	unlikely_if (!ECL_ANSI_STREAM_TYPE_P(strm, smm_echo))
+		FEwrong_type_only_arg(@[echo-stream-output-stream],
+                                      strm, @[echo-stream]);
 	@(return ECHO_STREAM_OUTPUT(strm))
 }
 
@@ -2250,7 +2268,7 @@ static void
 concatenated_unread_char(cl_object strm, ecl_character c)
 {
 	cl_object l = CONCATENATED_STREAM_LIST(strm);
-	if (Null(l))
+	unlikely_if (Null(l))
 		unread_error(strm);
 	ecl_unread_char(c, ECL_CONS_CAR(l));
 }
@@ -2269,6 +2287,15 @@ concatenated_listen(cl_object strm)
 		}
 	}
 	return ECL_LISTEN_EOF;
+}
+
+static cl_object
+concatenated_close(cl_object strm)
+{
+	if (strm->stream.flags & ECL_STREAM_CLOSE_COMPONENTS) {
+		cl_mapc(2, @'close', CONCATENATED_STREAM_LIST(strm));
+	}
+	return generic_close(strm);
 }
 
 const struct ecl_file_ops concatenated_ops = {
@@ -2301,7 +2328,7 @@ const struct ecl_file_ops concatenated_ops = {
 	generic_always_nil, /* get_position */
 	generic_set_position,
 	generic_column,
-	generic_close
+	concatenated_close
 };
 
 @(defun make_concatenated_stream (&rest ap)
@@ -2311,7 +2338,7 @@ const struct ecl_file_ops concatenated_ops = {
 	streams = Cnil;
 	for (i = 0; i < narg; i++) {
 		x = cl_va_arg(ap);
-		if (!ecl_input_stream_p(x))
+		unlikely_if (!ecl_input_stream_p(x))
 			not_an_input_stream(x);
 		streams = CONS(x, streams);
 	}
@@ -2330,8 +2357,9 @@ const struct ecl_file_ops concatenated_ops = {
 cl_object
 cl_concatenated_stream_streams(cl_object strm)
 {
-	if (type_of(strm) != t_stream || strm->stream.mode != smm_concatenated)
-		FEwrong_type_argument(@'concatenated-stream', strm);
+	unlikely_if (!ECL_ANSI_STREAM_TYPE_P(strm, smm_concatenated))
+		FEwrong_type_only_arg(@[concatenated-stream-streams],
+                                      strm, @[concatenated-stream]);
 	return cl_copy_list(CONCATENATED_STREAM_LIST(strm));
 }
 
@@ -2528,8 +2556,9 @@ cl_make_synonym_stream(cl_object sym)
 cl_object
 cl_synonym_stream_symbol(cl_object strm)
 {
-	if (type_of(strm) != t_stream || strm->stream.mode != smm_synonym)
-		FEwrong_type_argument(@'synonym-stream', strm);
+	unlikely_if (!ECL_ANSI_STREAM_TYPE_P(strm, smm_synonym))
+		FEwrong_type_only_arg(@[synonym-stream-symbol],
+                                      strm, @[synonym-stream]);
 	@(return SYNONYM_STREAM_SYMBOL(strm))
 }
 
@@ -2660,7 +2689,7 @@ io_file_length(cl_object strm)
 	if (strm->stream.byte_size != 8) {
 		cl_index bs = strm->stream.byte_size;
 		output = ecl_floor2(output, MAKE_FIXNUM(bs/8));
-		if (VALUES(1) != MAKE_FIXNUM(0)) {
+		unlikely_if (VALUES(1) != MAKE_FIXNUM(0)) {
 			FEerror("File length is not on byte boundary", 0);
 		}
 	}
@@ -2677,7 +2706,7 @@ io_file_get_position(cl_object strm)
 	ecl_disable_interrupts();
 	offset = lseek(f, 0, SEEK_CUR);
 	ecl_enable_interrupts();
-	if (offset < 0)
+	unlikely_if (offset < 0)
 		io_error(strm);
 	if (sizeof(ecl_off_t) == sizeof(long)) {
 		output = ecl_make_integer(offset);
@@ -2731,14 +2760,14 @@ io_file_close(cl_object strm)
 {
 	int f = IO_FILE_DESCRIPTOR(strm);
 	int failed;
-	if (f == STDOUT_FILENO)
+	unlikely_if (f == STDOUT_FILENO)
 		FEerror("Cannot close the standard output", 0);
-	if (f == STDIN_FILENO)
+	unlikely_if (f == STDIN_FILENO)
 		FEerror("Cannot close the standard input", 0);
 	ecl_disable_interrupts();
 	failed = close(f);
 	ecl_enable_interrupts();
-	if (failed < 0)
+	unlikely_if (failed < 0)
 		FElibc_error("Cannot close stream ~S.", 1, strm);
 	IO_FILE_DESCRIPTOR(strm) = -1;
 	return generic_close(strm);
@@ -2947,7 +2976,7 @@ parse_external_format(cl_object stream, cl_object format, int flags)
 	if (format == @':US-ASCII') {
 		return flags | ECL_STREAM_US_ASCII; 
 	}
-	if (type_of(format) == t_hashtable) {
+	if (ECL_HASH_TABLE_P(format)) {
 		stream->stream.format_table = format;
 		return flags | ECL_STREAM_USER_FORMAT;
 	}
@@ -3120,7 +3149,7 @@ cl_object
 si_stream_external_format_set(cl_object stream, cl_object format)
 {
 #ifdef ECL_CLOS_STREAMS
-        if (ECL_INSTANCEP(stream)) {
+        unlikely_if (ECL_INSTANCEP(stream)) {
                 FEerror("Cannot change external format of stream ~A", 1, stream);
         }
 #endif
@@ -3138,7 +3167,8 @@ si_stream_external_format_set(cl_object stream, cl_object format)
 #endif
                 {
                         cl_object elt_type = ecl_stream_element_type(stream);
-                        if (elt_type != @'character' && elt_type != @'base-char')
+                        unlikely_if (elt_type != @'character' &&
+                                     elt_type != @'base-char')
                                 FEerror("Cannot change external format"
                                         "of binary stream ~A", 1, stream);
                         set_stream_elt_type(stream, stream->stream.byte_size,
@@ -3280,7 +3310,7 @@ io_stream_clear_input(cl_object strm)
         int f = fileno(fp);
 	if (isatty(f)) {
 		/* Flushes Win32 console */
-		if (!FlushConsoleInputBuffer((HANDLE)_get_osfhandle(f)))
+		unlikely_if (!FlushConsoleInputBuffer((HANDLE)_get_osfhandle(f)))
 			FEwin32_error("FlushConsoleInputBuffer() failed", 0);
 		/* Do not stop here: the FILE structure needs also to be flushed */
 	}
@@ -3321,7 +3351,7 @@ io_stream_length(cl_object strm)
 	if (strm->stream.byte_size != 8) {
 		cl_index bs = strm->stream.byte_size;
 		output = ecl_floor2(output, MAKE_FIXNUM(bs/8));
-		if (VALUES(1) != MAKE_FIXNUM(0)) {
+		unlikely_if (VALUES(1) != MAKE_FIXNUM(0)) {
 			FEerror("File length is not on byte boundary", 0);
 		}
 	}
@@ -3394,11 +3424,11 @@ io_stream_close(cl_object strm)
 {
 	FILE *f = IO_STREAM_FILE(strm);
 	int failed;
-	if (f == stdout)
+	unlikely_if (f == stdout)
 		FEerror("Cannot close the standard output", 0);
-	if (f == stdin)
+	unlikely_if (f == stdin)
 		FEerror("Cannot close the standard input", 0);
-	if (f == NULL)
+	unlikely_if (f == NULL)
 		wrong_file_handler(strm);
 	if (ecl_output_stream_p(strm)) {
 		ecl_force_output(strm);
@@ -3406,7 +3436,7 @@ io_stream_close(cl_object strm)
 	ecl_disable_interrupts();
 	failed = fclose(f);
 	ecl_enable_interrupts();
-	if (failed)
+	unlikely_if (failed)
 		FElibc_error("Cannot close stream ~S.", 1, strm);
 #if !defined(GBC_BOEHM)
 	ecl_dealloc(strm->stream.buffer);
@@ -3543,13 +3573,14 @@ winsock_stream_read_byte8(cl_object strm, unsigned char *c, cl_index n)
 	
 	if(n > 0) {
 		SOCKET s = (SOCKET)IO_FILE_DESCRIPTOR(strm);
-		if(INVALID_SOCKET == s) {
+		unlikely_if (INVALID_SOCKET == s) {
 			wrong_file_handler(strm);
 		} else {
 			ecl_disable_interrupts();
 			len = recv(s, c, n, 0);
-			if (len == SOCKET_ERROR )
-				wsock_error( "Cannot read bytes from Windows socket ~S.~%~A", strm);
+			unlikely_if (len == SOCKET_ERROR)
+				wsock_error("Cannot read bytes from Windows "
+                                            "socket ~S.~%~A", strm);
 			ecl_enable_interrupts();
 		}
 	}
@@ -3565,14 +3596,15 @@ winsock_stream_write_byte8(cl_object strm, unsigned char *c, cl_index n)
 	unsigned char *endp;
 	unsigned char *p;
 	SOCKET s = (SOCKET)IO_FILE_DESCRIPTOR(strm);
-	if(INVALID_SOCKET == s) {
+	unlikely_if (INVALID_SOCKET == s) {
 		wrong_file_handler(strm);
 	} else {
 		ecl_disable_interrupts();
 		do {
 			cl_index res = send(s, c + out, n, 0);
-			if(res == SOCKET_ERROR) {
-				wsock_error("Cannot write bytes to Windows socket ~S.~%~A", strm);
+			unlikely_if (res == SOCKET_ERROR) {
+				wsock_error("Cannot write bytes to Windows"
+                                            " socket ~S.~%~A", strm);
 				break; /* stop writing */
 			} else {			
 				out += res;
@@ -3592,12 +3624,12 @@ winsock_stream_listen(cl_object strm)
 	unsigned char *p;
 
 	SOCKET s = (SOCKET)IO_FILE_DESCRIPTOR(strm);
-	if(INVALID_SOCKET == s) {
+	unlikely_if (INVALID_SOCKET == s) {
 		wrong_file_handler(strm);
 	} else {
-		if(CONSP(strm->stream.object0))
+		if (CONSP(strm->stream.object0)) {
 			return ECL_LISTEN_AVAILABLE;
-		else {
+                } else {
 			struct timeval tv = { 0, 0 };
 			fd_set fds;
 			cl_index result;
@@ -3606,8 +3638,9 @@ winsock_stream_listen(cl_object strm)
 			FD_SET(s, &fds);
 			ecl_disable_interrupts();
 			result = select( 0, &fds, NULL, NULL,  &tv );
-			if ( result == SOCKET_ERROR )
-				wsock_error( "Cannot listen on Windows socket ~S.~%~A", strm );
+			unlikely_if (result == SOCKET_ERROR)
+				wsock_error("Cannot listen on Windows "
+                                            "socket ~S.~%~A", strm );
 			ecl_enable_interrupts();
 			return ( result > 0 
 				 ? ECL_LISTEN_AVAILABLE 
@@ -3632,7 +3665,7 @@ winsock_stream_close(cl_object strm)
 	ecl_disable_interrupts();
 	failed = closesocket(s);
 	ecl_enable_interrupts();
-	if (failed < 0)
+	unlikely_if (failed < 0)
 		FElibc_error("Cannot close stream ~S.", 1, strm);
 	IO_FILE_DESCRIPTOR(strm) = (int)INVALID_SOCKET;
 	return generic_close(strm);
@@ -3747,7 +3780,7 @@ si_set_buffering_mode(cl_object stream, cl_object buffer_mode_symbol)
 	enum ecl_smmode mode = stream->stream.mode;
 	int buffer_mode;
 
-	if (type_of(stream) != t_stream) {
+	unlikely_if (!ECL_ANSI_STREAM_P(stream)) {
 		FEerror("Cannot set buffer of ~A", 1, stream);
 	}
 
@@ -3859,7 +3892,7 @@ int
 ecl_stream_to_handle(cl_object s, bool output)
 {
  BEGIN:
-	if (type_of(s) != t_stream)
+	if (ecl_unlikely(!ECL_ANSI_STREAM_P(s)))
 		return -1;
 	switch ((enum ecl_smmode)s->stream.mode) {
 	case smm_input:
@@ -3894,7 +3927,7 @@ si_file_stream_fd(cl_object s)
 {
         cl_object ret;
 
-	if (type_of(s) != t_stream)
+	unlikely_if (!ECL_ANSI_STREAM_P(s))
 		FEerror("file_stream_fd: not a stream", 0);
 
 	switch ((enum ecl_smmode)s->stream.mode) {
@@ -3934,8 +3967,8 @@ stream_dispatch_table(cl_object strm)
 		return &clos_stream_ops;
 	}
 #endif
-	if (type_of(strm) != t_stream)
-		FEtype_error_stream(strm);
+	if (!ECL_ANSI_STREAM_P(strm))
+		FEwrong_type_argument(@[stream], strm);
 	return (const struct ecl_file_ops *)strm->stream.ops;
 }
 
@@ -4129,8 +4162,8 @@ cl_file_string_length(cl_object stream, cl_object string)
 		@(return Cnil)
 	}
 #endif
-	if (type_of(stream) != t_stream) {
-		not_a_file_stream(stream);
+	unlikely_if (!ECL_ANSI_STREAM_P(stream)) {
+                FEwrong_type_only_arg(@[file-string-length], stream, @[stream]);
 	}
 	if (stream->stream.mode == smm_broadcast) {
 		stream = BROADCAST_STREAM_LIST(stream);
@@ -4140,7 +4173,7 @@ cl_file_string_length(cl_object stream, cl_object string)
 			goto BEGIN;
 		}
 	}
-	if (!ECL_FILE_STREAMP(stream)) {
+	unlikely_if (!ECL_FILE_STREAM_P(stream)) {
 		not_a_file_stream(stream);
 	}
 	switch (type_of(string)) {
@@ -4158,7 +4191,7 @@ cl_file_string_length(cl_object stream, cl_object string)
 		l = compute_char_size(stream, CHAR_CODE(string));
 		break;
 	default:
-		FEwrong_type_argument(@'string', string);
+                FEwrong_type_nth_arg(@[file-string-length], 2, string, @[string]);
 	}
 	@(return MAKE_FIXNUM(l))
 }
@@ -4173,12 +4206,22 @@ si_do_write_sequence(cl_object seq, cl_object stream, cl_object s, cl_object e)
 	   sequence. Therefore, we only need to check the type of the
 	   object, and seq == Cnil i.f.f. t = t_symbol */
 	limit = ecl_length(seq);
-	start = ecl_fixnum_in_range(@'write-sequence',"start",s,0,limit);
+        if (ecl_unlikely(!ECL_FIXNUMP(s) ||
+                         ((start = fix(s)) < 0) ||
+                         (start > limit))) {
+                FEwrong_type_key_arg(@[write-sequence], @[:start], s,
+                                     ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                           MAKE_FIXNUM(limit-1)));
+        }
 	if (e == Cnil) {
 		end = limit;
-	} else {
-		end = ecl_fixnum_in_range(@'write-sequence',"end",e,0,limit);
-	}
+	} else if (ecl_unlikely(!ECL_FIXNUMP(e) ||
+                                ((end = fix(e)) < 0) ||
+                                (end > limit))) {
+                FEwrong_type_key_arg(@[write-sequence], @[:end], e,
+                                     ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                           MAKE_FIXNUM(limit)));
+        }
 	if (end <= start) {
 		goto OUTPUT;
 	}
@@ -4216,12 +4259,22 @@ si_do_read_sequence(cl_object seq, cl_object stream, cl_object s, cl_object e)
 	   sequence. Therefore, we only need to check the type of the
 	   object, and seq == Cnil i.f.f. t = t_symbol */
 	limit = ecl_length(seq);
-	start = ecl_fixnum_in_range(@'read-sequence',"start",s,0,limit);
+        if (ecl_unlikely(!ECL_FIXNUMP(s) ||
+                         ((start = fix(s)) < 0) ||
+                         (start > limit))) {
+                FEwrong_type_key_arg(@[read-sequence], @[:start], s,
+                                     ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                           MAKE_FIXNUM(limit-1)));
+        }
 	if (e == Cnil) {
 		end = limit;
-	} else {
-		end = ecl_fixnum_in_range(@'read-sequence',"end",e,0,limit);
-	}
+	} else if (ecl_unlikely(!ECL_FIXNUMP(e) ||
+                                ((end = fix(e)) < 0) ||
+                                (end > limit))) {
+                FEwrong_type_key_arg(@[read-sequence], @[:end], e,
+                                     ecl_make_integer_type(MAKE_FIXNUM(0),
+                                                           MAKE_FIXNUM(limit)));
+        }
 	if (end <= start) {
 		goto OUTPUT;
 	}
@@ -4310,8 +4363,13 @@ cl_open_stream_p(cl_object strm)
 	/* ANSI and Cltl2 specify that open-stream-p should work
 	   on closed streams, and that a stream is only closed
 	   when #'close has been applied on it */
-	if (type_of(strm) != t_stream)
-		FEwrong_type_argument(@'stream', strm);
+#ifdef ECL_CLOS_STREAMS
+	if (ECL_INSTANCEP(strm)) {
+		return funcall(2, @'gray::open-stream-p', strm);
+	}
+#endif
+	unlikely_if (!ECL_ANSI_STREAM_P(strm))
+                FEwrong_type_only_arg(@'open-stream-p', strm, @'stream');
 	@(return (strm->stream.closed ? Cnil : Ct))
 }
 
@@ -4333,8 +4391,8 @@ cl_stream_external_format(cl_object strm)
 		output = @':default';
 	else
 #endif
-	if (t != t_stream)
-		FEwrong_type_argument(@'stream', strm);
+        unlikely_if (t != t_stream)
+                FEwrong_type_only_arg(@[stream-external-format], strm, @[stream]);
 	if (strm->stream.mode == smm_synonym) {
 		strm = SYNONYM_STREAM_STREAM(strm);
 		goto AGAIN;
@@ -4351,7 +4409,7 @@ cl_streamp(cl_object strm)
 		return funcall(2, @'gray::streamp', strm);
 	}
 #endif
-	@(return ((type_of(strm) == t_stream) ? Ct : Cnil))
+	@(return (ECL_ANSI_STREAM_P(strm) ? Ct : Cnil))
 }
 
 /**********************************************************************
@@ -4587,6 +4645,8 @@ ecl_open_stream(cl_object fn, enum ecl_smmode smm, cl_object if_exists,
 		byte_size = 8;
 	} else if (element_type == @':default') {
 		byte_size = 0;
+        } else if (element_type == @'base-char' || element_type == @'character') {
+                byte_size = 0;
 	} else if (funcall(3, @'subtypep', element_type, @'character') != Cnil) {
 		byte_size = 0;
 	} else {
@@ -4633,7 +4693,7 @@ file_listen(int fileno)
 	FD_ZERO(&fds);
 	FD_SET(fileno, &fds);
 	retv = select(fileno + 1, &fds, NULL, NULL, &tv);
-	if (retv < 0)
+	if (ecl_unlikely(retv < 0))
 		FElibc_error("select() returned an error value", 0);
 	else if (retv > 0)
 		return ECL_LISTEN_AVAILABLE;
@@ -4652,12 +4712,12 @@ file_listen(int fileno)
 		case FILE_TYPE_CHAR: {
 			DWORD dw, dw_read, cm;
 			if (GetNumberOfConsoleInputEvents(hnd, &dw)) {
-				if (!GetConsoleMode(hnd, &cm))
+				unlikely_if (!GetConsoleMode(hnd, &cm))
 					FEwin32_error("GetConsoleMode() failed", 0);
 				if (dw > 0) {
 					PINPUT_RECORD recs = (PINPUT_RECORD)GC_malloc(sizeof(INPUT_RECORD)*dw);
 					int i;
-					if (!PeekConsoleInput(hnd, recs, dw, &dw_read))
+					unlikely_if (!PeekConsoleInput(hnd, recs, dw, &dw_read))
 						FEwin32_error("PeekConsoleInput failed()", 0);
 					if (dw_read > 0) {
 						if (cm & ENABLE_LINE_INPUT) {
@@ -4719,10 +4779,10 @@ flisten(FILE *fp)
 	{
 		/* regular file */
 		ecl_off_t old_pos = ecl_ftello(fp), end_pos;
-		if (ecl_fseeko(fp, 0, SEEK_END) != 0)
+		unlikely_if (ecl_fseeko(fp, 0, SEEK_END) != 0)
 			FElibc_error("fseek() returned an error value", 0);
 		end_pos = ecl_ftello(fp);
-		if (ecl_fseeko(fp, old_pos, SEEK_SET) != 0)
+		unlikely_if (ecl_fseeko(fp, old_pos, SEEK_SET) != 0)
 			FElibc_error("fseek() returned an error value", 0);
 		return (end_pos > old_pos ? ECL_LISTEN_AVAILABLE : ECL_LISTEN_EOF);
 	}
@@ -4765,7 +4825,7 @@ ecl_integer_to_off_t(cl_object offset)
 		output = fixint(offset);
 	} else if (FIXNUMP(offset)) {
 		output = fixint(offset);
-	} else if (type_of(offset) == t_bignum) {
+	} else if (ECL_BIGNUMP(offset)) {
 #ifdef WITH_GMP
 		if (sizeof(offset->big.big_limbs[0]) == sizeof(cl_index)) {
 			if (offset->big.big_size > 2) {

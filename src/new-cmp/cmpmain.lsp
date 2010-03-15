@@ -30,7 +30,8 @@
 
 (defun compile-file-pathname (name &key (output-file T) (type nil type-supplied-p)
                               verbose print c-file h-file data-file shared-data-file
-                              system-p load)
+                              system-p load external-format source-truename
+                              source-offset)
   (let* ((format '())
          (extension '()))
     (unless type-supplied-p
@@ -441,12 +442,15 @@ static cl_object VV[VM];
                       &key
 		      ((:verbose *compile-verbose*) *compile-verbose*)
 		      ((:print *compile-print*) *compile-print*)
+                      (source-truename nil)
+                      (source-offset 0)
 		      (c-file nil)
 		      (h-file nil)
 		      (data-file nil)
 		      (shared-data-file nil)
 		      (system-p nil)
 		      (load nil)
+                      (external-format :default)
 		      output-file
                       &aux (*standard-output* *standard-output*)
                            (*error-output* *error-output*)
@@ -455,6 +459,7 @@ static cl_object VV[VM];
 			   (*print-pretty* nil)
 			   (*compile-file-pathname* nil)
 			   (*compile-file-truename* nil)
+                           (ext:*source-location* (cons source-truename 0))
 			   (*suppress-compiler-messages*
 			    (or *suppress-compiler-messages* (not *compile-verbose*)))
 			   init-name)
@@ -496,7 +501,7 @@ compiled successfully, returns the pathname of the compiled file"
   (when (and system-p load)
     (error "Cannot load system files."))
 
-  (cmpprogress "~&;;; Compiling ~a." (namestring input-pathname))
+  (cmpprogress "~&;;;~%;;; Compiling ~a." (namestring input-pathname))
 
   (let* ((eof '(NIL))
 	 (*compiler-in-use* *compiler-in-use*)
@@ -535,14 +540,17 @@ compiled successfully, returns the pathname of the compiled file"
 					 (if system-p :object :fasl)))
 
       (with-t1expr (init-name)
-        (with-open-file (*compiler-input* *compile-file-pathname*)
-          (do* ((ext:*source-location* (cons *compile-file-pathname* 0))
-                (*compile-file-position* 0 (file-position *compiler-input*))
+        (with-open-file (*compiler-input* *compile-file-pathname*
+                                          :external-format external-format)
+          (unless source-truename
+            (setf (car ext:*source-location*) *compile-file-pathname*))
+          (do* ((*compile-file-position* 0 (file-position *compiler-input*))
                 (form (si::read-object-or-ignore *compiler-input* eof)
                       (si::read-object-or-ignore *compiler-input* eof)))
                ((eq form eof))
             (when form
-              (setf (cdr ext:*source-location*) *compile-file-position*)
+              (setf (cdr ext:*source-location*)
+                    (+ source-offset *compile-file-position*))
               (t1expr form)))))
       (cmpprogress "~&;;; End of Pass 1.")
 
@@ -567,7 +575,8 @@ compiled successfully, returns the pathname of the compiled file"
                      (si::coerce-to-filename o-pathname))))
 
       (if (setf true-output-file (probe-file output-file))
-          (cmpprogress "~&;;; Finished compiling ~a.~%" (namestring input-pathname))
+          (cmpprogress "~&;;; Finished compiling ~a.~%;;;~%"
+                       (namestring input-pathname))
           (cmperr "The C compiler failed to compile the intermediate file."))
 
       (mapc #'cmp-delete-file to-delete)
@@ -587,7 +596,7 @@ compiled successfully, returns the pathname of the compiled file"
 	       (setf warning-p t))
 	      ((typep i '(or compiler-error warning))
 	       (setf warning-p t failure-p t)))
-     finally (return (values (and (not failure-p) main-value) warning-p failure-p))))
+     finally (return (values main-value warning-p failure-p))))
 
 #-dlopen
 (defun compile (name &optional (def nil supplied-p))
@@ -827,7 +836,7 @@ from the C language code.  NIL means \"do not create the file\"."
    ))
 
 (defun print-compiler-info ()
-  (cmpprogress "~&;;; OPTIMIZE levels: Safety=~d, Space=~d, Speed=~d, Debug=~d~%"
+  (cmpprogress "~&;;; OPTIMIZE levels: Safety=~d, Space=~d, Speed=~d, Debug=~d~%;;;~%"
 	       *safety* *space* *speed* *debug*))
 
 (defmacro with-compilation-unit (options &rest body)

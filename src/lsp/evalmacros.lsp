@@ -19,50 +19,22 @@ last FORM.  If not, simply returns NIL."
   `(IF (NOT ,pred) (PROGN ,@body)))
 
 (defmacro defun (&whole whole name vl &body body &aux doc-string)
-  "Syntax: (defun name lambda-list {decl | doc}* {form}*)
-Defines a global function named by NAME.
-The complete syntax of a lambda-list is:
-	({var}*
-	 [&optional {var | (var [init [svar]])}*]
-	 [&rest var]
-	 [&key {var | ({var | (keyword var)} [init [svar]])}*
-	       [&allow-other-keys]]
-	 [&aux {var | (var [init])}*])
-The doc-string DOC, if supplied, is saved as a FUNCTION doc and can be
-retrieved by (documentation 'NAME 'function)."
+  ;; Documentation in help.lsp
   (multiple-value-setq (body doc-string) (remove-documentation body))
   (let* ((function `#'(ext::lambda-block ,name ,vl ,@body))
 	 (global-function `#'(ext::lambda-block ,name ,vl
-			       (declare (si::c-global))
-			       ,@body)))
+                                                (declare (si::c-global))
+                                                ,@body)))
     (when *dump-defun-definitions*
       (print function)
       (setq function `(si::bc-disassemble ,function)))
-  `(progn
-     (eval-when (:execute)
-       (si::fset ',name ,function))
-     (eval-when (:load-toplevel)
-       ,(ext:register-with-pde whole `(si::fset ',name ,global-function)))
-    ,@(si::expand-set-documentation name 'function doc-string)
-    ',name)))
+    `(progn
+       ,(ext:register-with-pde whole `(si::fset ',name ,global-function))
+       ,@(si::expand-set-documentation name 'function doc-string)
+       ',name)))
 
-(defmacro defmacro (name vl &body body &aux doc-string)
-  "Syntax: (defmacro name defmacro-lambda-list {decl | doc}* {form}*)
-Defines a global macro named by NAME.  The complete syntax of DEFMACRO-LAMBDA-
-LIST is:
-	( [&whole var] [&environment var] . pvar )
-where PVAR may be a symbol,
-	( {pvar}* [&optional {var | (pvar [init [pvar]])}*] . var )
-or
-	( {pvar}*
-	  [&optional {var | (pvar [init [pvar]])}*]
-	  [{&rest | &body} pvar]
-	  [&key {var | ({var | (keyword pvar)} [init [pvar]])}*
-	        [&allow-other-keys]]
-	  [&aux {var | (pvar [init])}*] )
-The doc-string DOC, if supplied, is saved as a FUNCTION doc and can be
-retrieved by (documentation 'NAME 'function).  See LIST for the backquote
-macro useful for defining macros."
+(defmacro defmacro (&whole whole name vl &body body &aux doc-string)
+  ;; Documentation in help.lsp
   (multiple-value-bind (function pprint doc-string)
       (sys::expand-defmacro name vl body)
     (setq function `(function ,function))
@@ -70,7 +42,7 @@ macro useful for defining macros."
       (print function)
       (setq function `(si::bc-disassemble ,function)))
     `(eval-when (:compile-toplevel :load-toplevel :execute)
-       (si::fset ',name ,function t ,pprint)
+       ,(ext:register-with-pde whole `(si::fset ',name ,function t ,pprint))
        ,@(si::expand-set-documentation name 'function doc-string)
        ',name)))
 

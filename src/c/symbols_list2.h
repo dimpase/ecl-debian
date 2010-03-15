@@ -1122,6 +1122,7 @@ cl_symbols[] = {
 {SYS_ "GETPID","si_getpid"},
 {SYS_ "HASH-SET","si_hash_set"},
 {SYS_ "HASH-TABLE-ITERATOR","si_hash_table_iterator"},
+{SYS_ "IHS-BDS","si_ihs_bds"},
 {SYS_ "IHS-ENV","si_ihs_env"},
 {SYS_ "IHS-FUN","si_ihs_fun"},
 {SYS_ "IHS-NEXT","si_ihs_next"},
@@ -1780,6 +1781,7 @@ cl_symbols[] = {
 
 {EXT_ "LOAD-ENCODING",NULL},
 {EXT_ "MAKE-ENCODING",NULL},
+{EXT_ "ALL-ENCODINGS",NULL},
 
 {KEY_ "US-ASCII",NULL},
 {KEY_ "LITTLE-ENDIAN",NULL},
@@ -1867,6 +1869,17 @@ cl_symbols[] = {
 #endif
 
 {EXT_ "*INVOKE-DEBUGGER-HOOK*",NULL},
+
+{EXT_ "*DOCUMENTATION-POOL*",NULL},
+{EXT_ "ANNOTATE",NULL},
+{EXT_ "GET-ANNOTATION",NULL},
+{EXT_ "REMOVE-ANNOTATION",NULL},
+{EXT_ "FUNCTION-LAMBDA-LIST",NULL},
+{EXT_ "DEFAULT-ANNOTATION-LOGIC",NULL},
+{EXT_ "OPTIONAL-ANNOTATION",NULL},
+{EXT_ "LOCATION",NULL},
+
+{EXT_ "LISP-IMPLEMENTATION-VCS-ID",NULL},
 
 /* Tag for end of list */
 {NULL,NULL}};

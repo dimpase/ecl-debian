@@ -552,6 +552,7 @@ Use special code 0 to cancel this operation.")
 		 ((:prompt-hook *tpl-prompt-hook*) *tpl-prompt-hook*)
   		 (broken-at nil)
 		 (quiet nil))
+  (declare (c::policy-debug-ihs-frame))
   (let* ((*ihs-base* *ihs-top*)
 	 (*ihs-top* (if broken-at (ihs-search t broken-at) (ihs-top)))
 	 (*ihs-current* (if broken-at (ihs-prev *ihs-top*) *ihs-top*))
@@ -833,26 +834,38 @@ Use special code 0 to cancel this operation.")
 
 (defun function-lambda-list (function)
   (cond
+    ((symbolp function)
+     (if (or (not (fboundp function))
+             (special-operator-p function)
+             (macro-function function))
+         (values nil nil)
+         (function-lambda-list (fdefinition function))))
     ((typep function 'generic-function)
-     (generic-function-lambda-list function))
-    ((not (typep function 'compiled-function))
-     (function-lambda-list (fdefinition function)))
+     (values (clos:generic-function-lambda-list function) t))
     ;; Use the lambda list from the function definition, if available,
     ;; but remove &aux arguments.
     ((let ((f (function-lambda-expression function)))
        (when f
-	 (let* ((list (if (eql (first f) 'LAMBDA)
-			  (second f)
-			  (third f)))
-		(ndx (position '&aux list)))
-	   (if ndx
-	       (subseq list 0 (1- ndx))
-	       list)))))
+         (let* ((list (if (eql (first f) 'LAMBDA)
+                          (second f)
+                          (third f)))
+                (ndx (position '&aux list)))
+           (return-from function-lambda-list
+             (values (if ndx (subseq list 0 (1- ndx)) list) t))))))
     ;; Reconstruct the lambda list from the bytecodes
     ((multiple-value-bind (lex-env bytecodes data)
-	 (si::bc-split function)
+         (si::bc-split function)
+       (declare (ignore lex-env))
        (when bytecodes
-	 (reconstruct-bytecodes-lambda-list (coerce data 'list)))))))
+         (setq data (coerce data 'list))
+         (return-from function-lambda-list
+           (values (reconstruct-bytecodes-lambda-list data) t)))))
+    ;; If it's a compiled function of ECL itself, reconstruct the
+    ;; lambda-list from its documentation string.
+    (t
+     (let* ((name (compiled-function-name function))
+            (args (ext:get-annotation name :lambda-list nil)))
+       (values args (and args t))))))
 
 #-ecl-min
 (defun decode-env-elt (env ndx)
@@ -908,49 +921,97 @@ Use special code 0 to cancel this operation.")
                    next))
       env)))
 
+(defun ihs-environment (ihs-index)
+  (labels ((newly-bound-special-variables (bds-min bds-max)
+             (loop for i from bds-min to bds-max
+                for variable = (bds-var i)
+                unless (member variable output :test #'eq)
+                collect variable into output
+                finally (return output)))
+           (special-variables-alist (ihs-index)
+             (let ((top (ihs-top)))
+               (unless (> ihs-index top)
+                 (let* ((bds-min (1+ (ihs-bds ihs-index)))
+                        (bds-top (bds-top))
+                        (bds-max (if (= ihs-index top)
+                                     bds-top
+                                     (ihs-bds (1+ ihs-index))))
+                        (variables (newly-bound-special-variables bds-min bds-max)))
+                   (loop with output = '()
+                      for i from (1+ bds-max) to bds-top
+                      for var = (bds-var i)
+                      when (member var variables :test #'eq)
+                      do (setf variables (delete var variables)
+                               output (acons var (bds-val i) output))
+                      finally (return
+                                (append (loop for v in variables
+                                           collect (cons v (symbol-value v)))
+                                        output)))))))
+           (extract-restarts (variables-alist)
+             (let ((record (assoc '*restart-clusters* variables-alist)))
+               (if record
+                   (let* ((bindings (cdr record))
+                          (new-bindings (first bindings)))
+                     (values (delete record variables-alist) new-bindings))
+                   (values variables-alist nil)))))
+    (let* ((functions '())
+           (blocks '())
+           (local-variables '())
+           (special-variables '())
+           (restarts '()))
+      (dolist (record (decode-ihs-env (ihs-env ihs-index)))
+        (cond ((atom record)
+               (push (compiled-function-name record) functions))
+              ((progn
+                 (setf record0 (car record) record1 (cdr record))
+                 (when (stringp record0)
+                   (setf record0
+                         (let ((*package* (find-package "KEYWORD")))
+                           (with-standard-io-syntax
+                             (read-from-string record0)))))
+                 (or (symbolp record0) (stringp record0)))
+               (setq local-variables (acons record0 record1 local-variables)))
+              ((symbolp record1)
+               (push record1 blocks))
+              (t
+               )))
+      (multiple-value-bind (special-variables restarts)
+          (extract-restarts (special-variables-alist ihs-index))
+        (values (nreverse local-variables)
+                special-variables
+                functions blocks restarts)))))
+
+(defun tpl-print-variables (prefix variables no-values)
+  ;; This format is what was in the orignal code.
+  ;; It simply does not work when no-values is t.
+  ;; If you care to debug this kind of conundrum then have fun!
+  ;;(format t "Local variables: ~:[~:[none~;~:*~{~a~1*~:@{, ~a~1*~}~}~]~;~
+  ;;                            ~:[none~;~:*~{~%  ~a: ~s~}~]~]~%"
+  ;;          (not no-values) variables)
+  (format t prefix)
+  (if variables
+      (loop for (var . value) in variables
+         do (if no-values
+                (format t "~% ~S" var)
+                (format t "~% ~S: ~S" var value)))
+      (format t "none")))
+
 (defun tpl-variables-command (&optional no-values)
   (let*((*print-level* 2)
 	(*print-length* 4)
 	(*print-pretty* t)
-	(*print-readably* nil)
-	(functions '())
-	(blocks '())
-	(variables '())
-	record0 record1)
-    (dolist (record (decode-ihs-env *break-env*))
-      (cond ((atom record)
-	     (push (compiled-function-name record) functions))
-	    ((progn
-	       (setf record0 (car record) record1 (cdr record))
-	       (or (symbolp record0) (stringp record0)))
-	     (setq variables (list* record0 record1 variables)))
-	    ((symbolp record1)
-	     (push record1 blocks))
-	    (t
-	     )))
-    (format t "~:[~;Local functions: ~:*~{~s~^, ~}.~%~]" functions)
-    (format t "~:[~;Block names: ~:*~{~s~^, ~}.~%~]" blocks)
-
-    ;; This format is what was in the orignal code.
-    ;; It simply does not work when no-values is t.
-    ;; If you care to debug this kind of conundrum then have fun!
-    ;;(format t "Local variables: ~:[~:[none~;~:*~{~a~1*~:@{, ~a~1*~}~}~]~;~
-    ;;                            ~:[none~;~:*~{~%  ~a: ~s~}~]~]~%"
-    ;;          (not no-values) variables)
-    (format t "Local variables: ")
-    (if variables
-	(if no-values
-	    (do ((vals variables (cddr vals)))
-		((endp vals))
-		(format t "~%  ~S" (car vals))
-		)
-	  (do ((vals variables (cddr vals)))
-	      ((endp vals))
-	      (format t "~%  ~S: ~S" (car vals) (cadr vals))
-	   )
-	  )
-      (format t "none")
-      )
+	(*print-readably* nil))
+    (multiple-value-bind (local-variables special-variables functions blocks restarts)
+        (ihs-environment *ihs-current*)
+      (format t "~:[~;Local functions: ~:*~{~s~^, ~}.~%~]" functions)
+      (format t "~:[~;Block names: ~:*~{~s~^, ~}.~%~]" blocks)
+      (when restarts
+        (format t "New restarts:")
+        (loop for r in restarts
+           do (format t "~% ~A: ~A" (restart-name r) r)))
+      (tpl-print-variables "~%Local variables: " local-variables no-values)
+      (tpl-print-variables "~%Special variables: "
+                           special-variables no-values))
     (terpri)
     (values)))
 
@@ -1382,6 +1443,7 @@ package."
   ;; call *INVOKE-DEBUGGER-HOOK* first, so that *DEBUGGER-HOOK* is not
   ;; called when the debugger is disabled. We adopt this mechanism
   ;; from SBCL.
+  (declare (c::policy-debug-ihs-frame))
   (let ((old-hook *invoke-debugger-hook*))
     (when old-hook
       (let ((*invoke-debugger-hook* nil))

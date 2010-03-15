@@ -10,8 +10,8 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 10.2.1
-ECL_VERSION_NUMBER= 100201
+ECL_VERSION       = 10.3.1
+ECL_VERSION_NUMBER= 100301
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
@@ -224,6 +224,7 @@ lsp/config.lsp: $(srcdir)/lsp/config.lsp.in Makefile c\cut$(EXE)
 	    "@SOFTWARE_TYPE@" "$(SOFTWARE_TYPE)" \
 	    "@SOFTWARE_VERSION@" "$(SOFTWARE_VERSION)" \
 	    "@thehost@" "$(THEHOST)" \
+	    "@top_srcdir@" "$(top_srcdir:\=/)/" \
 	    < $(srcdir)\lsp\config.lsp.in > lsp\config.lsp
 compile.lsp: bare.lsp $(srcdir)/compile.lsp.in Makefile
 	c\cut "@ecldir\@" "$(libdir:\=/)" \
@@ -252,6 +253,7 @@ compile.lsp: bare.lsp $(srcdir)/compile.lsp.in Makefile
 	    "@DEF@" "$(DEF)" \
             "@RANLIB@" "ranlib" \
 	    "@LSP_FEATURES@" "$(ECL_FEATURES)" \
+	    "@ECL_CMPDIR@" "cmp" \
 	    < $(srcdir)\compile.lsp.in > compile.lsp
 bare.lsp: $(srcdir)/bare.lsp.in lsp/load.lsp clos/load.lsp cmp/load.lsp cmp/cmpdefs.lsp
 	c\cut "@true_srcdir@" "$(srcdir:\=/)" \
@@ -360,6 +362,11 @@ install:
 	for %i in (ecl-static.lib) do IF EXIST %i $(CP) %i "$(libdir)"
 	IF NOT EXIST "$(docdir)" $(MKDIR) "$(docdir)"
 	for %i in (..\Copyright ..\ANNOUNCEMENT ..\LGPL ..\README.1st ..\src\CHANGELOG) do $(CP) %i "$(docdir)"
+!if "$(ECL_UNICODE)" != ""
+	$(CP) $(UCDDAT) "$(libdir)"
+	IF NOT EXIST "$(libdir)\encodings" $(MKDIR) "$(libdir)\encodings"
+	$(CP) encodings\*.* "$(libdir)\encodings"
+!endif
 
 windows-nsi:
 	IF EXIST "$(TAR_DIR)" $(RMDIR) "$(TAR_DIR)"
