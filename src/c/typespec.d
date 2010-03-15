@@ -18,38 +18,13 @@
 #include <ecl/ecl.h>
 
 void
-FEtype_error_character(cl_object x) {
-	FEwrong_type_argument(@'character', x);
-}
-
-void
 FEtype_error_cons(cl_object x) {
-	FEwrong_type_argument(@'cons', x);
-}
-
-void
-FEtype_error_number(cl_object x) {
-	FEwrong_type_argument(@'number', x);
-}
-
-void
-FEtype_error_real(cl_object x) {
-	FEwrong_type_argument(@'real', x);
-}
-
-void
-FEtype_error_float(cl_object x) {
-	FEwrong_type_argument(@'float', x);
-}
-
-void
-FEtype_error_integer(cl_object x) {
-	FEwrong_type_argument(@'integer', x);
+	FEwrong_type_argument(@[cons], x);
 }
 
 void
 FEtype_error_list(cl_object x) {
-	FEwrong_type_argument(@'list', x);
+	FEwrong_type_argument(@[list], x);
 }
 
 void
@@ -58,16 +33,6 @@ FEtype_error_proper_list(cl_object x) {
 		    make_constant_base_string("Not a proper list ~D"),
 		    @':format-arguments', cl_list(1, x),
 		    @':expected-type', ecl_read_from_cstring("si::proper-list"),
-		    @':datum', x);
-}
-
-void
-FEtype_error_alist(cl_object x)
-{
-	cl_error(9, @'simple-type-error', @':format-control',
-		    make_constant_base_string("Not a valid association list ~D"),
-		    @':format-arguments', cl_list(1, x),
-		    @':expected-type', @'list',
 		    @':datum', x);
 }
 
@@ -96,35 +61,12 @@ FEtype_error_index(cl_object seq, cl_object ndx)
 void
 FEtype_error_array(cl_object v)
 {
-	FEwrong_type_argument(@'array', v);
-}
-
-void
-FEtype_error_vector(cl_object v)
-{
-	FEwrong_type_argument(@'vector', v);
-}
-
-void
-FEtype_error_string(cl_object s)
-{
-	FEwrong_type_argument(@'string', s);
-}
-
-void
-FEtype_error_stream(cl_object strm)
-{
-	FEwrong_type_argument(@'stream', strm);
+	FEwrong_type_argument(@[array], v);
 }
 
 void
 FEtype_error_sequence(cl_object x) {
-	FEwrong_type_argument(@'sequence', x);
-}
-
-void
-FEtype_error_instance(cl_object x) {
-	FEwrong_type_argument(@'ext::instance', x);
+	FEwrong_type_argument(@[sequence], x);
 }
 
 cl_object
@@ -232,31 +174,12 @@ ecl_check_cl_type(cl_object fun, cl_object p, cl_type t)
 	return p;
 }
 
-cl_object
-ecl_check_type_string(cl_object fun, cl_object p)
-{
-	cl_type t;
- AGAIN:
-	t = type_of(p);
-	if (t != t_base_string) {
-#ifdef ECL_UNICODE
-		if (t != t_string) 
-#endif
-			{
-			p = ecl_type_error(fun,"",p,@'string');
-			goto AGAIN;
-			}
-	}
-	return p;
-}
-
-
 void
 assert_type_integer(cl_object p)
 {
 	cl_type t = type_of(p);
 	if (t != t_fixnum && t != t_bignum)
-		FEtype_error_integer(p);
+                FEwrong_type_nth_arg(@[coerce], 1, p, @[integer]);
 }
 
 void
@@ -275,61 +198,12 @@ assert_type_non_negative_integer(cl_object p)
 }
 
 void
-assert_type_package(cl_object p)
-{
-	if (type_of(p) != t_package)
-		FEwrong_type_argument(@'package', p);
-}
-
-void
-assert_type_cons(cl_object p)
-{
-	if (ATOM(p))
-		FEwrong_type_argument(@'cons', p);
-}
-
-void
-assert_type_list(cl_object p)
-{
-	if (ATOM(p) && p != Cnil)
-		FEtype_error_list(p);
-}
-
-void
 assert_type_proper_list(cl_object p)
 {
 	if (ATOM(p) && p != Cnil)
 		FEtype_error_list(p);
 	if (cl_list_length(p) == Cnil)
 		FEcircular_list(p);
-}
-
-void
-assert_type_readtable(cl_object p)
-{
-	if (type_of(p) != t_readtable)
-		FEwrong_type_argument(@'readtable', p);
-}
-
-void
-assert_type_hash_table(cl_object p)
-{
-	if (type_of(p) != t_hashtable)
-		FEwrong_type_argument(@'hash-table', p);
-}
-
-void
-assert_type_array(cl_object p)
-{
-	if (!ECL_ARRAYP(p))
-		FEwrong_type_argument(@'array', p);
-}
-
-void
-assert_type_vector(cl_object p)
-{
-	if (!ECL_VECTORP(p))
-		FEwrong_type_argument(@'vector', p);
 }
 
 cl_object
@@ -450,4 +324,10 @@ cl_type_of(cl_object x)
 		t = ecl_type_to_symbol(tx);
 	}
 	@(return t)
+}
+
+cl_object
+ecl_make_integer_type(cl_object min, cl_object max)
+{
+        return cl_list(3, @'integer', min, max);
 }

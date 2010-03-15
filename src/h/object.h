@@ -132,6 +132,14 @@ typedef cl_object (*cl_objectfn_fixed)();
 #define	fix(obje)		(((cl_fixnum)(obje)) >> 2)
 #define FIXNUMP(o)		(IMMEDIATE(o) == t_fixnum)
 
+#define ECL_FIXNUMP(o)          (IMMEDIATE(o) == t_fixnum)
+#define ecl_fixnum_lower(a,b)   ((cl_fixnum)(a) < (cl_fixnum)(b))
+#define ecl_fixnum_greater(a,b) ((cl_fixnum)(a) > (cl_fixnum)(b))
+#define ecl_fixnum_leq(a,b)     ((cl_fixnum)(a) <= (cl_fixnum)(b))
+#define ecl_fixnum_geq(a,b)     ((cl_fixnum)(a) >= (cl_fixnum)(b))
+#define ecl_fixnum_plusp(a)     ((cl_fixnum)(a) > (cl_fixnum)MAKE_FIXNUM(0))
+#define ecl_fixnum_minusp(a)    ((cl_fixnum)(a) < (cl_fixnum)(0))
+
 /* Immediate characters:	*/
 #define CHARACTER_TAG		t_character
 #define CHARACTERP(o)		(IMMEDIATE(o) == t_character)
@@ -153,12 +161,28 @@ typedef cl_object (*cl_objectfn_fixed)();
 #define ARRAY_TYPE(t)		(t >= t_array && t <= t_bitvector)
 #define ECL_ARRAYP(x)		((IMMEDIATE(x) == 0) && (x)->d.t >= t_array && (x)->d.t <= t_bitvector)
 #define ECL_VECTORP(x)		((IMMEDIATE(x) == 0) && (x)->d.t >= t_vector && (x)->d.t <= t_bitvector)
+#define ECL_BIT_VECTOR_P(x)     ((IMMEDIATE(x) == 0) && ((x)->d.t == t_bitvector))
 #ifdef ECL_UNICODE
 #define ECL_STRINGP(x)		((IMMEDIATE(x) == 0) && \
                                  ((x)->d.t == t_base_string || (x)->d.t == t_string))
+#define ECL_EXTENDED_STRING_P(x) ((IMMEDIATE(x) == 0) && (x)->d.t == t_string)
 #else
 #define ECL_STRINGP(x)		((IMMEDIATE(x) == 0) && ((x)->d.t == t_base_string))
+#define ECL_EXTENDED_STRING_P(x) 0
 #endif
+#define ECL_BASE_STRING_P(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_base_string))
+#define ECL_HASH_TABLE_P(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_hashtable))
+#define ECL_BIGNUMP(x)          ((IMMEDIATE(x) == 0) && ((x)->d.t == t_bignum))
+#define ECL_COMPLEXP(x)         ((IMMEDIATE(x) == 0) && ((x)->d.t == t_complex))
+#define ECL_RANDOM_STATE_P(x)   ((IMMEDIATE(x) == 0) && ((x)->d.t == t_random))
+#define ECL_SINGLE_FLOAT_P(x)   ((IMMEDIATE(x) == 0) && ((x)->d.t == t_singlefloat))
+#define ECL_DOUBLE_FLOAT_P(x)   ((IMMEDIATE(x) == 0) && ((x)->d.t == t_doublefloat))
+#ifdef ECL_LONG_FLOAT
+#define ECL_LONG_FLOAT_P(x)     ((IMMEDIATE(x) == 0) && ((x)->d.t == t_longfloat))
+#endif
+#define ECL_PACKAGEP(x)         ((IMMEDIATE(x) == 0) && ((x)->d.t == t_package))
+#define ECL_PATHNAMEP(x)        ((IMMEDIATE(x) == 0) && ((x)->d.t == t_pathname))
+#define ECL_READTABLEP(x)       ((IMMEDIATE(x) == 0) && ((x)->d.t == t_readtable))
 
 #define HEADER			int8_t t, m, padding[2]
 #define HEADER1(field)		int8_t t, m, field, padding
@@ -302,6 +326,11 @@ struct ecl_package {
  */
 
 #ifdef ECL_SMALL_CONS
+#define ECL_LISTP(x)    (IMMEDIATE(x) == t_list)
+#define ECL_CONSP(x)    (LISTP(x) && !Null(x))
+#define ECL_ATOM(x)     (Null(x) || !LISTP(x))
+#define ECL_SYMBOLP(x)  (Null(x) || ((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
+
 #define LISTP(x)	(IMMEDIATE(x) == t_list)
 #define CONSP(x)	(LISTP(x) && !Null(x))
 #define ATOM(x)		(Null(x) || !LISTP(x))
@@ -319,6 +348,11 @@ struct ecl_cons {
 	cl_object cdr;		/*  cdr  */
 };
 #else
+#define ECL_LISTP(x)    (IMMEDIATE(x)? Null(x) : ((x)->d.t == t_list))
+#define ECL_CONSP(x)    ((IMMEDIATE(x) == 0) && ((x)->d.t == t_list))
+#define ECL_ATOM(x)     (IMMEDIATE(x) || ((x)->d.t != t_list))
+#define ECL_SYMBOLP(x)  (Null(x) || ((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
+
 #define LISTP(x)	(IMMEDIATE(x)? Null(x) : ((x)->d.t == t_list))
 #define CONSP(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_list))
 #define ATOM(x)		(IMMEDIATE(x) || ((x)->d.t != t_list))
@@ -587,12 +621,18 @@ enum {
 	ECL_STREAM_SIGNED_BYTES = 64,
 	ECL_STREAM_LITTLE_ENDIAN = 128,
 	ECL_STREAM_C_STREAM = 256,
-	ECL_STREAM_MIGHT_SEEK = 512
+	ECL_STREAM_MIGHT_SEEK = 512,
+	ECL_STREAM_CLOSE_COMPONENTS = 1024
 };
 
 typedef int (*cl_eformat_encoder)(cl_object stream, unsigned char *buffer, int c);
 typedef cl_index (*cl_eformat_read_byte8)(cl_object object, unsigned char *buffer, cl_index n);
 typedef int (*cl_eformat_decoder)(cl_object stream, cl_eformat_read_byte8 read_byte8, cl_object source);
+
+#define ECL_ANSI_STREAM_P(o) \
+        (IMMEDIATE(o) == 0 && ((o)->d.t == t_stream))
+#define ECL_ANSI_STREAM_TYPE_P(o,m) \
+        (IMMEDIATE(o) == 0 && ((o)->d.t == t_stream) && ((o)->stream.mode == (m)))
 
 struct ecl_stream {
 	HEADER2(mode,closed);	/*  stream mode of enum smmode  */
@@ -747,6 +787,10 @@ enum ecl_ffi_tag {
 	ECL_FFI_UNSIGNED_INT,
 	ECL_FFI_LONG,
 	ECL_FFI_UNSIGNED_LONG,
+#ifdef ecl_uint8_t
+        ECL_FFI_INT8_T,
+        ECL_FFI_UINT8_T,
+#endif
 #ifdef ecl_uint16_t
         ECL_FFI_INT16_T,
         ECL_FFI_UINT16_T,
@@ -782,6 +826,10 @@ union ecl_ffi_values {
 	unsigned short us;
 	long l;
 	unsigned long ul;
+#ifdef ecl_uint8_t
+        ecl_int8_t i8;
+        ecl_uint8_t u8;
+#endif
 #ifdef ecl_uint16_t
         ecl_int16_t i16;
         ecl_uint16_t u16;

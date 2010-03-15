@@ -637,12 +637,11 @@ si_default_pathname_defaults(void)
 	 * not enter an infinite loop when using PARSE-NAMESTRING, because
 	 * this routine might itself try to use the value of this variable. */
 	cl_object path = ecl_symbol_value(@'*default-pathname-defaults*');
-	while (type_of(path) != t_pathname) {
+	unlikely_if (!ECL_PATHNAMEP(path)) {
 		const cl_env_ptr the_env = ecl_process_env();
 		ecl_bds_bind(the_env, @'*default-pathname-defaults*', si_getcwd(0));
-		path = ecl_type_error(@'pathname', "*default-pathname-defaults*",
-				      path, @'pathname');
-		ecl_bds_unwind1(the_env);
+                FEwrong_type_key_arg(@[pathname], @[*default-pathname-defaults*],
+                                     path, @'pathname');
 	}
 	@(return path)
 }
@@ -676,10 +675,10 @@ L:
 		default:
 			;/* Fall through to error message */
 		}
-	default:
-		FEwrong_type_argument(cl_list(4, @'or', @'file-stream',
-					      @'string', @'pathname'),
-				      x);
+	default: {
+                const char *type = "(OR FILE-STREAM STRING PATHNAME)";
+                FEwrong_type_only_arg(@[pathname], x, ecl_read_from_cstring(type));
+        }
 	}
 	@(return x)
 }
@@ -743,7 +742,7 @@ cl_logical_pathname(cl_object x)
 			{
 				@(return Ct)
 			}
-		} end_loop_for_on;
+		} end_loop_for_on_unsafe(list);
 	}
 	if (checked == 0) {
 		FEerror("~A is not a valid pathname component", 1, component);
@@ -859,8 +858,16 @@ ecl_merge_pathnames(cl_object path, cl_object defaults, cl_object default_versio
 		if (Null(version))
 			version = defaults->pathname.version;
 	}
-	if (Null(version))
+	if (Null(version)) {
 		version = default_version;
+	}
+        if (default_version == @':default') {
+                if (Null(name) && Null(type)) {
+                        version = Cnil;
+                } else {
+                        version = @':newest';
+                }
+        }
 	/*
 		In this implementation, version is not considered
 	*/
@@ -1007,9 +1014,9 @@ NO_DIRECTORY:
 	}
         buffer = cl_get_output_stream_string(buffer);
 #ifdef ECL_UNICODE
-	if (type_of(buffer) == t_string &&
+	if (ECL_EXTENDED_STRING_P(buffer) &&
             (flags & ECL_NAMESTRING_FORCE_BASE_STRING)) {
-		if (!ecl_fits_in_base_string(buffer))
+		unlikely_if (!ecl_fits_in_base_string(buffer))
 			FEerror("The filesystem does not accept filenames "
                                 "with extended characters: ~S",
 				1, buffer);
@@ -1029,7 +1036,6 @@ cl_namestring(cl_object x)
 	&o host (defaults si_default_pathname_defaults())
 	&k (start MAKE_FIXNUM(0)) end junk_allowed
 	&a output)
-	cl_index s, e, ee;
 @
 	if (host != Cnil) {
 		host = cl_string(host);
@@ -1038,6 +1044,8 @@ cl_namestring(cl_object x)
 		output = cl_pathname(thing);
 	} else {
 		cl_object default_host = host;
+                cl_index_pair p;
+                cl_index ee;
 		if (default_host == Cnil && defaults != Cnil) {
 			defaults = cl_pathname(defaults);
 			default_host = defaults->pathname.host;
@@ -1045,10 +1053,10 @@ cl_namestring(cl_object x)
 #ifdef ECL_UNICODE
 		thing = si_coerce_to_base_string(thing);
 #endif
-		get_string_start_end(thing, start, end, &s, &e);
-		output = ecl_parse_namestring(thing, s, e, &ee, default_host);
+		p = ecl_vector_start_end(@[parse-namestring], thing, start, end);
+		output = ecl_parse_namestring(thing, p.start, p.end, &ee, default_host);
 		start = MAKE_FIXNUM(ee);
-		if (output == Cnil || ee != e) {
+		if (output == Cnil || ee != p.end) {
 			if (Null(junk_allowed)) {
 				FEparse_error("Cannot parse the namestring ~S~%"
 					      "from ~S to ~S.", Cnil,
@@ -1104,13 +1112,13 @@ cl_namestring(cl_object x)
 cl_object
 cl_pathnamep(cl_object pname)
 {
-	@(return ((type_of(pname) == t_pathname)? Ct : Cnil))
+	@(return (ECL_PATHNAMEP(pname) ? Ct : Cnil))
 }
 
 cl_object
 si_logical_pathname_p(cl_object pname)
 {
-	@(return ((type_of(pname) == t_pathname && pname->pathname.logical)?
+	@(return ((ECL_PATHNAMEP(pname) && pname->pathname.logical)?
 		  Ct : Cnil))
 }
 
@@ -1374,12 +1382,13 @@ coerce_to_from_pathname(cl_object x, cl_object host)
 	}
 }
 
-@(defun si::pathname_translations (host &optional (set OBJNULL))
+@(defun si::pathname-translations (host &optional (set OBJNULL))
 	cl_index parsed_len, len;
 	cl_object pair, l;
 @
 	/* Check that host is a valid host name */
-	host = ecl_check_type_string(@'si::pathname-translations',host);
+        if (ecl_unlikely(!ECL_STRINGP(host)))
+                FEwrong_type_nth_arg(@[si::pathname-translations], 1, host, @[string]);
 	len = ecl_length(host);
 	parse_word(host, is_null, WORD_LOGICAL, 0, len, &parsed_len);
 	if (parsed_len < len) {
@@ -1391,7 +1400,9 @@ coerce_to_from_pathname(cl_object x, cl_object host)
 		@(return ((pair == Cnil)? Cnil : CADR(pair)));
 	}
 	/* Set the new translation list */
-	assert_type_list(set);
+        if (ecl_unlikely(!LISTP(set))) {
+                FEwrong_type_nth_arg(@[si::pathname-translations], 2, set, @[list]);
+        }
 	if (pair == Cnil) {
 		pair = CONS(host, CONS(Cnil, Cnil));
 		cl_core.pathname_translations = CONS(pair, cl_core.pathname_translations);

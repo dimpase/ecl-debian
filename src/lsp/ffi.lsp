@@ -701,12 +701,12 @@
 	 args))
 
 (eval-when (:load-toplevel :execute)
-  (defmacro c-inline (args arg-types ret-type &rest others)
+  (defmacro c-inline (args arg-types ret-type &body others)
     `(error "The special form c-inline cannot be used in the interpreter: ~A"
       (list (list ,@args) ',arg-types ',ret-type ,@others))))
 
 (defmacro definline (fun arg-types type code)
-"Syntax: (definline symbol ({arg-type}*) value-type body)" "
+"Syntax: (definline symbol (&rest arg-types) result-type &body body) " "
 
 DEFINLINE behaves like a DEFCBODY (see), but also instructs the LISP compiler
 to expand inline any call to function SYMBOL into code corresponding
@@ -719,7 +719,7 @@ the actual arguments are of the specified type."
 	      (def-inline ,fun :always ,arg-types ,type ,code)))
 
 (defmacro defla (&rest body)
-"Syntax: (defla name lambda-list {decl | doc}* {form}*)" "
+"Syntax: (defla name lambda-list &body body)" "
 
 Used to DEFine Lisp Alternative.  For the interpreter, DEFLA is equivalent to
 DEFUN, but the compiler ignores this form."
@@ -727,7 +727,7 @@ DEFUN, but the compiler ignores this form."
      (defun ,@body)))
 
 (defmacro defcbody (name arg-types result-type C-expr)
-"Syntax: (defcbody symbol ({arg-type}*) value-type body)" "
+"Syntax: (defcbody symbol (&rest arg-types) result-type &body body)" "
 
 The compiler defines a Lisp function named by SYMBOL whose body consists of the
 C code of the string BODY. In the BODY one can reference the arguments of the
@@ -740,7 +740,7 @@ defined Lisp function and VALUE-TYPE is its the return type."
 	       ,C-expr :one-liner t))))
 
 (defmacro defentry (name arg-types c-name &key no-interrupts)
-"Syntax: (defentry symbol ({arg-type}*) (value-type function-name))
+"Syntax: (defentry symbol (&rest arg-types*) (result-type function-name))
 
 The compiler defines a Lisp function named by SYMBOL whose body consists of a
 calling sequence to the C language function named by FUNCTION-NAME.  The

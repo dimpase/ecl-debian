@@ -27,7 +27,7 @@ Make sure you have enough free space in disk, check permissions or set~%~
 the environment variable TMPDIR to a different value." template)))
 
 (defun safe-system (string)
-  (cmpnote "Invoking external command:~%  ~A" string)
+  (cmpnote "Invoking external command:~%  ~A~%" string)
   (let ((result (si:system string)))
     (unless (zerop result)
       (cerror "Continues anyway."
@@ -37,7 +37,8 @@ the environment variable TMPDIR to a different value." template)))
 
 (defun compile-file-pathname (name &key (output-file T) (type nil type-supplied-p)
                               verbose print c-file h-file data-file shared-data-file
-                              system-p load)
+                              system-p load external-format source-truename
+                              source-offset)
   (let* ((format '())
          (extension '()))
     (unless type-supplied-p
@@ -293,36 +294,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 	si_exit(0);
 }")
 
-(defun init-function-name (s &key (kind :object))
-  (flet ((translate-char (c)
-	   (cond ((and (char>= c #\a) (char<= c #\z))
-		  (char-upcase c))
-		 ((and (char>= c #\A) (char<= c #\Z))
-		  c)
-		 ((or (eq c #\-) (eq c #\_))
-		  #\_)
-		 ((eq c #\*)
-		  #\x)
-		 ((eq c #\?)
-		  #\a)
-		 ((digit-char-p c)
-		  c)
-		 (t
-		  #\p)))
-	 (disambiguation (c)
-	   (case kind
-	     (:object "")
-             (:program "exe_")
-	     ((:fasl :fas) "fas_")
-	     ((:library :shared-library :dll :static-library :lib) "lib_")
-	     (otherwise (error "Not a valid argument to INIT-FUNCTION-NAME: kind = ~S"
-			       kind)))))
-    (setq s (map 'string #'translate-char (string s)))
-    (concatenate 'string
-		 "init_"
-		 (disambiguation kind)
-		 (map 'string #'translate-char (string s)))))
-
 (defun guess-kind (pathname)
   "Given a file name, guess whether it is an object file, a library, a program
 or a loadable module."
@@ -460,7 +431,7 @@ output = si_safe_eval(2, ecl_read_from_cstring(lisp_code), Cnil);
 				  :object :c))
 	     (error "C::BUILDER does not accept a file ~s of kind ~s" item kind))
 	   (let* ((path (parse-namestring item))
-		  (init-fn (guess-init-name path))
+		  (init-fn (guess-init-name path (guess-kind path)))
 		  (flags (guess-ld-flags path)))
 	     ;; We should give a warning that we cannot link this module in
 	     (when flags (push flags ld-flags))
@@ -559,12 +530,15 @@ static cl_object VV[VM];
                       &key
 		      ((:verbose *compile-verbose*) *compile-verbose*)
 		      ((:print *compile-print*) *compile-print*)
+                      (source-truename nil)
+                      (source-offset 0)
 		      (c-file nil)
 		      (h-file nil)
 		      (data-file nil)
 		      (shared-data-file nil)
 		      (system-p nil)
 		      (load nil)
+                      (external-format :default)
 		      output-file
                       &aux (*standard-output* *standard-output*)
                            (*error-output* *error-output*)
@@ -573,6 +547,7 @@ static cl_object VV[VM];
 			   (*print-pretty* nil)
 			   (*compile-file-pathname* nil)
 			   (*compile-file-truename* nil)
+                           (ext:*source-location* (cons source-truename 0))
 			   (*suppress-compiler-messages*
 			    (or *suppress-compiler-messages* (not *compile-verbose*)))
 			   init-name)
@@ -614,7 +589,7 @@ compiled successfully, returns the pathname of the compiled file"
   (when (and system-p load)
     (error "Cannot load system files."))
 
-  (cmpprogress "~&;;; Compiling ~a." (namestring input-pathname))
+  (cmpprogress "~&;;;~%;;; Compiling ~a." (namestring input-pathname))
 
   (let* ((eof '(NIL))
 	 (*compiler-in-use* *compiler-in-use*)
@@ -649,14 +624,17 @@ compiled successfully, returns the pathname of the compiled file"
 		    with the flag :SYSTEM-P set to T."))
 	  (data-init))
 
-      (with-open-file (*compiler-input* *compile-file-pathname*)
-	(do* ((ext:*source-location* (cons *compile-file-pathname* 0))
-              (*compile-file-position* 0 (file-position *compiler-input*))
+      (with-open-file (*compiler-input* *compile-file-pathname*
+                                        :external-format external-format)
+        (unless source-truename
+          (setf (car ext:*source-location*) *compile-file-pathname*))
+        (do* ((*compile-file-position* 0 (file-position *compiler-input*))
               (form (si::read-object-or-ignore *compiler-input* eof)
                     (si::read-object-or-ignore *compiler-input* eof)))
-	    ((eq form eof))
+             ((eq form eof))
           (when form
-            (setf (cdr ext:*source-location*) *compile-file-position*)
+            (setf (cdr ext:*source-location*)
+                  (+ source-offset *compile-file-position*))
             (t1expr form))))
 
       (cmpprogress "~&;;; End of Pass 1.")
@@ -683,7 +661,8 @@ compiled successfully, returns the pathname of the compiled file"
                      (si::coerce-to-filename o-pathname))))
 
       (if (setf true-output-file (probe-file output-file))
-          (cmpprogress "~&;;; Finished compiling ~a.~%" (namestring input-pathname))
+          (cmpprogress "~&;;; Finished compiling ~a.~%;;;~%"
+                       (namestring input-pathname))
           (cmperr "The C compiler failed to compile the intermediate file."))
 
       (mapc #'cmp-delete-file to-delete)
@@ -703,7 +682,7 @@ compiled successfully, returns the pathname of the compiled file"
 	       (setf warning-p t))
 	      ((typep i '(or compiler-error warning))
 	       (setf warning-p t failure-p t)))
-     finally (return (values (and (not failure-p) main-value) warning-p failure-p))))
+     finally (return (values main-value warning-p failure-p))))
 
 #-dlopen
 (defun compile (name &optional (def nil supplied-p))
@@ -940,7 +919,7 @@ from the C language code.  NIL means \"do not create the file\"."
    ))
 
 (defun print-compiler-info ()
-  (cmpprogress "~&;;; OPTIMIZE levels: Safety=~d, Space=~d, Speed=~d, Debug=~d~%"
+  (cmpprogress "~&;;; OPTIMIZE levels: Safety=~d, Space=~d, Speed=~d, Debug=~d~%;;;~%"
 	       *safety* *space* *speed* *debug*))
 
 (defmacro with-compilation-unit (options &rest body)

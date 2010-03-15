@@ -21,6 +21,8 @@ extern "C" {
  *	FUNCTIONS, VARIABLES AND TYPES NOT FOR GENERAL USE		*
  * -------------------------------------------------------------------- */
 
+#define unlikely_if(x) if (ecl_unlikely(x))
+
 /* booting */
 extern void init_all_symbols(void);
 extern void init_alloc(void);
@@ -209,7 +211,8 @@ extern void* ecl_dynamic_callback_make(cl_object data, enum ecl_ffi_calling_conv
 #define OPEN_A	"ab"
 #define OPEN_RA	"a+b"
 
-#define ECL_FILE_STREAMP(strm) (type_of(strm) == t_stream && (strm)->stream.mode < smm_synonym)
+#define ECL_FILE_STREAM_P(strm) \
+        (ECL_ANSI_STREAM_P(strm) && (strm)->stream.mode < smm_synonym)
 #define STRING_OUTPUT_STRING(strm) (strm)->stream.object0
 #define STRING_OUTPUT_COLUMN(strm) (strm)->stream.int1
 #define STRING_INPUT_STRING(strm) (strm)->stream.object0
@@ -294,6 +297,11 @@ extern void cl_write_object(cl_object x, cl_object stream);
 #else
 #define	RTABSIZE	CHAR_CODE_LIMIT	/*  read table size  */
 #endif
+
+/* string.d */
+typedef struct { cl_index start, end; } cl_index_pair;
+extern ECL_API cl_index_pair ecl_vector_start_end(cl_object fun, cl_object s, cl_object start, cl_object end);
+
 
 /* threads.d */
 

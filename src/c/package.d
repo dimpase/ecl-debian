@@ -75,7 +75,7 @@ member_string_eq(cl_object x, cl_object l)
 	loop_for_on_unsafe(l) {
 		if (ecl_string_eq(x, ECL_CONS_CAR(l)))
 			return TRUE;
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(l);
 	return FALSE;
 }
 
@@ -177,12 +177,12 @@ ecl_make_package(cl_object name, cl_object nicknames, cl_object use_list)
 			goto ERROR;
 		}
 		x->pack.nicknames = CONS(nick, x->pack.nicknames);
-	} end_loop_for_in;
+	} end_loop_for_in(nicknames);
 	loop_for_in(use_list) {
 		y = si_coerce_to_package(ECL_CONS_CAR(use_list));
 		x->pack.uses = CONS(y, x->pack.uses);
 		y->pack.usedby = CONS(x, y->pack.usedby);
-	} end_loop_for_in;
+	} end_loop_for_in(use_list);
 
 	/* 3) Finally, add it to the list of packages */
 	cl_core.packages = CONS(x, cl_core.packages);
@@ -242,7 +242,7 @@ ecl_find_package_nolock(cl_object name)
 {
 	cl_object l, p;
 
-	if (type_of(name) == t_package)
+	if (ECL_PACKAGEP(name))
 		return name;
 	name = cl_string(name);
 	l = cl_core.packages;
@@ -252,7 +252,7 @@ ecl_find_package_nolock(cl_object name)
 			return p;
 		if (member_string_eq(name, p->pack.nicknames))
 			return p;
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(l);
 #ifdef ECL_RELATIVE_PACKAGE_NAMES
 	/* Note that this function may actually be called _before_ symbols are set up
 	 * and bound! */
@@ -280,7 +280,7 @@ cl_object
 ecl_current_package(void)
 {
 	cl_object x = ecl_symbol_value(@'*package*');
-	if (type_of(x) != t_package) {
+	unlikely_if (!ECL_PACKAGEP(x)) {
 		const cl_env_ptr env = ecl_process_env();
 		ECL_SETQ(env, @'*package*', cl_core.user_package);
 		FEerror("The value of *PACKAGE*, ~S, was not a package",
@@ -305,7 +305,8 @@ ecl_intern(cl_object name, cl_object p, int *intern_flag)
 {
 	cl_object s, ul;
 
-	name = ecl_check_type_string(@'intern', name);
+        if (ecl_unlikely(!ECL_STRINGP(name)))
+                FEwrong_type_nth_arg(@[intern], 1, name, @[string]);
 	p = si_coerce_to_package(p);
  TRY_AGAIN_LABEL:
         s = find_symbol_inner(name, p, intern_flag);
@@ -364,7 +365,7 @@ find_symbol_inner(cl_object name, cl_object p, int *intern_flag)
 			*intern_flag = INHERITED;
 			goto OUTPUT;
 		}
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(ul);
  NOTHING:
 	*intern_flag = 0;
 	s = Cnil;
@@ -375,7 +376,8 @@ find_symbol_inner(cl_object name, cl_object p, int *intern_flag)
 cl_object
 ecl_find_symbol(cl_object n, cl_object p, int *intern_flag)
 {
-	if (!ECL_STRINGP(n)) FEtype_error_string(n);
+	if (ecl_unlikely(!ECL_STRINGP(n)))
+                FEwrong_type_nth_arg(@[find-symbol], 1, n, @[string]);
 	p = si_coerce_to_package(p);
         return find_symbol_inner(n, p, intern_flag);
 }
@@ -423,7 +425,7 @@ ecl_unintern(cl_object s, cl_object p)
 						"a name conflict.", p, 4, s, p, x, y);
 			}
 		}
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(l);
 	p->pack.shadowings = ecl_remove_eq(s, p->pack.shadowings);
  NOT_SHADOW:
 	ecl_remhash(name, hash);
@@ -473,7 +475,7 @@ cl_export2(cl_object s, cl_object p)
 					"because it will cause a name conflict~%"
 					"in ~S.", p, 3, s, p, CAR(l));
 		}
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(l);
 	if (hash != OBJNULL)
 		ecl_remhash(name, hash);
 	p->pack.external = _ecl_sethash(name, p->pack.external, s);
@@ -510,11 +512,11 @@ cl_delete_package(cl_object p)
 	list = p->pack.uses;
 	loop_for_on_unsafe(list) {
 		ecl_unuse_package(ECL_CONS_CAR(list), p);
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(list);
 	list = p->pack.usedby;
 	loop_for_on_unsafe(list) {
 		ecl_unuse_package(p, ECL_CONS_CAR(list));
-	} end_loop_for_on;
+	} end_loop_for_on_unsafe(list);
 	PACKAGE_OP_LOCK();
 	for (hash = p->pack.internal, i = 0; i < hash->hash.size; i++)
 		if (hash->hash.data[i].key != OBJNULL) {
@@ -822,99 +824,82 @@ cl_list_all_packages()
 
 @(defun export (symbols &o (pack ecl_current_package()))
 @
-BEGIN:
 	switch (type_of(symbols)) {
 	case t_symbol:
 		cl_export2(symbols, pack);
 		break;
-
 	case t_list:
 		pack = si_coerce_to_package(pack);
 		loop_for_in(symbols) {
 			cl_export2(ECL_CONS_CAR(symbols), pack);
 		} end_loop_for_in;
 		break;
-
 	default:
-		symbols = ecl_type_error(@'export',"argument",symbols,
-					 cl_list(3,@'or',@'symbol',@'list'));
-		goto BEGIN;
+                FEwrong_type_nth_arg(@[export],1,symbols,
+                                     cl_list(3,@'or',@'symbol',@'list'));
 	}
 	@(return Ct)
 @)
 
 @(defun unexport (symbols &o (pack ecl_current_package()))
 @
-BEGIN:
 	switch (type_of(symbols)) {
 	case t_symbol:
 		cl_unexport2(symbols, pack);
 		break;
-
 	case t_list:
 		pack = si_coerce_to_package(pack);
 		loop_for_in(symbols) {
 			cl_unexport2(ECL_CONS_CAR(symbols), pack);
 		} end_loop_for_in;
 		break;
-
 	default:
-		symbols = ecl_type_error(@'unexport',"argument",symbols,
-					 cl_list(3,@'or',@'symbol',@'list'));
-		goto BEGIN;
+                FEwrong_type_nth_arg(@[unexport],1,symbols,
+                                     cl_list(3,@'or',@'symbol',@'list'));
 	}
 	@(return Ct)
 @)
 
 @(defun import (symbols &o (pack ecl_current_package()))
 @
-BEGIN:
 	switch (type_of(symbols)) {
 	case t_symbol:
 		cl_import2(symbols, pack);
 		break;
-
 	case t_list:
 		pack = si_coerce_to_package(pack);
 		loop_for_in(symbols) {
 			cl_import2(ECL_CONS_CAR(symbols), pack);
 		} end_loop_for_in;
 		break;
-
 	default:
-		symbols = ecl_type_error(@'import',"argument",symbols,
-					 cl_list(3,@'or',@'symbol',@'list'));
-		goto BEGIN;
+                FEwrong_type_nth_arg(@[import],1,symbols,
+                                     cl_list(3,@'or',@'symbol',@'list'));
 	}
 	@(return Ct)
 @)
 
 @(defun shadowing_import (symbols &o (pack ecl_current_package()))
 @
-BEGIN:
 	switch (type_of(symbols)) {
 	case t_symbol:
 		ecl_shadowing_import(symbols, pack);
 		break;
-
 	case t_list:
 		pack = si_coerce_to_package(pack);
 		loop_for_in(symbols) {
 			ecl_shadowing_import(ECL_CONS_CAR(symbols), pack);
 		} end_loop_for_in;
 		break;
-
 	default:
-		symbols = ecl_type_error(@'shadowing-import',"argument",symbols,
-					 cl_list(3,@'or',@'symbol',@'list'));
-		goto BEGIN;
+                FEwrong_type_nth_arg(@[shadowing-import],1,symbols,
+                                     cl_list(3,@'or',@'symbol',@'list'));
 	}
 	@(return Ct)
 @)
 
 @(defun shadow (symbols &o (pack ecl_current_package()))
 @
-BEGIN:
 	switch (type_of(symbols)) {
 #ifdef ECL_UNICODE
 	case t_string:
@@ -933,9 +918,8 @@ BEGIN:
 		} end_loop_for_in;
 		break;
 	default:
-		symbols = ecl_type_error(@'shadow',"",symbols,
-					 cl_list(3,@'or',@'symbol',@'list'));
-		goto BEGIN;
+                FEwrong_type_nth_arg(@[shadow],1,symbols,
+                                     cl_list(3,@'or',@'symbol',@'list'));
 	}
 	@(return Ct)
 @)
@@ -950,17 +934,15 @@ BEGIN:
 	case t_package:
 		ecl_use_package(pack, pa);
 		break;
-
 	case t_list:
 		pa = si_coerce_to_package(pa);
 		loop_for_in(pack) {
 			ecl_use_package(ECL_CONS_CAR(pack), pa);
 		} end_loop_for_in;
 		break;
-
 	default:
-		assert_type_package(pack);
-		goto BEGIN;
+                FEwrong_type_nth_arg(@[use-package], 1, pack,
+                                     ecl_read_from_cstring("(OR SYMBOL CHARACTER STRING LIST PACKAGE)"));
 	}
 	@(return Ct)
 @)
@@ -975,17 +957,15 @@ BEGIN:
 	case t_package:
 		ecl_unuse_package(pack, pa);
 		break;
-
 	case t_list:
 		pa = si_coerce_to_package(pa);
 		loop_for_in(pack) {
 			ecl_unuse_package(ECL_CONS_CAR(pack), pa);
 		} end_loop_for_in;
 		break;
-
 	default:
-		assert_type_package(pack);
-		goto BEGIN;
+                FEwrong_type_nth_arg(@[unuse-package], 1, pack,
+                                     ecl_read_from_cstring("(OR SYMBOL CHARACTER STRING LIST PACKAGE)"));
 	}
 	@(return Ct)
 @)
@@ -995,7 +975,8 @@ si_package_hash_tables(cl_object p)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object he, hi, u;
-	assert_type_package(p);
+        unlikely_if (!ECL_PACKAGEP(p))
+                FEwrong_type_only_arg(@[si::package-hash-tables], p, @[package]);
 	PACKAGE_OP_LOCK();
 	he = si_copy_hash_table(p->pack.external);
 	hi = si_copy_hash_table(p->pack.internal);

@@ -269,7 +269,7 @@ static bool object_will_print_as_hash(cl_object x);
 static cl_fixnum search_print_circle(cl_object x);
 static bool potential_number_p(cl_object s, int base);
 
-static void FEprint_not_readable(cl_object x) /*__attribute__((noreturn))*/;
+static void FEprint_not_readable(cl_object x) ecl_attr_noreturn;
 
 static void
 FEprint_not_readable(cl_object x)
@@ -287,14 +287,15 @@ stream_or_default_output(cl_object stream)
 	return stream;
 }
 
-cl_fixnum
+int
 ecl_print_base(void)
 {
 	cl_object object = ecl_symbol_value(@'*print-base*');
 	cl_fixnum base;
-	if (!FIXNUMP(object) || (base = fix(object)) < 2 || base > 36) {
+	unlikely_if (!FIXNUMP(object) || (base = fix(object)) < 2 || base > 36) {
 		ECL_SETQ(ecl_process_env(), @'*print-base*', MAKE_FIXNUM(10));
-		FEerror("~S is an illegal PRINT-BASE.", 1, object);
+		FEerror("The value of *PRINT-BASE*~%  ~S~%"
+                        "is not of the expected type (INTEGER 2 36)", 1, object);
 	}
 	return base;
 }
@@ -306,13 +307,15 @@ ecl_print_level(void)
 	cl_fixnum level;
 	if (object == Cnil) {
 		level = MOST_POSITIVE_FIXNUM;
-	} else if (FIXNUMP(object)) {
+	} else if (ECL_FIXNUMP(object)) {
 		level = fix(object);
-		if (level < 0) {
+		unlikely_if (level < 0) {
 		ERROR:	ECL_SETQ(ecl_process_env(), @'*print-level*', Cnil);
-			FEerror("~S is an illegal PRINT-LEVEL.", 1, object);
+			FEerror("The value of *PRINT-LEVEL*~%  ~S~%"
+                                "is not of the expected type (OR NULL (INTEGER 0 *))",
+                                1, object);
 		}
-	} else if (type_of(object) != t_bignum) {
+	} else if (ecl_unlikely(!ECL_BIGNUMP(object))) {
 		goto ERROR;
 	} else {
 		level = MOST_POSITIVE_FIXNUM;
@@ -329,11 +332,13 @@ ecl_print_length(void)
 		length = MOST_POSITIVE_FIXNUM;
 	} else if (FIXNUMP(object)) {
 		length = fix(object);
-		if (length < 0) {
+		unlikely_if (length < 0) {
 		ERROR:	ECL_SETQ(ecl_process_env(), @'*print-length*', Cnil);
-			FEerror("~S is an illegal PRINT-LENGTH.", 1, object);
+			FEerror("The value of *PRINT-LENGTH*~%  ~S~%"
+                                "is not of the expected type (OR NULL (INTEGER 0 *))",
+                                1, object);
 		}
-	} else if (type_of(object) != t_bignum) {
+	} else if (ecl_unlikely(!ECL_BIGNUMP(object))) {
 		goto ERROR;
 	} else {
 		length = MOST_POSITIVE_FIXNUM;
@@ -351,10 +356,14 @@ cl_object
 ecl_print_case(void)
 {
 	cl_object output = ecl_symbol_value(@'*print-case*');
-	if (output != @':upcase' && output != @':downcase' &&
-	    output != @':capitalize') {
+	unlikely_if (output != @':upcase' &&
+                     output != @':downcase' &&
+                     output != @':capitalize')
+        {
 		ECL_SETQ(ecl_process_env(), @'*print-case*', @':downcase');
-		FEerror("~S is an illegal PRINT-CASE.", 1, output);
+		FEerror("The value of *PRINT-CASE*~%  ~S~%"
+                        "is not of the expected type "
+                        "(MEMBER :UPCASE :DOWNCASE :CAPITALIZE)", 1, output);
 	}
 	return output;
 }
@@ -546,8 +555,9 @@ int edit_double(int n, DBL_TYPE d, int *sp, char *s, int *ep)
 	fenv_t env;
 	feholdexcept(&env);
 #endif
-	if (isnan(d) || !isfinite(d))
+	unlikely_if (isnan(d) || !isfinite(d)) {
 		FEerror("Can't print a non-number.", 0);
+        }
 	if (n < -DBL_MAX_DIGITS)
 		n = DBL_MAX_DIGITS;
 	if (n < 0) {
@@ -761,7 +771,9 @@ needs_to_be_escaped(cl_object s, cl_object readtable, cl_object print_case)
 	for (i = 0; i < s->base_string.fillp;  i++) {
 		int c = ecl_char(s, i);
 		int syntax = ecl_readtable_get(readtable, c, 0);
-		if (syntax != cat_constituent || ecl_invalid_character_p(c) || (c) == ':')
+		if (syntax != cat_constituent ||
+                    ecl_invalid_character_p(c) ||
+                    (c) == ':')
 			return 1;
 		if ((action == ecl_case_downcase) && ecl_upper_case_p(c))
 			return 1;
@@ -1031,7 +1043,8 @@ si_write_ugly_object(cl_object x, cl_object stream)
 	cl_index ndx, k;
 
 	if (x == OBJNULL) {
-		if (ecl_print_readably()) FEprint_not_readable(x);
+		if (ecl_print_readably())
+                        FEprint_not_readable(x);
 		write_str("#<OBJNULL>", stream);
 		goto OUTPUT;
 	}
@@ -1451,8 +1464,9 @@ si_write_ugly_object(cl_object x, cl_object stream)
 #ifndef CLOS
 	case t_structure: {
 		cl_object print_function;
-		if (type_of(x->str.name) != t_symbol)
-			FEwrong_type_argument(@'symbol', x->str.name);
+		unlikely_if (type_of(x->str.name) != t_symbol)
+			FEerror("Found a corrupt structure with an invalid type name~%"
+                                "  ~S", x->str.name);
 		print_function = si_get_sysprop(x->str.name, @'si::structure-print-function');
 		if (Null(print_function) || !ecl_print_structure())
 		{
@@ -1560,8 +1574,6 @@ si_write_ugly_object(cl_object x, cl_object stream)
 		break;
 #ifdef CLOS
 	case t_instance:
-		if (!ECL_INSTANCEP(CLASS_OF(x)))
-			FEwrong_type_argument(@'ext::instance', CLASS_OF(x));
 		call_print_object(x, stream);
 		break;
 #endif /* CLOS */
@@ -1905,10 +1917,11 @@ potential_number_p(cl_object strng, int base)
 
 @(defun write-string (strng &o strm &k (start MAKE_FIXNUM(0)) end)
 @
-	strng = ecl_check_type_string(@'write-string', strng);
+        unlikely_if (!ECL_STRINGP(strng))
+                FEwrong_type_nth_arg(@[write-string], 1, strng, @[string]);
 	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) != t_stream)
+        if (!ECL_ANSI_STREAM_P(strm))
 		funcall(5, @'gray::stream-write-string', strm, strng, start, end);
 	else
 #endif
@@ -1918,10 +1931,11 @@ potential_number_p(cl_object strng, int base)
 
 @(defun write-line (strng &o strm &k (start MAKE_FIXNUM(0)) end)
 @
-	strng = ecl_check_type_string(@'write-line', strng);
+        unlikely_if (!ECL_STRINGP(strng))
+                FEwrong_type_nth_arg(@[write-line], 1, strng, @[string]);
 	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) != t_stream)
+	if (!ECL_ANSI_STREAM_P(strm))
 		funcall(5, @'gray::stream-write-string', strm, strng,
 			start, end);
 	else
@@ -1941,7 +1955,7 @@ potential_number_p(cl_object strng, int base)
 @
  	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) != t_stream) {
+	if (!ECL_ANSI_STREAM_P(strm)) {
 		return funcall(2, @'gray::stream-fresh-line', strm);
 	}
 #endif
@@ -1956,7 +1970,7 @@ potential_number_p(cl_object strng, int base)
 @
  	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) != t_stream) {
+        if (!ECL_ANSI_STREAM_P(strm)) {
 		return funcall(2, @'gray::stream-finish-output', strm);
 	}
 #endif
@@ -1988,7 +2002,7 @@ cl_write_byte(cl_object integer, cl_object binary_output_stream)
 @(defun write-sequence (sequence stream &key (start MAKE_FIXNUM(0)) end)
 @
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(stream) != t_stream)
+	if (!ECL_ANSI_STREAM_P(stream))
 		return funcall(5, @'gray::stream-write-sequence', stream, sequence, start, end);
 	else
 #endif
@@ -2034,7 +2048,7 @@ ecl_terpri(cl_object strm)
 {
 	strm = stream_or_default_output(strm);
 #ifdef ECL_CLOS_STREAMS
-	if (type_of(strm) != t_stream) {
+	if (!ECL_ANSI_STREAM_P(strm)) {
 		return funcall(2, @'gray::stream-terpri', strm);
 	}
 #endif
@@ -2061,7 +2075,7 @@ ecl_write_string(cl_object strng, cl_object strm)
 			ecl_write_char(strng->base_string.self[i], strm);
 		break;
 	default:
-		FEtype_error_string(strng);
+                FEwrong_type_nth_arg(@[write-string], 1, strng, @[string]);
 	}
 		
 	ecl_force_output(strm);

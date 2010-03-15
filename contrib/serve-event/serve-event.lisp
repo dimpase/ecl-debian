@@ -56,11 +56,20 @@
 (define-c-constants
     +eintr+ "EINTR")
 
+(defmethod ext::stream-fd ((stream t))
+  (etypecase stream
+    (fixnum stream)
+    (two-way-stream (ext::stream-fd (two-way-stream-input-stream stream)))
+    (file-stream (si:file-stream-fd stream))
+    (otherwise (error "In SERVE-EVENT, stream~%  ~A~%does not have an associated file descriptor" stream))))
+
 (defstruct (handler
-            (:constructor make-handler (direction descriptor function))
+            (:constructor make-handler (direction stream-or-descriptor function
+                                        &aux (descriptor (ext::stream-fd stream-or-descriptor))))
             (:copier nil))
   ;; Reading or writing...
   (direction nil :type (member :input :output))
+  (stream-or-descriptor nil)
   ;; File descriptor this handler is tied to.
   ;; FIXME: Should be based on FD_SETSIZE
   (descriptor 0)
@@ -167,10 +176,11 @@
 			  :one-liner nil
 			  :side-effects t)
 		(c-inline (rfd      wfd    (1+ maxfd) seconds) 
-			  (:object :object :int       :int) (values :int :int)
+			  (:object :object :int       :double) (values :int :int)
 			  "{ struct timeval tv;
-                                tv.tv_sec = #3;
-                                tv.tv_usec = 0;
+                             double seconds = #3;
+                                tv.tv_sec = seconds;
+                                tv.tv_usec = (seconds * 1e6);
                                 @(return 0) = select(#2, (fd_set*)#0->foreign.data,
                                                          (fd_set*)#1->foreign.data,
                                                          NULL, &tv);

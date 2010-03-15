@@ -189,9 +189,9 @@
 			;;; We only register direct calls, not calls via object.
   (child-funs nil)	;;; List of local functions defined here.
   (debug 0)		;;; Debug quality
-  (file *compile-file-truename*)
+  (file (car ext:*source-location*))
 			;;; Source file or NIL
-  (file-position *compile-file-position*)
+  (file-position (or (cdr ext:*source-location*) *compile-file-position*))
 			;;; Top-level form number in source file
   )
 

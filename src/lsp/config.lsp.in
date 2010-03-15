@@ -1,3 +1,4 @@
+;; -*- Mode:Lisp -*-
 ;; @configure_input@
 ;;
 ;; Configuration file for ECL
@@ -47,6 +48,9 @@ Returns, as a string, the location of the machine on which ECL runs."
   "Args:()
 Returns the version of your ECL as a string."
   "@PACKAGE_VERSION@")
+
+(defun ext:lisp-implementation-vcs-id ()
+  #.si::+commit-id+)
 
 (defun machine-type ()
   "Args: ()
@@ -104,12 +108,6 @@ Returns, as a string, the version of the software under which ECL runs."
 ;; * Set configuration pathnames. Notice the trailing slash!
 ;;   Otherwise it would not be a directory.
 ;;
-#-ecl-min
-(let ((path (si::get-library-pathname)))
-  (when path
-    (si::pathname-translations "SYS"
-                               `(("**;*.*" ,(merge-pathnames "**/*.*" path )))))
-);#-eclmin
 #-msvc
 (si::pathname-translations "HOME" '(("**;*.*" "~/**/*.*")))
 #+msvc
@@ -125,3 +123,15 @@ Returns, as a string, the version of the software under which ECL runs."
 	(t (setf x #+unix "/tmp" #-unix "./")))
   (si::pathname-translations "TMP"
      `(("**;*.*" ,(format nil "~A/**/*.*" x)))))
+
+#-ecl-min
+(macrolet ((define-pathname-translations (name base-pathname)
+             `(let ((path ,base-pathname))
+               (when path
+                 (si::pathname-translations
+                  ,name `(("**;*.*" ,(merge-pathnames "**/*.*" path))))))))
+  (define-pathname-translations "SYS" (si::get-library-pathname))
+  (let ((x (ext:getenv "ECLSRCDIR")))
+    (unless (and x (setq x (probe-file x)))
+      (setf x #.(truename "@top_srcdir@/../")))
+    (define-pathname-translations "SRC" x)))

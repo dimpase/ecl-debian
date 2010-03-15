@@ -39,8 +39,8 @@
 		cl_index i;
 		for (i = 0;  i < narg;  i++) {
 			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
-                        if (!LISTP(cdr))
-                                FEtype_error_list(cdr);
+                        if (ecl_unlikely(!LISTP(cdr)))
+                                FEwrong_type_nth_arg(@[mapcar], i+2, cdr, @[list]);
 			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
@@ -63,8 +63,8 @@
 		cl_index i;
 		for (i = 0;  i < narg;  i++) {
 			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
-                        if (!LISTP(cdr))
-                                FEtype_error_list(cdr);
+                        if (ecl_unlikely(!LISTP(cdr)))
+                                FEwrong_type_nth_arg(@[maplist], i+2, cdr, @[list]);
 			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
@@ -87,8 +87,8 @@
 		cl_index i;
 		for (i = 0;  i < narg;  i++) {
 			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
-                        if (!LISTP(cdr))
-                                FEtype_error_list(cdr);
+                        if (ecl_unlikely(!LISTP(cdr)))
+                                FEwrong_type_nth_arg(@[mapc], i+2, cdr, @[list]);
 			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
@@ -110,8 +110,8 @@
 		cl_index i;
 		for (i = 0;  i < narg;  i++) {
 			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
-                        if (!LISTP(cdr))
-                                FEtype_error_list(cdr);
+                        if (ecl_unlikely(!LISTP(cdr)))
+                                FEwrong_type_nth_arg(@[mapl], i+2, cdr, @[list]);
 			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
@@ -133,8 +133,8 @@
 		cl_index i;
 		for (i = 0;  i < narg;  i++) {
 			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
-                        if (!LISTP(cdr))
-                                FEtype_error_list(cdr);
+                        if (ecl_unlikely(!LISTP(cdr)))
+                                FEwrong_type_nth_arg(@[mapcan], i+2, cdr, @[list]);
 			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);
@@ -158,8 +158,8 @@
 		cl_index i;
 		for (i = 0;  i < narg;  i++) {
 			cl_object cdr = ECL_STACK_FRAME_REF(cdrs_frame, i);
-                        if (!LISTP(cdr))
-                                FEtype_error_list(cdr);
+                        if (ecl_unlikely(!LISTP(cdr)))
+                                FEwrong_type_nth_arg(@[mapcon], i+2, cdr, @[list]);
 			if (Null(cdr)) {
 				ecl_stack_frame_close(cars_frame);
 				ecl_stack_frame_close(cdrs_frame);

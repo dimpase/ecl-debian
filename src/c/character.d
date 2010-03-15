@@ -22,9 +22,9 @@
 ecl_character
 ecl_char_code(cl_object c)
 {
-	if (CHARACTERP(c))
-		return CHAR_CODE(c);
-	FEtype_error_character(c);
+	if (ecl_unlikely(!CHARACTERP(c)))
+                FEwrong_type_only_arg(@[char-code], c, @[character]);
+        return CHAR_CODE(c);
 }
 
 ecl_base_char
@@ -37,7 +37,7 @@ ecl_base_char_code(cl_object c)
 			return (int)code;
 		}
 	}
-	FEtype_error_character(c);
+	FEwrong_type_only_arg(@[char-code], c, @[base-char]);
 #else
 	return ecl_char_code(c);
 #endif
@@ -120,8 +120,16 @@ ecl_string_case(cl_object s)
 
 @(defun digit_char_p (c &optional (radix MAKE_FIXNUM(10)))
 @ {
-	cl_fixnum basis = ecl_fixnum_in_range(@'digit-char-p',"radix", radix, 2, 36);
-	cl_fixnum value = ecl_digitp(ecl_char_code(c), basis);
+	cl_fixnum basis, value;
+        if (ecl_unlikely(!ECL_FIXNUMP(radix) ||
+                         ecl_fixnum_lower(radix, MAKE_FIXNUM(2)) ||
+                         ecl_fixnum_greater(radix, MAKE_FIXNUM(36)))) {
+                FEwrong_type_nth_arg(@[digit-char-p], 2, radix,
+                                     ecl_make_integer_type(MAKE_FIXNUM(2),
+                                                           MAKE_FIXNUM(36)));
+        }
+        basis = fix(radix);
+	value = ecl_digitp(ecl_char_code(c), basis);
 	@(return ((value < 0)? Cnil: MAKE_FIXNUM(value)));
 } @)
 
@@ -178,7 +186,7 @@ ecl_char_eq(cl_object x, cl_object y)
 @
 	/* INV: ecl_char_eq() checks types of its arguments */
 	if (narg == 0)
-		FEwrong_num_arguments(@'char/=');
+		FEwrong_num_arguments(@[char/=]);
 	c = cl_va_arg(cs);
 	for (i = 2; i<=narg; i++) {
 		cl_va_list ds;
@@ -261,7 +269,7 @@ ecl_char_equal(cl_object x, cl_object y)
 @
 	/* INV: ecl_char_equal() checks the type of its arguments */
 	if (narg == 0)
-		FEwrong_num_arguments(@'char-not-equal');
+		FEwrong_num_arguments(@[char-not-equal]);
 	c = cl_va_arg(cs);
 	for (i = 2;  i<=narg;  i++) {
 		cl_va_list ds;
@@ -329,13 +337,11 @@ ecl_char_compare(cl_object x, cl_object y)
 cl_object
 cl_character(cl_object x)
 {
- AGAIN:
 	switch (type_of(x)) {
 	case t_character:
 		break;
 	case t_symbol:
-		x = x->symbol.name;
-		goto AGAIN;
+		return cl_character(x->symbol.name);
 #ifdef ECL_UNICODE
 	case t_string:
 		if (x->string.fillp == 1) {
@@ -350,9 +356,7 @@ cl_character(cl_object x)
 			break;
 		}
 	default: ERROR:
-		x = ecl_type_error(@'character',"character designator",
-				   x,ecl_read_from_cstring("(OR CHARACTER SYMBOL (ARRAY CHARACTER (1)) (ARRAY BASE-CHAR (1)))"));
-		goto AGAIN;
+                FEwrong_type_nth_arg(@[character], 1, x, ecl_read_from_cstring("(OR CHARACTER SYMBOL (ARRAY CHARACTER (1)) (ARRAY BASE-CHAR (1)))"));
 	}
 	@(return x)
 }
@@ -380,7 +384,7 @@ cl_code_char(cl_object c)
 		c = Cnil;
 		break;
 	default:
-		FEtype_error_integer(c);
+                FEwrong_type_only_arg(@[code-char], c, @[integer]);
 	}
 	@(return c)
 }
@@ -403,9 +407,16 @@ cl_char_downcase(cl_object c)
 
 @(defun digit_char (weight &optional (radix MAKE_FIXNUM(10)))
 @ {
-	cl_fixnum basis = ecl_fixnum_in_range(@'digit-char',"radix",radix,2,36);
-	cl_object output = Cnil;
-  AGAIN:
+        cl_fixnum basis;
+        cl_object output = Cnil;
+        if (ecl_unlikely(!ECL_FIXNUMP(radix) ||
+                         ecl_fixnum_lower(radix, MAKE_FIXNUM(2)) ||
+                         ecl_fixnum_greater(radix, MAKE_FIXNUM(36)))) {
+                FEwrong_type_nth_arg(@[digit-char], 2, radix,
+                                     ecl_make_integer_type(MAKE_FIXNUM(2),
+                                                           MAKE_FIXNUM(36)));
+        }
+        basis = fix(radix);
 	switch (type_of(weight)) {
 	case t_fixnum: {
 		cl_fixnum value = fix(weight);
@@ -420,8 +431,7 @@ cl_char_downcase(cl_object c)
 	case t_bignum:
 		break;
 	default:
-		weight = ecl_type_error(@'digit-char',"weight",weight,@'integer');
-		goto AGAIN;
+                FEwrong_type_nth_arg(@[digit-char],1,weight,@[integer]);
 	}
 	@(return output)
 } @)

@@ -12,10 +12,54 @@
 ;;;;
 ;;;;    See file '../Copyright' for full details.
 
+#-new-cmp
 (in-package "COMPILER")
+#+new-cmp
+(in-package "C-LOG")
+
+(defconstant +note-format+ "~&~@<  ~;~?~;~:@>")
+(defconstant +warn-format+ "~&~@<  ! ~;~?~;~:@>")
+(defconstant +error-format+ "~&~@<  * ~;~?~;~:@>")
+(defconstant +fatal-format+ "~&~@<  ** ~;~?~;~:@>")
+
+(defun innermost-non-expanded-form (form)
+  (when (listp form)
+    (loop with output = nil
+       for f in form
+       do (cond ((eq f 'macroexpand)
+                 (setf output nil))
+                ((null output)
+                 (setf output f)))
+       finally (return output))))
+
+;; For indirect use in :REPORT functions
+(defun compiler-message-report (stream c format-control &rest format-arguments)
+    (let ((position (compiler-message-file-position c))
+        (prefix (compiler-message-prefix c))
+        (file (compiler-message-file c))
+        (form (innermost-non-expanded-form (compiler-message-toplevel-form c))))
+    (if (and form
+             position
+             (not (minusp position))
+             (not (equalp form '|compiler preprocess|)))
+        (let* ((*print-length* 2)
+               (*print-level* 2))
+          (format stream
+                  "~A:~%  in file ~A, position ~D~&  at ~A"
+                  prefix
+                  (make-pathname :name (pathname-name file)
+                                 :type (pathname-type file)
+                                 :version (pathname-version file))
+                  position
+                  form))
+        (format stream "~A:" prefix))
+    (format stream (compiler-message-format c)
+            format-control
+            format-arguments)))
 
 (define-condition compiler-message (simple-condition)
   ((prefix :initform "Note" :accessor compiler-message-prefix)
+   (format :initform +note-format+ :accessor compiler-message-format)
    (file :initarg :file :initform *compile-file-pathname*
 	 :accessor compiler-message-file)
    (position :initarg :file :initform *compile-file-position*
@@ -24,49 +68,41 @@
                   :accessor compiler-message-toplevel-form)
    (form :initarg :form :initform *current-form*
          :accessor compiler-message-form))
-  (:REPORT
-   (lambda (c stream)
-     (let ((position (compiler-message-file-position c))
-           (prefix (compiler-message-prefix c))
-           (file (compiler-message-file c))
-           (form (compiler-message-toplevel-form c)))
-       (if (and position
-                (not (minusp position))
-                (not (equalp form '|compiler preprocess|)))
-	   (let* ((*print-length* 3)
-                  (*print-level* 2))
-	     (format stream "~A: in file ~A, position ~D and top form~%  ~A~%"
-		     prefix
-                     (make-pathname :name (pathname-name file)
-                                    :type (pathname-type file)
-                                    :version (pathname-version file))
-                     position form))
-	   (format stream "~A: " prefix))
-       (format stream "~?"
-	       (simple-condition-format-control c)
-	       (simple-condition-format-arguments c))))))
+  (:report (lambda (c stream)
+             (apply #'compiler-message-report stream c
+                    (simple-condition-format-control c)
+                    (simple-condition-format-arguments c)))))
 
 (define-condition compiler-note (compiler-message) ())
 
 (define-condition compiler-debug-note (compiler-note) ())
 
 (define-condition compiler-warning (compiler-message simple-condition style-warning)
-  ((prefix :initform "Warning")))
+  ((prefix :initform "Warning")
+   (format :initform +warn-format+)))
 
 (define-condition compiler-error (compiler-message)
-  ((prefix :initform "Error")))
+  ((prefix :initform "Error")
+   (format :initform +error-format+)))
 
-(define-condition compiler-fatal-error (compiler-message) ())
+(define-condition compiler-fatal-error (compiler-message)
+  ((format :initform +fatal-format+)))
 
 (define-condition compiler-internal-error (compiler-fatal-error)
   ((prefix :initform "Internal error")))
 
-(define-condition compiler-undefined-variable (compiler-message style-warning)
+(define-condition compiler-style-warning (compiler-message style-warning)
+  ((prefix :initform "Style warning")
+   (format :initform +warn-format+)))
+
+(define-condition compiler-undefined-variable (compiler-style-warning)
   ((variable :initarg :name :initform nil))
   (:report
-   (lambda (condition stream)
-     (format stream "Variable ~A was undefined. Compiler assumes it is a global."
-	     (slot-value condition 'variable)))))
+   (lambda (c stream)
+     (compiler-message-report stream c
+                              "Variable ~A was undefined. ~
+                               Compiler assumes it is a global."
+                              (slot-value c 'variable)))))
 
 (defun print-compiler-message (c stream)
   (unless (typep c *suppress-compiler-messages*)
@@ -137,7 +173,7 @@
 			(compiler-error #'handle-compiler-error)
                         (compiler-internal-error #'handle-compiler-internal-error)
                         (serious-condition #'handle-compiler-internal-error))
-           (with-lock (+load-compile-lock+)
+           (mp:with-lock (+load-compile-lock+)
              (let ,+init-env-form+
                (with-compilation-unit ()
                  ,@body))))
@@ -167,6 +203,12 @@
 (defun cmpprogress (&rest args)
   (when *compile-verbose*
     (apply #'format t args)))
+
+(defmacro cmpck (condition string &rest args)
+  `(if ,condition (cmperr ,string ,@args)))
+
+(defmacro cmpassert (condition string &rest args)
+  `(unless ,condition (cmperr ,string ,@args)))
 
 (defun cmperr (string &rest args)
   (let ((c (make-condition 'compiler-error
@@ -204,12 +246,16 @@
 	(return-from do-cmpwarn nil)))
     (print-compiler-message condition t)))
 
+(defun cmpwarn-style (string &rest args)
+  (do-cmpwarn 'compiler-style-warning :format-control string :format-arguments args))
+
 (defun cmpwarn (string &rest args)
   (do-cmpwarn 'compiler-warning :format-control string :format-arguments args))
 
 (defun cmpnote (string &rest args)
   (do-cmpwarn 'compiler-note :format-control string :format-arguments args))
 
+#-new-cmp
 (defun cmpdebug (string &rest args)
   (do-cmpwarn 'compiler-debug-note :format-control string :format-arguments args))
 
@@ -217,7 +263,8 @@
   (when *compile-print*
     (let ((*print-length* 2)
 	  (*print-level* 2))
-      (format t "~&;;; Compiling ~s.~%" *current-form*)))
+      (format t "~&;;; Compiling ~s.~%"
+              (innermost-non-expanded-form *current-toplevel-form*))))
   nil)
 
 (defun print-emitting (f)
@@ -281,14 +328,15 @@
   (rem-sysprop symbol 't1)
   (rem-sysprop symbol 't2)
   (rem-sysprop symbol 't3)
-  (rem-sysprop symbol 'c1)
-  (rem-sysprop symbol 'c2)
-  (rem-sysprop symbol 'c1conditional)
+  #-new-cmp(rem-sysprop symbol 'c1)
+  #-new-cmp(rem-sysprop symbol 'c2)
+  #-new-cmp(rem-sysprop symbol 'c1conditional)
   (rem-sysprop symbol ':inline-always)
   (rem-sysprop symbol ':inline-unsafe)
   (rem-sysprop symbol ':inline-safe)
   (rem-sysprop symbol 'lfun))
-  
+
+#-new-cmp
 (defun lisp-to-c-name (obj)
   "Translate Lisp object prin1 representation to valid C identifier name"
   (and obj 
@@ -300,6 +348,7 @@
                       c #\_)))
             (string-downcase (prin1-to-string obj)))))
 
+#-new-cmp
 (defun proper-list-p (x &optional test)
   (and (listp x)
        (handler-case (list-length x) (type-error (c) nil))

@@ -17,6 +17,7 @@
 
 #define ECL_INCLUDE_MATH_H
 #include <ecl/ecl.h>
+#include <ecl/internal.h>
 
 int
 ecl_zerop(cl_object x)
@@ -47,7 +48,7 @@ ecl_zerop(cl_object x)
 		       ecl_zerop(x->complex.imag));
 
 	default:
-		FEtype_error_number(x);
+                FEwrong_type_only_arg(@[zerop], x, @[number]);
 	}
 }
 
@@ -79,7 +80,7 @@ ecl_plusp(cl_object x)
 		return ecl_long_float(x) > 0.0;
 #endif
 	default:
-		FEtype_error_real(x);
+		FEwrong_type_only_arg(@[plusp], x, @[real]);
 	}
 }
 
@@ -113,7 +114,7 @@ ecl_minusp(cl_object x)
 		return ecl_long_float(x) < 0;
 #endif
 	default:
-		FEtype_error_real(x);
+		FEwrong_type_only_arg(@[minusp], x, @[real]);
 	}
 }
 
@@ -122,9 +123,9 @@ ecl_oddp(cl_object x)
 {
 	if (FIXNUMP(x))
 		return fix(x) & 1;
-	if (type_of(x) == t_bignum)
-		return _ecl_big_odd_p(x);
-	FEtype_error_integer(x);
+	unlikely_if (!ECL_BIGNUMP(x))
+                FEwrong_type_only_arg(@[oddp], x, @[integer]);
+        return _ecl_big_odd_p(x);
 }
 
 int
@@ -132,9 +133,9 @@ ecl_evenp(cl_object x)
 {
 	if (FIXNUMP(x))
 		return ~fix(x) & 1;
-	if (type_of(x) == t_bignum)
-		return _ecl_big_even_p(x);
-	FEtype_error_integer(x);
+	unlikely_if (!ECL_BIGNUMP(x))
+                FEwrong_type_only_arg(@[evenp], x, @[integer]);
+        return _ecl_big_even_p(x);
 }
 
 cl_object
