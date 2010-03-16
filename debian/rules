@@ -28,7 +28,7 @@ ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
 endif
 
 # force to use ginstall-info:
-INSTALL_INFO=/usr/bin/ginstall-info
+export INSTALL_INFO=/usr/bin/ginstall-info
 
 config.status: configure
 	dh_testdir
