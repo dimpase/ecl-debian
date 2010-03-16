@@ -1,7 +1,7 @@
-ecl (10.3.1-1) UNRELEASED; urgency=low
+ecl (10.3.1-1) unstable; urgency=low
 
   * New upstream.
-  * Force INSTALL_INFO to ginstall. (Closes: #562433) 
+  * Force INSTALL_INFO to ginstall. (Closes: #562433, 573659) 
 
  -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 16 Mar 2010 21:50:19 +0100
 
