@@ -1,8 +1,8 @@
-ecl (10.3.1-2) UNRELEASED; urgency=low
+ecl (10.3.1-2) unstable; urgency=low
 
-  * open for changes
+  * Add a build-depends for install-info (Closes: #574701)
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 17 Mar 2010 05:09:05 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 31 Mar 2010 09:14:46 +0200
 
 ecl (10.3.1-1) unstable; urgency=low
 
