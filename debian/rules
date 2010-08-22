@@ -31,17 +31,19 @@ endif
 export INSTALL_INFO=/usr/bin/ginstall-info
 
 config.status: configure
+	mv src/gc .private_gc
+	mkdir src/gc
+	cp .private_gc/mkinstalldirs src/gc
 	dh_testdir
-	# Add here commands to configure the package.
+#	Add here commands to configure the package.
 	chmod a+x configure \
-	 src/gc/configure \
 	 src/gmp/macos/configure \
 	 src/gmp/configure \
 	 src/configure \
 	 src/gmp/mpn/m4-ccas
 
-	touch src/gc/configure.in src/configure.in && \
-	touch src/gc/aclocal.m4  src/aclocal.m4 && \
+	touch  src/configure.in && \
+	touch  src/aclocal.m4 && \
 	touch src/configure configure
 
 	./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) \
@@ -51,7 +53,7 @@ config.status: configure
 	   --with-tcp \
 	   --with-clx  \
 	   --enable-threads=yes \
-	   --enable-boehm=buildin  \
+	   --enable-boehm=system \
 	   --enable-gengc \
 	   --with-x
 	   #--enable-boehm=system
@@ -92,6 +94,12 @@ clean:
 	rm -f src/gc/configure.in
 
 	rm -rf build
+
+	if [ -d .private_gc ]; \
+	 then \
+	   rm -rf src/gc; \
+	   mv .private_gc src/gc; \
+	 fi
 
 	dh_clean
 
