@@ -1441,7 +1441,7 @@ si_make_string_output_stream_from_string(cl_object s)
 	STRING_OUTPUT_STRING(strm) = s;
 	STRING_OUTPUT_COLUMN(strm) = 0;
 #if !defined(ECL_UNICODE)
-	strm->stream.format = @':default';
+	strm->stream.format = @':pass-through';
 	strm->stream.flags = ECL_STREAM_DEFAULT_FORMAT;
 	strm->stream.byte_size = 8;
 #else
@@ -1629,7 +1629,7 @@ ecl_make_string_input_stream(cl_object strng, cl_index istart, cl_index iend)
 	STRING_INPUT_POSITION(strm) = istart;
 	STRING_INPUT_LIMIT(strm) = iend;
 #if !defined(ECL_UNICODE)
-	strm->stream.format = @':default';
+	strm->stream.format = @':pass-through';
 	strm->stream.flags = ECL_STREAM_DEFAULT_FORMAT;
 	strm->stream.byte_size = 8;
 #else
@@ -2011,7 +2011,7 @@ const struct ecl_file_ops broadcast_ops = {
 	}
 	x = alloc_stream();
 	if (Null(streams)) {
-		x->stream.format = @':default';
+		x->stream.format = @':pass-through';
 	} else {
 		x->stream.format = cl_stream_external_format(ECL_CONS_CAR(streams));
 	}
@@ -2344,7 +2344,7 @@ const struct ecl_file_ops concatenated_ops = {
 	}
 	x = alloc_stream();
 	if (Null(streams)) {
-		x->stream.format = @':default';
+		x->stream.format = @':pass-through';
 	} else {
 		x->stream.format = cl_stream_external_format(ECL_CONS_CAR(streams));
 	}
@@ -2782,7 +2782,7 @@ io_file_read_vector(cl_object strm, cl_object data, cl_index start, cl_index end
 	if (t == aet_b8 || t == aet_i8) {
 		if (strm->stream.byte_size == 8) {
 			void *aux = data->vector.self.bc + start;
-			return strm->stream.ops->read_byte8(strm, aux, end-start);
+			return start + strm->stream.ops->read_byte8(strm, aux, end-start);
 		}
 	} else if (t == aet_fix || t == aet_index) {
 		if (strm->stream.byte_size == sizeof(cl_fixnum)*8) {
@@ -2803,7 +2803,7 @@ io_file_write_vector(cl_object strm, cl_object data, cl_index start, cl_index en
 		return start;
 	if (t == aet_b8 || t == aet_i8) {
 		if (strm->stream.byte_size == 8) {
-			void *aux = data->vector.self.fix + start;
+			void *aux = data->vector.self.bc + start;
 			return strm->stream.ops->write_byte8(strm, aux, end-start);
 		}
 	} else if (t == aet_fix || t == aet_index) {
@@ -2942,48 +2942,48 @@ parse_external_format(cl_object stream, cl_object format, int flags)
 	if (format == @':BIG-ENDIAN') {
 		return flags & ~ECL_STREAM_LITTLE_ENDIAN;
 	}
-	if (format == @':default' || format == Ct) {
-		return flags | ECL_STREAM_DEFAULT_FORMAT;
+	if (format == @':pass-through' || format == Ct) {
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_DEFAULT_FORMAT;
 	}
 #ifdef ECL_UNICODE
 	if (format == @':UTF-8') {
-		return flags | ECL_STREAM_UTF_8; 
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_UTF_8; 
 	}
 	if (format == @':UCS-2') {
-		return flags | ECL_STREAM_UCS_2;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_UCS_2;
 	}
 	if (format == @':UCS-2BE') {
-		return flags | ECL_STREAM_UCS_2BE;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_UCS_2BE;
 	}
 	if (format == @':UCS-2LE') {
-		return flags | ECL_STREAM_UCS_2LE;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_UCS_2LE;
 	}
 	if (format == @':UCS-4') {
-		return flags | ECL_STREAM_UCS_4;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_UCS_4;
 	}
 	if (format == @':UCS-4BE') {
-		return flags | ECL_STREAM_UCS_4BE;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_UCS_4BE;
 	}
 	if (format == @':UCS-4LE') {
-		return flags | ECL_STREAM_UCS_4LE;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_UCS_4LE;
 	}
 	if (format == @':ISO-8859-1') {
-		return flags | ECL_STREAM_ISO_8859_1;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_ISO_8859_1;
 	}
 	if (format == @':LATIN-1') {
-		return flags | ECL_STREAM_LATIN_1;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_LATIN_1;
 	}
 	if (format == @':US-ASCII') {
-		return flags | ECL_STREAM_US_ASCII; 
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_US_ASCII; 
 	}
 	if (ECL_HASH_TABLE_P(format)) {
 		stream->stream.format_table = format;
-		return flags | ECL_STREAM_USER_FORMAT;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_USER_FORMAT;
 	}
 	if (SYMBOLP(format)) {
 		stream->stream.format_table = cl_funcall(2, @'ext::make-encoding',
 							 format);
-		return flags | ECL_STREAM_USER_FORMAT;
+		return (flags & ~ECL_STREAM_FORMAT) | ECL_STREAM_USER_FORMAT;
 	}
 #endif
 	FEerror("Unknown or unsupported external format: ~A", 1, format);
@@ -3003,6 +3003,9 @@ set_stream_elt_type(cl_object stream, cl_fixnum byte_size, int flags,
 		flags &= ~ECL_STREAM_SIGNED_BYTES;
 		t = @'unsigned-byte';
 	}
+        if (external_format == @':default') {
+                external_format = ecl_symbol_value(@'ext::*default-external-format*');
+        }
 	flags = parse_external_format(stream, external_format, flags);
 	stream->stream.ops->read_char = eformat_read_char;
 	stream->stream.ops->write_char = eformat_write_char;
@@ -3092,7 +3095,7 @@ set_stream_elt_type(cl_object stream, cl_fixnum byte_size, int flags,
 	case ECL_STREAM_DEFAULT_FORMAT:
 		IO_STREAM_ELT_TYPE(stream) = @'base-char';
 		byte_size = 8;
-		stream->stream.format = @':default';
+		stream->stream.format = @':pass-through';
 		stream->stream.encoder = passthrough_encoder;
 		stream->stream.decoder = passthrough_decoder;
 		break;
@@ -3189,10 +3192,10 @@ ecl_make_file_stream_from_fd(cl_object fname, int fd, enum ecl_smmode smm,
 	stream->stream.mode = (short)smm;
 	stream->stream.closed = 0;
 	switch(smm) {
-	case smm_probe:
 	case smm_input:
 		smm = smm_input_file;
 	case smm_input_file:
+	case smm_probe:
 		stream->stream.ops = duplicate_dispatch_table(&input_file_ops);
 		break;
 	case smm_output:
@@ -3883,6 +3886,10 @@ ecl_make_stream_from_fd(cl_object fname, int fd, enum ecl_smmode smm,
 #else
 	fp = fdopen(fd, mode);
 #endif
+        if (fp == NULL) {
+                FElibc_error("Unable to create stream for file descriptor ~D",
+                             1, ecl_make_integer(fd));
+        }
 	ecl_enable_interrupts();
 	return ecl_make_stream_from_FILE(fname, fp, smm, byte_size, flags,
 					 external_format);
@@ -4565,7 +4572,7 @@ ecl_open_stream(cl_object fn, enum ecl_smmode smm, cl_object if_exists,
 		si_set_buffering_mode(x, byte_size? @':full' : @':line');
 	} else {
 		x = ecl_make_file_stream_from_fd(fn, f, smm, byte_size, flags,
-						 external_format);
+                                                 external_format);
 	}
 	if (smm == smm_probe) {
 		cl_close(1, x);
@@ -4597,7 +4604,7 @@ ecl_open_stream(cl_object fn, enum ecl_smmode smm, cl_object if_exists,
 		   (element_type @'base-char')
 		   (if_exists Cnil iesp)
 		   (if_does_not_exist Cnil idnesp)
-	           (external_format @':default')
+                   (external_format @':default')
 		   (cstream Ct)
 	      &aux strm)
 	enum ecl_smmode smm;

@@ -10,8 +10,8 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 10.3.1
-ECL_VERSION_NUMBER= 100301
+ECL_VERSION       = 10.4.1
+ECL_VERSION_NUMBER= 100401
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
@@ -224,6 +224,7 @@ lsp/config.lsp: $(srcdir)/lsp/config.lsp.in Makefile c\cut$(EXE)
 	    "@SOFTWARE_TYPE@" "$(SOFTWARE_TYPE)" \
 	    "@SOFTWARE_VERSION@" "$(SOFTWARE_VERSION)" \
 	    "@thehost@" "$(THEHOST)" \
+	    "@true_srcdir@" "$(srcdir:\=/)" \
 	    "@top_srcdir@" "$(top_srcdir:\=/)/" \
 	    < $(srcdir)\lsp\config.lsp.in > lsp\config.lsp
 compile.lsp: bare.lsp $(srcdir)/compile.lsp.in Makefile

@@ -8,7 +8,7 @@ dnl  AUTOCONF configuration for ECL
 dnl  Giuseppe Attardi 25.1.1994
 dnl
 
-AC_INIT([ecl],[10.3.1],[])
+AC_INIT([ecl],[10.4.1],[])
 AC_REVISION([$Revision$])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([${srcdir}/gmp])
@@ -283,6 +283,7 @@ boehm_configure_flags=""
 AC_EXEEXT dnl			Guess whether .exe is needed for executables
 AC_SUBST(buildir)               dnl For top-level Makefile.in
 AC_SUBST(ECL_CFLAGS)            dnl Similar, but specific to ECL (see src/util/ecl-config)
+AC_SUBST(DEBUG_CFLAGS)
 AC_SUBST(GMP_CFLAGS)		dnl CFLAGS needed for compiling with system GMP library
 AC_SUBST(GMP_LDFLAGS)		dnl LDFLAGS needed for compiling with system GMP library
 AC_SUBST(FASL_LIBS)             dnl Libraries to link into all ecl code but not
@@ -382,6 +383,11 @@ else
       gmp_build="${build_alias}"
     fi
     ECL_GMP_HEADER='ecl/gmp.h'
+    if test "x$ABI" = "x"; then
+      GMP_ABI=""
+    else
+      GMP_ABI="ABI=$ABI"
+    fi
     if mkdir gmp; then
      dnl Notice we need -DPIC to force the assembler to generate PIC code
      (destdir=`${PWDCMD}`; cd gmp; CC="${CC} ${PICFLAG}" \
@@ -389,7 +395,10 @@ else
 	--infodir=${destdir}/doc --includedir=${destdir}/ecl --with-pic \
         --libdir=${destdir} --build=${gmp_build} --host=${host_alias} \
         CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" CC="${CC} ${PICFLAG}" \
-        ABI=$ABI $with_gmp)
+        "$GMP_ABI" $with_gmp)
+     if test ! -f gmp/config.status; then
+       AC_MSG_ERROR([Failed to configure the GMP library.])
+     fi
     fi
   else
     if test "x$ECL_GMP_HEADER" = "x"; then
@@ -421,6 +430,7 @@ if test "$with_debug_cflags" = "yes"; then
   with_debug_cflags="-g"
 fi
 if test "$with_debug_cflags" != "no"; then
+  DEBUG_CFLAGS="$with_debug_cflags"
   CFLAGS="$with_debug_cflags $CFLAGS"
   CXXFLAGS="$with_debug_cflags $CXXFLAGS"
   LDFLAGS="$with_debug_cflags $LDFLAGS"
