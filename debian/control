@@ -3,7 +3,6 @@ Section: devel
 Priority: optional
 Maintainer: Debian Common Lisp Team <pkg-common-lisp-devel@lists.alioth.debian.org>
 Uploaders: Peter Van Eynde <pvaneynd@debian.org>,
- Luca Capello <luca@pca.it>,
  Christoph Egger <christoph@debian.org>
 Build-Depends: debhelper (>> 7.0.0), autotools-dev, libgmp3-dev,  automake1.9, file, texinfo, libncurses5-dev, fakeroot, libgc-dev (>= 1:7.1), dh-lisp (>= 0.6), chrpath, install-info
 Build-Conflicts: autoconf2.13, automake1.4
