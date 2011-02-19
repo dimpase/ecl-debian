@@ -1,0 +1,44 @@
+Source: ecl
+Section: devel
+Priority: optional
+Maintainer: Debian Common Lisp Team <pkg-common-lisp-devel@lists.alioth.debian.org>
+Uploaders: Peter Van Eynde <pvaneynd@debian.org>, Luca Capello <luca@pca.it>
+Build-Depends: debhelper (>> 7.0.0), autotools-dev, libgmp3-dev,  automake1.9, file, texinfo, libncurses5-dev, fakeroot, libgc-dev, dh-lisp (>= 0.6), chrpath, install-info
+Build-Conflicts: autoconf2.13, automake1.4
+Standards-Version: 3.8.3
+Homepage: http://ecls.sourceforge.net/
+Vcs-Git: http://git.debian.org/git/pkg-common-lisp/ecl.git
+Vcs-Browser: http://git.debian.org/?p=pkg-common-lisp/ecl.git;a=summary
+
+Package: ecl
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libgmp3-dev, libncurses5-dev, libgc-dev, gcc
+Conflicts: common-lisp-controller (<< 6.15)
+Provides: lisp-compiler
+Suggests: slime, ecl-doc
+Description: Embeddable Common-Lisp: has an interpreter and can compile to C
+ ECL stands for Embeddable Common-Lisp. The ECL project is an
+ effort to modernize Giuseppe Attardi's ECL environment to
+ produce an implementation of the Common-Lisp language
+ which complies to the ANSI X3J13 definition of the language.
+ .
+ The current ECL implementation features:
+  * A bytecodes compiler and interpreter.
+  * A translator to C.
+  * A UFFI-compatible interface to C code.
+  * A dynamic loader.
+  * The possibility to build standalone executables and DLLs.
+  * The Common-Lisp Object System (CLOS).
+  * Conditions and restarts for handling errors.
+  * Sockets as ordinary streams.
+  * The GNU Multiprecision library for fast bignum operations.
+  * A simple conservative mark & sweep garbage collector.
+  * The Boehm-Weiser garbage collector.
+
+Package: ecl-doc
+Section: doc
+Architecture: all
+Depends: ${misc:Depends}
+Suggests: ecl
+Description: documentation for Embeddable Common-Lisp
+ Contains the Info and HTML documentation.

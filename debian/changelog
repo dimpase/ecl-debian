@@ -1,0 +1,239 @@
+ecl (10.3.1-3) UNRELEASED; urgency=low
+
+  * open for changes
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 31 Mar 2010 21:56:03 +0200
+
+ecl (10.3.1-2) unstable; urgency=low
+
+  * Add a build-depends for install-info (Closes: #574701)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 31 Mar 2010 09:14:46 +0200
+
+ecl (10.3.1-1) unstable; urgency=low
+
+  * New upstream.
+  * Force INSTALL_INFO to ginstall. (Closes: #562433, 573659) 
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 16 Mar 2010 21:50:19 +0100
+
+ecl (9.12.3-1) unstable; urgency=low
+
+  * New upstream.
+  * Changed copyright link to LGPL-2
+  * fix spelling typo in src/clx/image.lisp
+  * fix spelling typo in contrib/sockets/sockets.lisp
+  * fix spelling typo in src/clos/streams.lsp
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 31 Dec 2009 09:56:10 +0100
+
+ecl (9.10.2-1) unstable; urgency=low
+
+  * New upstream release. 
+  * use buildin boehm gc for now
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Mon, 12 Oct 2009 11:47:27 +0100
+
+ecl (9.8.4-2) unstable; urgency=low
+
+  * I should not have changed to lisp section
+  * Force the configure script to use ginstall-info, (Closes: #545625)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 24 Sep 2009 11:10:07 +0200
+
+ecl (9.8.4-1) unstable; urgency=low
+
+  * New upstream with major changes.
+  * enable threading again
+  * Changed to the lisp Section
+  * Updated Standards-Version no real changes
+  * Added linitian override for the clc directory
+  * Added debian/README.building file
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 02 Sep 2009 09:10:09 +0100
+
+ecl (9.6.1-1) unstable; urgency=low
+
+  * New upstream release. 
+  * Fixed watch file
+  * fixed clean to remove src/gc/configure.in file
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 17 Jun 2009 22:42:16 +0200
+
+ecl (9.4.1-1) unstable; urgency=low
+
+  * New upstream with major changes.
+  * now using debhelper version 7
+  * updated standard version without any real changes
+  * use dh_prep instead of dh_clean -k
+  * use redirected sf.net url for watch file
+  * added ${misc:Depends} for ecl-doc
+  * remove redundant Section field for binary package
+  * remove empty usr/lib/ecl/h directory
+  * fixed gnu typo in control file
+  * fixed watch file to see new version numbering scheme
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 29 Apr 2009 05:58:47 +0200
+
+ecl (0.9j-20080306-5) unstable; urgency=low
+
+  * debian/control:
+    + Build-Depends: on chrpath to remove unnecessary rpath headers
+      from binaries in /usr/lib/ecl/, thanks to Bill Allombert
+      <bill.allombert@math.u-bordeaux1.fr> (Closes: #495756).
+    + Depends: on gcc, it's required at installation and everytime
+      you want to produce a loadable object file.
+
+  * debian/rules:
+    + add chrpath call to 'install' target.
+
+ -- Luca Capello <luca@pca.it>  Tue, 09 Sep 2008 21:54:43 +0200
+
+ecl (0.9j-20080306-4) unstable; urgency=low
+
+  * debian/control:
+    + build-depend on quilt to manage patches.
+
+  * debian/patches/series: new file.
+  * debian/patches/01_src-configure-add-missing-test.patch:
+    + add missing `test' invocation in x86_64 check for dynamic FFI.
+
+  * debian/rules:
+    + adapt to quilt.
+
+ -- Luca Capello <luca@pca.it>  Mon, 07 Jul 2008 18:49:53 +0200
+
+ecl (0.9j-20080306-3) unstable; urgency=low
+
+  * debian/rules:
+    + fix FTBFS: move ls call from binary-arch to binary-indep,
+      thanks to Bastian Blank <waldi@debian.org> (Closes: #488811).
+
+ -- Luca Capello <luca@pca.it>  Mon, 07 Jul 2008 00:18:07 +0200
+
+ecl (0.9j-20080306-2) unstable; urgency=low
+
+  * debian/control:
+    + add myself to Uploaders:.
+    + add Vcs-Browser field.
+    + remove trailing spaces from the long Description:.
+    + conflict with common-lisp-controller << 6.15 because of #477169.
+    + correct Info/HTML capitalizations in ecl-doc long Description:.
+    - remove xutils from Build-Depends:.
+    - remove traling empty lines.
+
+  * debian/ecl-doc.doc-base:
+    + new section 'Programming' (thanks to lintian).
+
+  * debian/rules:
+    + fix FTBFS: instead of simply reverting swap of binary-indep
+      and binary-arch targets, create the arch-dependent "ecl"
+      package in binary-arch and the arch-independent "ecl-doc" in
+      binary-indep, thanks to Sebastian Bober <sbober@servercare.de>
+      for the patch (Closes: #471223).
+    + remove trailing spaces.
+    + correct lintian warning debian-rules-ignores-make-clean-error.
+
+ -- Luca Capello <luca@pca.it>  Sun, 15 Jun 2008 19:30:07 +0200
+
+ecl (0.9j-20080306-1) unstable; urgency=low
+
+  * New upstream version.
+  * updated standard version no real changes
+  * added Homepage
+  * Use default gcc (Closes: #463291)
+  * Changed to group maintanance
+  * Corrected Vcs-Git control field
+  * swap binary-indep and binary-arch round
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Fri, 07 Mar 2008 22:13:58 +0100
+
+ecl (0.9i-20070908-1) unstable; urgency=low
+
+  * added Svc line to control file
+  * New upstream.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 27 Sep 2007 06:08:29 +0200
+
+ecl (0.9i-20070324-2) unstable; urgency=low
+
+  * Upload to unstable. 
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Mon, 09 Apr 2007 11:51:51 +0200
+
+ecl (0.9i-20070324-1) experimental; urgency=low
+
+  * New upstream version, adds support for Hurd.
+    (Closes: #410374, #410368, #410367)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 27 Mar 2007 09:35:49 +0200
+
+ecl (0.9i-20070214-1) experimental; urgency=low
+
+  * new upstream, added GC_total_bytes fix.
+  * updated standard version, no real changes
+  * Fix for the strange FTBFS when unpacked in a path with a space 
+    (Closes: #410009)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 27 Feb 2007 11:59:49 +0100
+
+ecl (0.9i-2) unstable; urgency=low
+
+  * added GNU/kFreeBSD support (Closes: #377042)
+  * Use system boehm gc.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Mon, 24 Jul 2006 19:35:12 +0200
+
+ecl (0.9i-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Sun,  2 Jul 2006 00:20:00 +0200
+
+ecl (0.9h-20060617-1) unstable; urgency=low
+
+  * New upstream version
+  * Updated standards version without real changes. 
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 21 Jun 2006 09:21:21 +0200
+
+ecl (0.9h-20060510-1) unstable; urgency=low
+
+  * New upstream release.
+  * Did some rpath magic. Should:
+    (Closes: #367415)
+  * Updated doc-base file to include Index
+  * Added removal of ecl and .o files  on upgrade
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 17 May 2006 02:46:26 +0200
+
+ecl (0.9h-20060322-1) unstable; urgency=low
+
+  * New upstream
+  * Added build libraries and tools also for
+    main package, as it needs gcc and libraries to
+    build a new pacakge. (Closes: #360572)
+  * Build with gcc-4.1  (Closes: #362088)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 13 Apr 2006 09:16:16 +0200
+
+ecl (0.9h-20060216-2) unstable; urgency=low
+
+  [René van Bevern]
+  * debian/control:
+    + Build-Depends: add dh-lisp 0.6
+    + Depends: remove common-lisp-controller (>= 5.11), it is
+      automatically added
+    + Provides: remove ${ecl:fasl-version} as it is defined nowhere
+  
+  [Peter Van Eynde]
+  * Expanded copyright file to properly differentate files.
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Sun, 26 Mar 2006 22:49:02 +0200
+
+ecl (0.9h-20060216-1) unstable; urgency=low
+
+  * Initial release. (Closes: #261350)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 11 Jan 2006 15:13:59 +0100
+

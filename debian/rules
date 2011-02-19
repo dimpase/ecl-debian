@@ -1,0 +1,174 @@
+#!/usr/bin/make -f
+# Sample debian/rules that uses debhelper.
+# GNU copyright 1997 to 1999 by Joey Hess.
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+
+# These are used for cross-compiling and for saving the configure script
+# from having to guess our platform (since we know it already)
+DEB_HOST_GNU_TYPE   ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+DEB_BUILD_GNU_TYPE  ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+
+# FOR AUTOCONF 2.52 AND NEWER ONLY
+ifeq ($(DEB_BUILD_GNU_TYPE), $(DEB_HOST_GNU_TYPE))
+  confflags += --build $(DEB_HOST_GNU_TYPE)
+else
+  confflags += --build $(DEB_BUILD_GNU_TYPE) --host $(DEB_HOST_GNU_TYPE)
+endif
+
+#export CC=/usr/bin/gcc-4.1
+
+ifneq (,$(findstring debug,$(DEB_BUILD_OPTIONS)))
+	CFLAGS += -g
+endif
+ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
+	INSTALL_PROGRAM += -s
+endif
+
+# force to use ginstall-info:
+export INSTALL_INFO=/usr/bin/ginstall-info
+
+config.status: configure
+	dh_testdir
+	# Add here commands to configure the package.
+	chmod a+x configure \
+	 src/gc/configure \
+	 src/gmp/macos/configure \
+	 src/gmp/configure \
+	 src/configure \
+	 src/gmp/mpn/m4-ccas
+
+	touch src/gc/configure.in src/configure.in && \
+	touch src/gc/aclocal.m4  src/aclocal.m4 && \
+	touch src/configure configure
+
+	./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) \
+	   --prefix=/usr --mandir=\$${prefix}/share/man \
+	   --infodir=\$${prefix}/share/info \
+	   --with-system-gmp=yes \
+	   --with-tcp \
+	   --with-clx  \
+	   --enable-threads=yes \
+	   --enable-boehm=buildin  \
+	   --enable-gengc \
+	   --with-x
+	   #--enable-boehm=system
+
+build: build-arch build-indep
+
+build-arch: build-arch-stamp
+build-arch-stamp: config.status
+	dh_testdir -a
+
+	$(MAKE)
+
+	touch build-arch-stamp
+
+build-indep: build-indep-stamp
+build-indep-stamp: config.status
+	dh_testdir -i
+	$(MAKE) -C build/doc
+	touch build-indep-stamp
+
+clean: 
+	dh_testdir
+	dh_testroot
+	rm -f build-*-stamp
+	-test -r /usr/share/misc/config.sub && \
+           cp -f /usr/share/misc/config.sub src/gc/config.sub
+	-test -r /usr/share/misc/config.guess && \
+           cp -f /usr/share/misc/config.guess src/gc/config.guess
+	-test -r /usr/share/misc/config.sub && \
+           cp -f /usr/share/misc/config.sub src/config.sub
+	-test -r /usr/share/misc/config.guess && \
+           cp -f /usr/share/misc/config.guess src/config.guess
+	# do this manually on a big change:
+	# autoreconf --force
+	# Add here commands to clean up after the build process.
+	# correct lintian warning debian-rules-ignores-make-clean-error
+	[ ! -f Makefile ] || $(MAKE) distclean
+	rm -f src/gc/configure.in
+
+	rm -rf build
+
+	dh_clean
+
+install: build-arch
+	dh_testdir -a
+	dh_testroot -a
+	dh_prep -a
+	dh_installdirs -a
+
+	# Add here commands to install the package into debian/ecl
+	$(MAKE) install prefix=$(CURDIR)/debian/ecl/usr
+
+	rm $(CURDIR)/debian/ecl/usr/share/doc/LGPL
+	rm $(CURDIR)/debian/ecl/usr/share/doc/Copyright
+
+	rm $(CURDIR)/debian/ecl/usr/share/info/ecl.info \
+	   $(CURDIR)/debian/ecl/usr/share/info/clx.info \
+	   $(CURDIR)/debian/ecl/usr/share/info/ecldev.info
+
+
+	rm $(CURDIR)/debian/ecl/usr/share/info/dir
+
+	rmdir $(CURDIR)/debian/ecl/usr/share/info
+
+	cp ${CURDIR}/debian/install-clc.lisp $(CURDIR)/debian/ecl/usr/lib/ecl/
+	mv $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/ecl/ecl-original
+
+	find $(CURDIR)/debian -name "*.lsp" -print0 | \
+	   xargs -0 chmod a-x || true
+
+	# remove rpath from /us/lib/ecl/ binaries (bug #495756)
+	# this is a workaround until upstream properly fixes it
+	find $(CURDIR)/debian/ecl/usr/lib/ecl/ -name "*.fas" -print0 | \
+	   xargs -0 chrpath -d
+	chrpath -d $(CURDIR)/debian/ecl/usr/lib/ecl/ecl-original
+
+	cp debian/overrides.ecl $(CURDIR)/debian/ecl/usr/share/lintian/overrides/ecl
+
+
+# Build architecture-independent files here.
+binary-indep: build-indep
+	dh_testdir -i
+	dh_testroot -i
+	dh_installdirs -i
+	ls -l $(CURDIR)/debian/ecl-doc/usr/share/info/
+	dh_installdocs -i
+	dh_installchangelogs -i
+	dh_installinfo -v -i
+	dh_compress -i
+	dh_fixperms -i
+	dh_installdeb -i
+	dh_gencontrol -i
+	dh_md5sums -i
+	dh_builddeb -i
+
+# Build architecture-dependent files here.
+binary-arch: build-arch install
+	dh_testdir -a
+	dh_testroot -a
+#	dh_installdebconf
+	dh_installdocs -a
+	dh_installexamples -a
+	dh_installmenu -a
+	dh_installman -a
+#	dh_undocumented
+	dh_installchangelogs -a
+	dh_link -a
+	dh_strip -a
+	dh_compress -a
+	dh_fixperms -a
+	dh_lisp -a ecl
+	dh_makeshlibs -a
+	dh_installdeb -a
+	dh_shlibdeps -a
+	dh_gencontrol -a
+	dh_md5sums -a
+	dh_builddeb -a
+
+binary: binary-indep binary-arch
+.PHONY: build build-arch build-indep clean binary-indep binary-arch binary install

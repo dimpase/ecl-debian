@@ -1,0 +1,9 @@
+Document: ecl-doc
+Title: ECL documentation
+Author: Juan Jose Garcia Ripoll, Giuseppe Attardi, Taiichi Yuasa and Masami Hagiya
+Abstract: This manual describes the usage of ECL
+Section: Programming
+
+Format: info
+Index: /usr/share/info/ecl.info.gz
+Files: /usr/share/info/ecl.info.gz /usr/share/info/ecldev.info.gz

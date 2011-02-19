@@ -1,0 +1,4 @@
+version=3
+
+http://sf.net/ecls/ecl-([0-9][0-9a-z.]*)\.t.*gz
+
