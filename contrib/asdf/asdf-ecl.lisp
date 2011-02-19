@@ -9,6 +9,7 @@
 ;;;
 ;;; ECL SPECIFIC OPERATIONS FOR ASDF
 ;;;
+#+xcvb (module (:depends-on ("asdf")))
 
 (in-package :asdf)
 (require 'cmp)
@@ -51,12 +52,12 @@
    (prologue-code :accessor monolithic-op-prologue-code)
    (epilogue-code :accessor monolithic-op-epilogue-code)))
 
-(defclass monolithic-fasl-op (fasl-op monolithic-bundle-op) ())
+(defclass monolithic-fasl-op (monolithic-bundle-op fasl-op) ())
 
-(defclass monolithic-lib-op (lib-op monolithic-bundle-op)
+(defclass monolithic-lib-op (monolithic-bundle-op lib-op)
   ((type :initform :lib)))
 
-(defclass monolithic-dll-op (dll-op monolithic-bundle-op)
+(defclass monolithic-dll-op (monolithic-bundle-op dll-op)
   ((type :initform :dll)))
 
 (defclass program-op (monolithic-bundle-op)
@@ -65,6 +66,7 @@
 (defmethod initialize-instance :after ((instance bundle-op) &rest initargs
                                        &key (name-suffix nil name-suffix-p)
                                        &allow-other-keys)
+  (declare (ignorable initargs name-suffix))
   (unless name-suffix-p
     (setf (slot-value instance 'name-suffix)
           (if (bundle-op-monolithic-p instance) "-mono" "")))
@@ -80,9 +82,15 @@
         (remove-keys '(type monolithic name-suffix)
                      (slot-value instance 'original-initargs))))
 
+(defmethod bundle-op-build-args :around ((op lib-op))
+  (let ((args (call-next-method)))
+    (remf args :ld-flags)
+    args))
+
 (defvar *force-load-p* nil)
 
 (defmethod operation-done-p :around ((operation load-op) c)
+  (declare (ignorable operation c))
   (if *force-load-p* nil (call-next-method)))
 
 (defun gather-components (op-type system &key filter-system filter-type include-self)
@@ -121,6 +129,7 @@
 ;;; Gather the static libraries of all components.
 ;;;
 (defmethod bundle-sub-operations ((o monolithic-bundle-op) c)
+  (declare (ignorable o))
   (gather-components 'lib-op c :filter-type 'system :include-self t))
 ;;;
 ;;; STATIC LIBRARIES
@@ -140,6 +149,7 @@
 ;;; with the static library of this module.
 ;;;
 (defmethod bundle-sub-operations ((o dll-op) c)
+  (declare (ignorable o))
   (list (cons (make-instance 'lib-op) c)))
 ;;;
 ;;; FASL FILES
@@ -147,6 +157,7 @@
 ;;; Gather the statically linked library of this component.
 ;;;
 (defmethod bundle-sub-operations ((o fasl-op) c)
+  (declare (ignorable o))
   (list (cons (make-instance 'lib-op) c)))
 
 (defmethod component-depends-on ((o bundle-op) (c system))
@@ -156,9 +167,11 @@
                    (component-name dep))))
 
 (defmethod component-depends-on ((o lib-op) (c system))
+  (declare (ignorable o))
   (list (list 'compile-op (component-name c))))
 
 (defmethod component-depends-on ((o bundle-op) c)
+  (declare (ignorable o c))
   nil)
 
 (defmethod input-files ((o bundle-op) (c system))
@@ -168,21 +181,25 @@
 (defmethod output-files ((o bundle-op) (c system))
   (let ((name (concatenate 'base-string (component-name c)
                            (slot-value o 'name-suffix))))
-    (list (merge-pathnames (compile-file-pathname name :type (bundle-op-type o))
-                           (component-relative-pathname c)))))
+    (list (merge-pathnames* (compile-file-pathname name :type (bundle-op-type o))
+                            (component-relative-pathname c)))))
 
 (defmethod output-files ((o fasl-op) (c system))
+  (declare (ignorable o c))
   (loop for file in (call-next-method)
      collect (make-pathname :type "fasb" :defaults file)))
 
 (defmethod perform ((o bundle-op) (c t))
+  (declare (ignorable o c))
   t)
 
 (defmethod operation-done-p ((o bundle-op) (c source-file))
+  (declare (ignorable o c))
   t)
 
 (defmethod perform ((o bundle-op) (c system))
-  (let* ((object-files (remove "fas" (input-files o c) :key #'pathname-type :test #'string=))
+  (let* ((object-files (remove "fas" (input-files o c)
+                               :key #'pathname-type :test #'string=))
          (output (output-files o c)))
     (ensure-directories-exist (first output))
     (apply #'c::builder (bundle-op-type o) (first output) :lisp-files object-files
@@ -196,6 +213,8 @@
 
 (defun select-operation (monolithic type)
   (ecase type
+    ((:binary)
+     (if monolithic 'monolithic-binary-op 'binary-op))
     ((:dll :shared-library)
      (if monolithic 'monolithic-dll-op 'dll-op))
     ((:lib :static-library)
@@ -205,12 +224,32 @@
     ((:program)
      'program-op)))
 
-
 (defun make-build (system &rest args &key (monolithic nil) (type :fasl)
+                   (move-here nil move-here-p)
                    &allow-other-keys)
-  (apply #'operate (select-operation monolithic type)
-         system
-         (remove-keys '(monolithic type) args)))
+  (let* ((operation-name (select-operation monolithic type))
+         (move-here-path (if (and move-here
+                                  (typep move-here '(or pathname string)))
+                             (pathname move-here)
+                             (merge-pathnames "./asdf-output/")))
+         (operation (apply #'operate operation-name
+                           system
+                           (remove-keys '(monolithic type move-here) args)))
+         (system (find-system system))
+         (files (and system (output-files operation system))))
+    (if (or move-here (and (null move-here-p)
+                           (member operation-name '(:program :binary))))
+        (loop with dest-path = (truename (ensure-directories-exist move-here-path))
+           for f in files
+           for new-f = (make-pathname :name (pathname-name f)
+                                      :type (pathname-type f)
+                                      :defaults dest-path)
+           do (progn
+                (when (probe-file new-f)
+                  (delete-file new-f))
+                (rename-file f new-f))
+           collect new-f)
+        files)))
 
 ;;;
 ;;; LOAD-FASL-OP
@@ -224,16 +263,19 @@
   (every #'(lambda (c) (typep c 'compiled-file)) (module-components c)))
 
 (defmethod component-depends-on ((o load-fasl-op) (c system))
+  (declare (ignorable o))
   (unless (trivial-system-p c)
     (subst 'load-fasl-op 'load-op
            (subst 'fasl-op 'compile-op
                   (component-depends-on (make-instance 'load-op) c)))))
 
 (defmethod input-files ((o load-fasl-op) (c system))
+  (declare (ignore o))
   (unless (trivial-system-p c)
     (output-files (make-instance 'fasl-op) c)))
 
 (defmethod perform ((o load-fasl-op) (c t))
+  (declare (ignore o c))
   nil)
 
 (defmethod perform ((o load-fasl-op) (c system))
@@ -254,27 +296,127 @@
 (defclass compiled-file (component) ())
 (defmethod component-relative-pathname ((component compiled-file))
   (compile-file-pathname
-   (merge-component-relative-pathname
-    (slot-value component 'relative-pathname)
-    (component-name component)
-    "fas")))
+   (merge-component-name-type
+    (or (slot-value component 'relative-pathname)
+        (component-name component))
+    :type "fas")))
 
 (defmethod output-files (o (c compiled-file))
+  (declare (ignore o c))
   nil)
 (defmethod input-files (o (c compiled-file))
+  (declare (ignore o c))
   nil)
 (defmethod perform ((o load-op) (c compiled-file))
+  (declare (ignore o))
   (load (component-pathname c)))
 (defmethod perform ((o load-fasl-op) (c compiled-file))
+  (declare (ignore o))
   (load (component-pathname c)))
 (defmethod perform (o (c compiled-file))
+  (declare (ignore o c))
   nil)
+
+;;;
+;;; Pre-built systems
+;;;
+(defclass prebuilt-system (system)
+  ((static-library :accessor prebuilt-system-static-library :initarg :lib)))
+
+(defmethod output-files ((o lib-op) (c prebuilt-system))
+  (declare (ignore o))
+  (values (list (compile-file-pathname (prebuilt-system-static-library c)
+                                       :type :lib))
+          t ; Advertise that we do not want this path renamed
+          ))
+
+(defmethod perform ((o lib-op) (c prebuilt-system))
+  (car (output-files o c)))
+
+(defmethod component-depends-on ((o lib-op) (c prebuilt-system))
+  (declare (ignorable o c))
+  nil)
+
+(defmethod bundle-sub-operations ((o lib-op) (c prebuilt-system))
+  (declare (ignorable o c))
+  nil)
+
+(defmethod bundle-sub-operations ((o monolithic-lib-op) (c prebuilt-system))
+  (declare (ignorable o))
+  (error "Prebuilt system ~S shipped with ECL can not be used in a monolithic library operation." c))
+
+(defmethod bundle-sub-operations ((o monolithic-bundle-op) (c prebuilt-system))
+  (declare (ignorable o c))
+  nil)
+
+;;;
+;;; PREBUILT SYSTEM CREATOR
+;;;
+
+(defclass binary-op (bundle-op)
+  ())
+
+(defclass monolithic-binary-op (binary-op monolithic-bundle-op)
+  ())
+
+(defun binary-op-dependencies (o s)
+  (let (lib-op fasl-op)
+    (if (bundle-op-monolithic-p o)
+        (setf lib-op 'monolithic-lib-op
+              fasl-op 'monolithic-fasl-op)
+        (setf lib-op 'lib-op
+              fasl-op 'fasl-op))
+    (list (list (make-instance lib-op :args (bundle-op-build-args o))
+                s)
+          (list (make-instance fasl-op :args (bundle-op-build-args o))
+                s))))
+
+(defmethod component-depends-on ((o binary-op) (s system))
+  (loop for dep in (binary-op-dependencies o s)
+     append (apply #'component-depends-on dep)))
+
+(defmethod input-files ((o binary-op) (s system))
+  (loop for dep in (binary-op-dependencies o s)
+     append (apply #'input-files dep)))
+
+(defmethod output-files ((o binary-op) (s system))
+  (list* (merge-pathnames* (make-pathname :name (component-name s)
+                                          :type "asd")
+                           (component-relative-pathname s))
+         (loop for dep in (binary-op-dependencies o s)
+            append (apply #'output-files dep))))
+
+(defmethod perform ((o binary-op) (s system))
+  (let* ((dependencies (binary-op-dependencies o s))
+         (library (first (apply #'output-files (first dependencies))))
+         (fasl (first (apply #'output-files (second dependencies))))
+         (filename (first (output-files o s)))
+         (name (component-name s))
+         (name-keyword (intern (string name) (find-package :keyword))))
+    (loop for dep in dependencies
+       do (apply #'perform dep))
+    (with-open-file (s filename :direction :output :if-exists :supersede
+                       :if-does-not-exist :create)
+      (format s ";;; Prebuilt ASDF definition for system ~A" name)
+      (format s ";;; Built for ~A ~A on a ~A/~A ~A"
+              (lisp-implementation-type)
+              (lisp-implementation-version)
+              (software-type)
+              (machine-type)
+              (software-version))
+      (let ((*package* (find-package :keyword)))
+        (pprint `(defsystem ,name-keyword
+                     :class asdf::prebuilt-system
+                     :components ((:compiled-file ,(pathname-name fasl)))
+                     :lib ,(make-pathname :name (pathname-name library)
+                                          :type (pathname-type library)))
+                s)))))
 
 ;;;
 ;;; Final integration steps
 ;;;
 
-(export '(make-build load-fasl-op))
+(export '(make-build load-fasl-op prebuilt-system))
 (push '("fasb" . si::load-binary) si::*load-hooks*)
 
 (require 'cmp)
@@ -289,7 +431,8 @@
         t))))
 
 (defun register-pre-built-system (name)
-  (register-system name (make-instance 'system :name name)))
+  (register-system name (make-instance 'system :name name
+                                       :source-file nil)))
 
 (setf si::*module-provider-functions*
       (loop for f in si::*module-provider-functions*

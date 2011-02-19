@@ -13,11 +13,15 @@
     See file '../Copyright' for full details.
 */
 
-#if defined(ECL_THREADS) && !defined(_MSC_VER)
-#include <pthread.h>
-#endif
 #include <stdio.h>
 #include <ecl/ecl.h>
+#ifdef ECL_THREADS
+# ifdef ECL_WINDOWS_THREADS
+#  include <windows.h>
+# else
+#  include <pthread.h>
+# endif
+#endif
 #include <ecl/ecl-inl.h>
 #include <ecl/internal.h>
 #include <ecl/page.h>
@@ -27,7 +31,7 @@
 
 #ifdef GBC_BOEHM
 
-static void finalize_queued();
+static void gather_statistics();
 static void ecl_mark_env(struct cl_env_struct *env);
 
 #ifdef GBC_BOEHM_PRECISE
@@ -76,7 +80,7 @@ out_of_memory_check(size_t requested_bytes)
 }
 
 static void
-no_warnings(char *msg, void *arg)
+no_warnings(char *msg, GC_word arg)
 {
 }
 
@@ -86,24 +90,28 @@ out_of_memory(size_t requested_bytes)
 	const cl_env_ptr the_env = ecl_process_env();
         int interrupts = the_env->disable_interrupts;
         int method = 0;
+        void *output;
         if (!interrupts)
                 ecl_disable_interrupts_env(the_env);
 	/* Free the input / output buffers */
 	the_env->string_pool = Cnil;
-#ifdef ECL_THREADS
+
 	/* The out of memory condition may happen in more than one thread */
         /* But then we have to ensure the error has not been solved */
-	ERROR_HANDLER_LOCK();
+#ifdef ECL_THREADS
+        mp_get_lock_wait(cl_core.error_lock);
+        CL_UNWIND_PROTECT_BEGIN(the_env)
 #endif
+{
         failure = 0;
         GC_gcollect();
         GC_oom_fn = out_of_memory_check;
         {
-                void *output = GC_MALLOC(requested_bytes);
+                output = GC_MALLOC(requested_bytes);
                 GC_oom_fn = out_of_memory;
                 if (output != 0 && failure == 0) {
-                        ERROR_HANDLER_UNLOCK();
-                        return output;
+                        method = 2;
+                        goto OUTPUT;
                 }
         }
         if (cl_core.max_heap_size == 0) {
@@ -125,14 +133,25 @@ out_of_memory(size_t requested_bytes)
                 GC_set_max_heap_size(cl_core.max_heap_size);
                 method = 1;
         }
-	ERROR_HANDLER_UNLOCK();
+ OUTPUT:
+        (void)0;
+}
+#ifdef ECL_THREADS
+        CL_UNWIND_PROTECT_EXIT {
+                mp_giveup_lock(cl_core.error_lock);
+                ecl_enable_interrupts_env(the_env);
+        } CL_UNWIND_PROTECT_END;
+#else
         ecl_enable_interrupts_env(the_env);
+#endif
         switch (method) {
         case 0:	cl_error(1, @'ext::storage-exhausted');
                 break;
         case 1: cl_cerror(2, make_constant_base_string("Extend heap size"),
                           @'ext::storage-exhausted');
                 break;
+        case 2:
+                return output;
         default:
                 ecl_internal_error("Memory exhausted, quitting program.");
                 break;
@@ -162,6 +181,18 @@ static void
 error_wrong_tag(cl_type t)
 {
         ecl_internal_error("Collector called with invalid tag number.");
+}
+
+cl_index
+ecl_object_byte_size(cl_type t)
+{
+        if (t == t_fixnum || t == t_character)
+                FEerror("ecl_object_byte_size invoked with an immediate type ~D",
+                        1, MAKE_FIXNUM(1));
+        if (t >= t_end)
+                FEerror("ecl_object_byte_size invoked with an unkown type ~D",
+                        1, MAKE_FIXNUM(1));
+        return type_info[t].size;
 }
 
 static cl_object
@@ -425,6 +456,12 @@ cl_object_mark_proc(void *addr, struct GC_ms_entry *msp, struct GC_ms_entry *msl
                 MAYBE_MARK(o->lock.holder);
                 MAYBE_MARK(o->lock.name);
 		break;
+	case t_rwlock:
+		MAYBE_MARK(o->rwlock.name);
+#  ifndef ECL_RWLOCK
+		MAYBE_MARK(o->rwlock.mutex);
+		break;
+#  endif
 # endif
         case t_codeblock:
                 MAYBE_MARK(o->cblock.source);
@@ -483,8 +520,8 @@ ecl_alloc_object(cl_type t)
 		return MAKE_FIXNUM(0); /* Immediate fixnum */
 	case t_character:
 		return CODE_CHAR(' '); /* Immediate character */
-#ifdef ECL_SHORT_FLOAT
-	case t_shortfloat:
+#ifdef ECL_SSE2
+	case t_sse_pack:
 #endif
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
@@ -528,6 +565,7 @@ ecl_alloc_object(cl_type t)
 #ifdef ECL_THREADS
 	case t_process:
         case t_lock:
+        case t_rwlock:
         case t_condition_variable:
 #endif
 #ifdef ECL_SEMAPHORES
@@ -802,6 +840,7 @@ init_alloc(void)
 #ifdef ECL_THREADS
 	init_tm(t_process, "PROCESS", sizeof(struct ecl_process), 8);
 	init_tm(t_lock, "LOCK", sizeof(struct ecl_lock), 2);
+	init_tm(t_rwlock, "LOCK", sizeof(struct ecl_rwlock), 0);
 	init_tm(t_condition_variable, "CONDITION-VARIABLE",
                 sizeof(struct ecl_condition_variable), 0);
 # ifdef ECL_SEMAPHORES
@@ -812,6 +851,9 @@ init_alloc(void)
 	init_tm(t_foreign, "FOREIGN", sizeof(struct ecl_foreign), 2);
 	init_tm(t_frame, "STACK-FRAME", sizeof(struct ecl_stack_frame), 2);
 	init_tm(t_weak_pointer, "WEAK-POINTER", sizeof(struct ecl_weak_pointer), 0);
+#ifdef ECL_SSE2
+	init_tm(t_sse_pack, "SSE-PACK", sizeof(struct ecl_sse_pack), 0);
+#endif
 #ifdef GBC_BOEHM_PRECISE
         type_info[t_list].descriptor =
                 to_bitmap(&c, &(c.car)) |
@@ -939,6 +981,14 @@ init_alloc(void)
         type_info[t_lock].descriptor =
                 to_bitmap(&o, &(o.lock.name)) |
                 to_bitmap(&o, &(o.lock.holder));
+#  ifdef ECL_RWLOCK
+        type_info[t_rwlock].descriptor =
+                to_bitmap(&o, &(o.rwlock.name));
+#  else
+        type_info[t_rwlock].descriptor =
+                to_bitmap(&o, &(o.rwlock.name)) |
+                to_bitmap(&o, &(o.rwlock.mutex));
+#  endif
 	type_info[t_condition_variable].descriptor = 0;
 #   ifdef ECL_SEMAPHORES
 	type_info[t_semaphore].descriptor = 0;
@@ -959,6 +1009,9 @@ init_alloc(void)
                 to_bitmap(&o, &(o.frame.base)) |
                 to_bitmap(&o, &(o.frame.env));
 	type_info[t_weak_pointer].descriptor = 0;
+#ifdef ECL_SSE2
+	type_info[t_sse_pack].descriptor = 0;
+#endif
 	for (i = 0; i < t_end; i++) {
                 GC_word descriptor = type_info[i].descriptor;
                 int bits = type_info[i].size / sizeof(GC_word);
@@ -985,7 +1038,7 @@ init_alloc(void)
 #endif /* GBC_BOEHM_PRECISE */
 	old_GC_push_other_roots = GC_push_other_roots;
 	GC_push_other_roots = stacks_scanner;
-	GC_start_call_back = (void (*)())finalize_queued;
+	GC_start_call_back = (void (*)())gather_statistics;
 	GC_java_finalization = 1;
         GC_oom_fn = out_of_memory;
         GC_set_warn_proc(no_warnings);
@@ -1009,13 +1062,13 @@ standard_finalizer(cl_object o)
 		cl_close(1, o);
 		break;
 	case t_weak_pointer:
-		GC_unregister_disappearing_link(&(o->weak.value));
+		GC_unregister_disappearing_link((void**)&(o->weak.value));
 		break;
 #ifdef ECL_THREADS
 	case t_lock: {
 		const cl_env_ptr the_env = ecl_process_env();
 		ecl_disable_interrupts_env(the_env);
-#if defined(_MSC_VER) || defined(mingw32)
+#if defined(ECL_MS_WINDOWS_HOST)
 		CloseHandle(o->lock.mutex);
 #else
 		pthread_mutex_destroy(&o->lock.mutex);
@@ -1023,10 +1076,19 @@ standard_finalizer(cl_object o)
 		ecl_enable_interrupts_env(the_env);
 		break;
 	}
+#ifdef ECL_RWLOCK
+	case t_rwlock: {
+		const cl_env_ptr the_env = ecl_process_env();
+		ecl_disable_interrupts_env(the_env);
+		pthread_rwlock_destroy(&o->lock.mutex);
+		ecl_enable_interrupts_env(the_env);
+		break;
+	}
+#endif
 	case t_condition_variable: {
 		const cl_env_ptr the_env = ecl_process_env();
 		ecl_disable_interrupts_env(the_env);
-#if defined(_MSC_VER) || defined(mingw32)
+#if defined(ECL_MS_WINDOWS_HOST)
 		CloseHandle(o->condition_variable.cv);
 #else
 		pthread_cond_destroy(&o->condition_variable.cv);
@@ -1048,12 +1110,10 @@ standard_finalizer(cl_object o)
         case t_symbol: {
                 cl_object cons = ecl_list1(MAKE_FIXNUM(o->symbol.binding));
 		const cl_env_ptr the_env = ecl_process_env();
-                ecl_disable_interrupts_env(the_env);
-                THREAD_OP_LOCK();
-                ECL_CONS_CDR(cons) = cl_core.reused_indices;
-                cl_core.reused_indices = cons;
-                THREAD_OP_UNLOCK();
-                ecl_enable_interrupts_env(the_env);
+                ECL_WITH_GLOBAL_LOCK_BEGIN(the_env) {
+                        ECL_CONS_CDR(cons) = cl_core.reused_indices;
+                        cl_core.reused_indices = cons;
+                } ECL_WITH_GLOBAL_LOCK_END;
         }
 #endif
 	default:;
@@ -1061,48 +1121,15 @@ standard_finalizer(cl_object o)
 }
 
 static void
-group_finalizer(cl_object l, cl_object no_data)
-{
-	CL_NEWENV_BEGIN {
-		while (CONSP(l)) {
-			cl_object record = ECL_CONS_CAR(l);
-			cl_object o = ECL_CONS_CAR(record);
-			cl_object procedure = ECL_CONS_CDR(record);
-			l = ECL_CONS_CDR(l);
-			if (procedure != Ct) {
-				funcall(2, procedure, o);
-			}
-			standard_finalizer(o);
-		}
-	} CL_NEWENV_END;
-}
-
-static void
-queueing_finalizer(cl_object o, cl_object finalizer)
+wrapped_finalizer(cl_object o, cl_object finalizer)
 {
 	if (finalizer != Cnil && finalizer != NULL) {
-		/* Only nonstandard finalizers are queued */
-		if (finalizer == Ct) {
-			CL_NEWENV_BEGIN {
-				standard_finalizer(o);
-			} CL_NEWENV_END;
-		} else {
-			/* Note the way we do this: finalizers might
-			   get executed as a consequence of these calls. */
-			volatile cl_object aux = ACONS(o, finalizer, Cnil);
-			cl_object l = cl_core.to_be_finalized;
-			if (Null(l)) {
-				const cl_env_ptr the_env = ecl_process_env();
-				GC_finalization_proc ofn;
-				void *odata;
-				cl_core.to_be_finalized = aux;
-				ecl_disable_interrupts_env(the_env);
-				GC_register_finalizer_no_order(aux, (GC_finalization_proc*)group_finalizer, NULL, &ofn, &odata);
-				ecl_enable_interrupts_env(the_env);
-			} else {
-				ECL_RPLACD(l, aux);
-			}
-		}
+                CL_NEWENV_BEGIN {
+                        if (finalizer != Ct) {
+				funcall(2, finalizer, o);
+                        }
+                        standard_finalizer(o);
+                } CL_NEWENV_END;
 	}
 }
 
@@ -1117,7 +1144,7 @@ si_get_finalizer(cl_object o)
 	GC_register_finalizer_no_order(o, (GC_finalization_proc)0, 0, &ofn, &odata);
 	if (ofn == 0) {
 		output = Cnil;
-	} else if (ofn == (GC_finalization_proc)queueing_finalizer) {
+	} else if (ofn == (GC_finalization_proc)wrapped_finalizer) {
 		output = (cl_object)odata;
 	} else {
 		output = Cnil;
@@ -1137,7 +1164,7 @@ ecl_set_finalizer_unprotected(cl_object o, cl_object finalizer)
 					       0, &ofn, &odata);
 	} else {
 		GC_finalization_proc newfn;
-		newfn = (GC_finalization_proc)queueing_finalizer;
+		newfn = (GC_finalization_proc)wrapped_finalizer;
 		GC_register_finalizer_no_order(o, newfn, finalizer,
 					       &ofn, &odata);
 	}
@@ -1183,23 +1210,16 @@ si_gc_stats(cl_object enable)
                 GC_print_stats = (enable == @':full');
         }
 	if (cl_core.bytes_consed == Cnil) {
-#ifndef WITH_GMP
-		cl_core.bytes_consed = MAKE_FIXNUM(0);
-		cl_core.gc_counter = MAKE_FIXNUM(0);
-#else
 		cl_core.bytes_consed = ecl_alloc_object(t_bignum);
 		mpz_init2(cl_core.bytes_consed->big.big_num, 128);
 		cl_core.gc_counter = ecl_alloc_object(t_bignum);
 		mpz_init2(cl_core.gc_counter->big.big_num, 128);
-#endif
 	} else {
                 /* We need fresh copies of the bignums */
                 size1 = _ecl_big_plus_fix(cl_core.bytes_consed, 1);
                 size2 = _ecl_big_plus_fix(cl_core.gc_counter, 1);
-#ifdef WITH_GMP
                 mpz_set_ui(cl_core.bytes_consed->big.big_num, 0);
                 mpz_set_ui(cl_core.gc_counter->big.big_num, 0);
-#endif
         }
 	@(return size1 size2 old_status)
 }
@@ -1211,11 +1231,9 @@ si_gc_stats(cl_object enable)
  * invoked with the garbage collection lock on.
  */
 static void
-finalize_queued()
+gather_statistics()
 {
-        cl_core.to_be_finalized = Cnil;
 	if (cl_core.gc_stats) {
-#ifdef WITH_GMP
 		/* Sorry, no gc stats if you do not use bignums */
 #if GBC_BOEHM == 0
 		mpz_add_ui(cl_core.bytes_consed->big.big_num,
@@ -1243,7 +1261,6 @@ finalize_queued()
 		mpz_add_ui(cl_core.gc_counter->big.big_num,
 			   cl_core.gc_counter->big.big_num,
 			   1);
-#endif
 	}
 }
 
@@ -1329,7 +1346,7 @@ ecl_register_root(cl_object *p)
 }
 
 cl_object
-si_gc(cl_object area)
+si_gc(cl_narg narg, ...)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	ecl_disable_interrupts_env(the_env);
@@ -1362,7 +1379,10 @@ ecl_alloc_weak_pointer(cl_object o)
 	ecl_enable_interrupts_env(the_env);
 	obj->t = t_weak_pointer;
 	obj->value = o;
-	GC_general_register_disappearing_link(&(obj->value), (void*)o);
+        if (!FIXNUMP(o) && !CHARACTERP(o) && !Null(o)) {
+                GC_general_register_disappearing_link((void**)&(obj->value), (void*)o);
+                si_set_finalizer((cl_object)obj, Ct);
+        }
 	return (cl_object)obj;
 }
 
@@ -1370,7 +1390,6 @@ cl_object
 si_make_weak_pointer(cl_object o)
 {
 	cl_object pointer = ecl_alloc_weak_pointer(o);
-	si_set_finalizer(o, pointer);
 	@(return pointer);
 }
 

@@ -10,12 +10,15 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 10.3.1
-ECL_VERSION_NUMBER= 100301
+ECL_VERSION       = 11.1.1
+ECL_VERSION_NUMBER= 110101
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
 THEHOST           = win32
+
+# Define to 1 to make a 64-bit build
+# ECL_WIN64 =
 
 # Define here the processor type to compile GMP library
 # with maximum optimization. Possible values are:
@@ -35,7 +38,10 @@ ECL_THREADS   = 1
 ECL_UNICODE   =
 
 # Set it to non-empty to enable Win32 debug support
-#ECL_DEBUG   = 1
+#ECL_DEBUG = 1
+
+# Set it to non-empty to support SSE2 intrinsics
+ECL_SSE =
 
 # Add the extensions to include in the build process. Comment any
 # of the following lines to remove a feature from the build process
@@ -75,18 +81,34 @@ MKNSI   = makensis.exe
 
 # ==================== Flags ====================
 
+!if "$(ECL_SSE)" != ""
+CFLAGS_SSE=/arch:SSE2
+!endif
+
+!if "$(ECL_WIN64)" != ""
+GMP_BITS=64
+GC_CPU=AMD64
+ARCHITECTURE=AMD64
+VCREDIST=vcredist_x64.exe
+!else
+GMP_BITS=32
+GC_CPU=i386
+ARCHITECTURE=PENTIUM4
+VCREDIST=vcredist_x86.exe
+!endif
+
 #
 # Configuration-specific (Debug/Release) options
 #
 !if "$(ECL_DEBUG)" != ""
 CFLAGS_OPTIMIZE = /Od
-CFLAGS_CONFIG = /Zi /D_DEBUG /MDd $(CFLAGS_OPTIMIZE)
+CFLAGS_CONFIG = /Zi /D_DEBUG /MDd $(CFLAGS_OPTIMIZE) $(CFLAGS_SSE)
 LDFLAGS_CONFIG = /debug /nodefaultlib:msvcrt.lib
 SHARED_LDFLAGS = /LDd
 GCFLAGS =
 !else
 CFLAGS_OPTIMIZE = /O2
-CFLAGS_CONFIG = /DNDEBUG /MD $(CFLAGS_OPTIMIZE)
+CFLAGS_CONFIG = /DNDEBUG /MD $(CFLAGS_OPTIMIZE) $(CFLAGS_SSE)
 LDFLAGS_CONFIG = /nodefaultlib:msvcrtd.lib
 SHARED_LDFLAGS = /LD
 GCFLAGS = nodebug=1
@@ -176,6 +198,8 @@ ECL_FEATURES = (cons :wants-defsystem $(ECL_FEATURES))
 ECL_MODULES  = $(ECL_MODULES) profile
 ECL_FEATURES = (cons :wants-profile $(ECL_FEATURES))
 !endif
+ECL_MODULES  = $(ECL_MODULES) bytecmp
+ECL_FEATURES = (list* :builtin-bytecmp :wants-bytecmp $(ECL_FEATURES))
 
 !MESSAGE ECL Modules: $(ECL_MODULES)
 !MESSAGE ECL Features: $(ECL_FEATURES)
@@ -224,6 +248,7 @@ lsp/config.lsp: $(srcdir)/lsp/config.lsp.in Makefile c\cut$(EXE)
 	    "@SOFTWARE_TYPE@" "$(SOFTWARE_TYPE)" \
 	    "@SOFTWARE_VERSION@" "$(SOFTWARE_VERSION)" \
 	    "@thehost@" "$(THEHOST)" \
+	    "@true_srcdir@" "$(srcdir:\=/)" \
 	    "@top_srcdir@" "$(top_srcdir:\=/)/" \
 	    < $(srcdir)\lsp\config.lsp.in > lsp\config.lsp
 compile.lsp: bare.lsp $(srcdir)/compile.lsp.in Makefile
@@ -311,11 +336,11 @@ eclmin.lib: eclgmp.lib eclgc.lib lsp/config.lsp
 	cd c
 	$(MAKE) ECL_VERSION_NUMBER=$(ECL_VERSION_NUMBER) \
 	        ECL_THREADS=$(ECL_THREADS) ECL_UNICODE=$(ECL_UNICODE) \
-		"ECL_CFLAGS=$(CFLAGS) -DGC_BUILD"
+		ECL_SSE=$(ECL_SSE) "ECL_CFLAGS=$(CFLAGS) -DGC_BUILD"
 	cd ..
 eclgc.lib:
 	cd gc
-	$(MAKE) $(GCFLAGS) ECL_THREADS=$(ECL_THREADS) "CFLAGS_CONFIG=$(CFLAGS_CONFIG)" gc.lib
+	$(MAKE) $(GCFLAGS) ECL_THREADS=$(ECL_THREADS) "CFLAGS_CONFIG=$(CFLAGS_CONFIG)" "MY_CPU=$(GC_CPU)" gc.lib
 	$(CP) gc.lib ..\eclgc.lib
 	cd ..
 	if not exist ecl\gc $(MKDIR) ecl\gc
@@ -328,7 +353,8 @@ eclgc.lib:
 	$(CP) $(srcdir)\gc\libatomic_ops-1.2\src\atomic_ops.h ecl\gc
 eclgmp.lib:
 	cd gmp
-	$(MAKE) "MPN_TYPE = $(GMP_TYPE)" "CFLAGS_CONFIG=$(CFLAGS_CONFIG)"
+	$(MAKE) "MPN_TYPE=$(GMP_TYPE)" "CFLAGS_CONFIG=$(CFLAGS_CONFIG)" \
+		"BITS=$(GMP_BITS)"
 	$(CP) gmp.lib ..\eclgmp.lib
 	$(CP) gmp.h ..\ecl\gmp.h
 	cd ..
@@ -371,11 +397,12 @@ install:
 windows-nsi:
 	IF EXIST "$(TAR_DIR)" $(RMDIR) "$(TAR_DIR)"
 	$(MKDIR) "$(TAR_DIR)"
-	$(MAKE) prefix="$(TAR_DIR)" install
+	$(MAKE) prefix="$(TAR_DIR)" install ECL_UNICODE=$(ECL_UNICODE)
+	IF EXIST "$(VCREDIST)" $(CP) "$(VCREDIST)" "$(TAR_DIR)"
 	util\ecl_nsi.bat %%CD%%\"$(srcdir)"\util\ecl.nsi "$(TAR_DIR)" $(ECL_VERSION)
 	"$(MKNSI)" "$(TAR_DIR)/ecl.nsi"
 	$(MV) $(TAR_DIR)\Setup.exe ecl-$(ECL_VERSION).exe
-	$(RMDIR) $(TAR_DIR)
+#	$(RMDIR) $(TAR_DIR)
 
 clean: clean_ecl clean_lisp
 	-$(RM) .gdbinit cinit.lib ecl_min.lib

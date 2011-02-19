@@ -41,7 +41,7 @@ last FORM.  If not, simply returns NIL."
     (when *dump-defun-definitions*
       (print function)
       (setq function `(si::bc-disassemble ,function)))
-    `(eval-when (:compile-toplevel :load-toplevel :execute)
+    `(progn
        ,(ext:register-with-pde whole `(si::fset ',name ,function t ,pprint))
        ,@(si::expand-set-documentation name 'function doc-string)
        ',name)))
@@ -319,7 +319,7 @@ values of the last FORM.  If no FORM is given, returns NIL."
 	 (error "DEFINE-SYMBOL-MACRO: cannot redefine a special variable, ~A"
 		symbol))
 	(t
-	 `(progn
+	 `(eval-when (:compile-toplevel :load-toplevel :execute)
 	   (put-sysprop ',symbol 'si::symbol-macro 
                         (lambda (form env) 
                           (declare (ignore form env))
