@@ -9064,11 +9064,11 @@ if test "x${enable_threads}" != "xno"; then
         --libdir=${destdir} --build=${build_alias} --host=${host_alias} \
         CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" CC="${CC} \
         ${PICFLAG}")
-  SUBDIRS="${SUBDIRS} atomic"
-  CORE_LIBS="-leclatomic ${CORE_LIBS}"
-  if test "${enable_shared}" = "no"; then
-    LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclatomic.${LIBEXT}"
-  fi
+#  SUBDIRS="${SUBDIRS} atomic"
+  CORE_LIBS="-latomic_ops ${CORE_LIBS}"
+#  if test "${enable_shared}" = "no"; then
+#    LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclatomic.${LIBEXT}"
+#  fi
 fi
 
 

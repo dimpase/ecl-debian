@@ -378,7 +378,7 @@ extern void cl_write_object(cl_object x, cl_object stream);
 #endif /* ECL_THREADS */
 
 #ifdef ECL_THREADS
-# include <ecl/atomic_ops.h>
+# include <atomic_ops.h>
 #else
 # define AO_load(x) (x)
 # define AO_store(x,y) ((x)=(y))
