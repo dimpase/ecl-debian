@@ -12,7 +12,7 @@
 
 (in-package "GRAY")
 
-(import 'clos::ansi-stream)
+(import 'ext:ansi-stream)
 
 ;;;
 ;;; This is the generic function interface for CLOS streams.
@@ -200,6 +200,21 @@
   (:documentation
    "This is like CL:FILE-POSITION, but for Gray streams."))
 
+(defgeneric stream-file-descriptor (stream &optional direction)
+  (:documentation
+   "Return the file-descriptor underlaying STREAM, or NIL if not
+   available. DIRECTION must be either :INPUT, or :OUTPUT and is
+   supposed to discriminate in case STREAM is a bidirectional
+   stream. DIRECTION is supposed to default to :INPUT.
+
+   An error is signaled if DIRECTION is :INPUT (:OUTPUT), and STREAM
+   is not an input (output) stream. A system-provided :BEFORE method
+   handles this case; user methods do not need to take care of it.
+
+   In case STREAM-FILE-DESCRIPTOR is not implemented for STREAM, an
+   error is signaled. That is, users must add methods to explicitly
+   decline by returning NIL."))
+
 
 ;;;
 ;;; Our class hierarchy looks like the one from Gray streams
@@ -347,7 +362,7 @@
     t))
 
 (defmethod stream-fresh-line ((stream ansi-stream))
-  (cl:fresh-line ansi-stream))
+  (cl:fresh-line stream))
 
 
 ;; INPUT-STREAM-P
@@ -455,7 +470,7 @@
 ;; UNREAD-CHAR
 
 (defmethod stream-unread-char ((stream ansi-stream) character)
-  (cl:unread-char stream character))
+  (cl:unread-char character stream))
 
 (defmethod stream-unread-char ((stream ansi-stream) character)
   (bug-or-error stream 'stream-unread-char))
@@ -545,7 +560,7 @@
 ;; WRITE-BYTE
 
 (defmethod stream-write-byte ((stream ansi-stream) integer)
-  (cl:write-byte stream integer))
+  (cl:write-byte integer stream))
 
 (defmethod stream-write-byte ((stream t) integer)
   (bug-or-error stream 'stream-write-byte))
@@ -554,7 +569,7 @@
 ;; WRITE-CHAR
 
 (defmethod stream-write-char ((stream ansi-stream) character)
-  (cl:write-char stream character))
+  (cl:write-char character stream))
 
 (defmethod stream-write-char ((stream t) character)
   (bug-or-error stream 'stream-write-char))
@@ -581,13 +596,15 @@
 
 (defmethod stream-write-string ((stream fundamental-character-output-stream)
 				string &optional (start 0) end)
-  (declare (string string)
-	   (fixnum start))
+  (declare (type t stream) ; check for c::stream-designator ignored
+           (string string)
+	   (fixnum start)
+           (ext:check-arguments-type))
   (let ((end (or end (length string))))
     (declare (fixnum end))
     (do ((pos start (1+ pos)))
 	((>= pos end))
-      (declare (type index pos))
+      (declare (type si::index pos))
       (stream-write-char stream (aref string pos))))
   string)
 
@@ -608,6 +625,48 @@
 
 (defmethod stream-terpri ((stream t))
   (bug-or-error stream 'stream-terpri))
+
+
+;;; FILE-DESCRIPTOR
+
+(defmethod stream-file-descriptor :before (stream &optional (direction :input))
+  (multiple-value-bind (predicate kind)     
+      (case direction
+        (:input  (values 'input-stream-p  "input"))
+        (:output (values 'output-stream-p "output"))
+        (t
+         (error 'simple-type-error
+                :format-control "Not a valid direction, ~S; must be one of ~
+                                 :INPUT or :OUTPUT."
+                :format-arguments (list direction)
+                :datum direction
+                :expected-type '(member :input :output))))
+    (unless (funcall predicate stream)
+      (error 'simple-type-error
+             :format-control "Not an ~A stream, ~S, although ~S ~
+                              was provided as DIRECTION."
+             :format-arguments (list kind stream direction)
+             :datum stream
+             :expected-type `(satisfies ,predicate)))))
+
+(defmethod stream-file-descriptor (stream &optional direction)
+  (declare (ignore direction))
+  (bug-or-error stream 'stream-file-descriptor))
+
+(defmethod stream-file-descriptor ((stream two-way-stream) &optional (direction
+                                                                      :input))
+  (stream-file-descriptor
+   (case direction
+     (:input  (two-way-stream-input-stream stream))
+     (:output (two-way-stream-output-stream stream)))
+   direction))
+
+(defmethod stream-file-descriptor ((stream file-stream) &optional (direction
+                                                                   :input))
+  (si:file-stream-fd stream))
+
+
+;;; Setup
 
 (eval-when (:compile-toplevel :execute)
   (defconstant +conflicting-symbols+ '(cl:close cl:stream-element-type cl:input-stream-p

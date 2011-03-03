@@ -146,13 +146,13 @@
 		   (member (first method-combination) *method-combinations*)))
     (error 'simple-type-error
 	   :format-control "Not a valid method combination, ~A"
-	   :list (list method-combination)
+	   :format-arguments (list method-combination)
 	   :datum method-combination
 	   :expected-type 'list))
   (unless (si::subclassp method-class (find-class 'method))
     (error 'simple-type-error
 	   :format-control "Not a valid method class, ~A"
-	   :list (list method-class)
+	   :format-arguments (list method-class)
 	   :datum method-class
 	   :expected-type 'method))
   ;;
@@ -244,6 +244,9 @@
 	   (simple-program-error "The special operator ~A is not a valid name for a generic function" name))
 	  ((macro-function name)
 	   (simple-program-error "The symbol ~A is bound to a macro and is not a valid name for a generic function" name))
+          ((not *clos-booted*)
+           (setf (fdefinition (or traced name))
+		 (apply #'ensure-generic-function-using-class nil name args))
+           (fdefinition name))
 	  (t
-	   (simple-program-error "The symbol ~A is bound to an ordinary function and is not a valid name for a generic function" name))
-	  )))
+	   (simple-program-error "The symbol ~A is bound to an ordinary function and is not a valid name for a generic function" name)))))
