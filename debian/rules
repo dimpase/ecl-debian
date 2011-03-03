@@ -76,14 +76,14 @@ clean:
 	dh_testdir
 	dh_testroot
 	rm -f build-*-stamp
-	-test -r /usr/share/misc/config.sub && \
-           cp -f /usr/share/misc/config.sub src/gc/config.sub
-	-test -r /usr/share/misc/config.guess && \
-           cp -f /usr/share/misc/config.guess src/gc/config.guess
-	-test -r /usr/share/misc/config.sub && \
-           cp -f /usr/share/misc/config.sub src/config.sub
-	-test -r /usr/share/misc/config.guess && \
-           cp -f /usr/share/misc/config.guess src/config.guess
+#	-test -r /usr/share/misc/config.sub && \
+#           cp -f /usr/share/misc/config.sub src/gc/config.sub
+#	-test -r /usr/share/misc/config.guess && \
+#           cp -f /usr/share/misc/config.guess src/gc/config.guess
+#	-test -r /usr/share/misc/config.sub && \
+#           cp -f /usr/share/misc/config.sub src/config.sub
+#	-test -r /usr/share/misc/config.guess && \
+#           cp -f /usr/share/misc/config.guess src/config.guess
 	# do this manually on a big change:
 	# autoreconf --force
 	# Add here commands to clean up after the build process.
