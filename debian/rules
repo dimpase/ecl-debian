@@ -44,7 +44,7 @@ config.status: configure
 	touch src/gc/aclocal.m4  src/aclocal.m4 && \
 	touch src/configure configure
 
-	./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) \
+	./configure $(confflags) \
 	   --prefix=/usr --mandir=\$${prefix}/share/man \
 	   --infodir=\$${prefix}/share/info \
 	   --with-system-gmp=yes \
@@ -54,7 +54,8 @@ config.status: configure
 	   --enable-boehm=buildin  \
 	   --enable-gengc \
 	   --with-x
-	   #--enable-boehm=system
+
+	touch config.status
 
 build: build-arch build-indep
 
@@ -69,7 +70,8 @@ build-arch-stamp: config.status
 build-indep: build-indep-stamp
 build-indep-stamp: config.status
 	dh_testdir -i
-	$(MAKE) -C build/doc
+#	DISABLED -- doc not building
+#	$(MAKE) -C build/doc
 	touch build-indep-stamp
 
 clean: 
@@ -101,32 +103,30 @@ install: build-arch
 	dh_prep -a
 	dh_installdirs -a
 
-	# Add here commands to install the package into debian/ecl
+#	Add here commands to install the package into debian/ecl
 	$(MAKE) install prefix=$(CURDIR)/debian/ecl/usr
 
-	rm $(CURDIR)/debian/ecl/usr/share/doc/LGPL
-	rm $(CURDIR)/debian/ecl/usr/share/doc/Copyright
+#	DISABLED -- doc currently not building
+#
+#	rm $(CURDIR)/debian/ecl/usr/share/doc/LGPL
+#	rm $(CURDIR)/debian/ecl/usr/share/doc/Copyright
 
-	rm $(CURDIR)/debian/ecl/usr/share/info/ecl.info \
-	   $(CURDIR)/debian/ecl/usr/share/info/clx.info \
-	   $(CURDIR)/debian/ecl/usr/share/info/ecldev.info
+#	rm $(CURDIR)/debian/ecl/usr/share/info/ecl.info \
+#	   $(CURDIR)/debian/ecl/usr/share/info/clx.info \
+#	   $(CURDIR)/debian/ecl/usr/share/info/ecldev.info
 
+#	rm $(CURDIR)/debian/ecl/usr/share/info/dir
 
-	rm $(CURDIR)/debian/ecl/usr/share/info/dir
-
-	rmdir $(CURDIR)/debian/ecl/usr/share/info
-
-	cp ${CURDIR}/debian/install-clc.lisp $(CURDIR)/debian/ecl/usr/lib/ecl/
-	mv $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/ecl/ecl-original
+#	rmdir $(CURDIR)/debian/ecl/usr/share/info
 
 	find $(CURDIR)/debian -name "*.lsp" -print0 | \
 	   xargs -0 chmod a-x || true
 
-	# remove rpath from /us/lib/ecl/ binaries (bug #495756)
-	# this is a workaround until upstream properly fixes it
-	find $(CURDIR)/debian/ecl/usr/lib/ecl/ -name "*.fas" -print0 | \
+#	remove rpath from /us/lib/ecl/ binaries (bug #495756)
+#	this is a workaround until upstream properly fixes it
+	find $(CURDIR)/debian/ecl/usr/lib/ -name "*.fas" -print0 | \
 	   xargs -0 chrpath -d
-	chrpath -d $(CURDIR)/debian/ecl/usr/lib/ecl/ecl-original
+	chrpath -d $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/libecl.so.11.1.1
 
 	cp debian/overrides.ecl $(CURDIR)/debian/ecl/usr/share/lintian/overrides/ecl
 
@@ -139,7 +139,7 @@ binary-indep: build-indep
 	ls -l $(CURDIR)/debian/ecl-doc/usr/share/info/
 	dh_installdocs -i
 	dh_installchangelogs -i
-	dh_installinfo -v -i
+#	dh_installinfo -v -i
 	dh_compress -i
 	dh_fixperms -i
 	dh_installdeb -i
@@ -162,7 +162,7 @@ binary-arch: build-arch install
 	dh_strip -a
 	dh_compress -a
 	dh_fixperms -a
-	dh_lisp -a ecl
+#	dh_lisp -a ecl
 	dh_makeshlibs -a
 	dh_installdeb -a
 	dh_shlibdeps -a
