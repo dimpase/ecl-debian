@@ -3,8 +3,9 @@ ecl (11.1.1-1) UNRELEASED; urgency=low
   * New upstream.
   * Move to use quilt
   * Removed Luca from uploaders
+  * Updated Standards-Version no real changes
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 03 Mar 2011 07:26:04 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Thu, 03 Mar 2011 07:27:01 +0100
 
 ecl (10.3.1-2) unstable; urgency=low
 

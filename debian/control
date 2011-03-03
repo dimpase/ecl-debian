@@ -5,7 +5,7 @@ Maintainer: Debian Common Lisp Team <pkg-common-lisp-devel@lists.alioth.debian.o
 Uploaders: Peter Van Eynde <pvaneynd@debian.org> 
 Build-Depends: debhelper (>> 7.0.0), autotools-dev, libgmp3-dev,  automake1.9, file, texinfo, libncurses5-dev, fakeroot, libgc-dev, dh-lisp (>= 0.6), chrpath, install-info
 Build-Conflicts: autoconf2.13, automake1.4
-Standards-Version: 3.8.3
+Standards-Version: 3.9.1
 Homepage: http://ecls.sourceforge.net/
 Vcs-Git: http://git.debian.org/git/pkg-common-lisp/ecl.git
 Vcs-Browser: http://git.debian.org/?p=pkg-common-lisp/ecl.git;a=summary
