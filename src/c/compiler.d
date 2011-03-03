@@ -112,6 +112,7 @@ static int c_tagbody(cl_env_ptr env, cl_object args, int flags);
 static int c_throw(cl_env_ptr env, cl_object args, int flags);
 static int c_unwind_protect(cl_env_ptr env, cl_object args, int flags);
 static int c_while(cl_env_ptr env, cl_object args, int flags);
+static int c_with_backend(cl_env_ptr env, cl_object args, int flags);
 static int c_until(cl_env_ptr env, cl_object args, int flags);
 static void eval_form(cl_env_ptr env, cl_object form);
 static int compile_body(cl_env_ptr env, cl_object args, int flags);
@@ -308,18 +309,21 @@ static compiler_record database[] = {
   {@'unwind-protect', c_unwind_protect, 1},
   {@'values', c_values, 1},
   {@'si::while', c_while, 0},
+  {@'ext::with-backend', c_with_backend, 0},
   {@'si::until', c_until, 0},
 
   /* Extras */
 
-  {@'cons', c_cons, 0},
-  {@'car', c_car, 0},
-  {@'cdr', c_cdr, 0},
-  {@'first', c_car, 0},
-  {@'rest', c_cdr, 0},
-  {@'list', c_list, 0},
-  {@'list*', c_listA, 0},
-  {@'endp', c_endp, 0},
+  {@'cons', c_cons, 1},
+  {@'car', c_car, 1},
+  {@'cdr', c_cdr, 1},
+  {@'first', c_car, 1},
+  {@'rest', c_cdr, 1},
+  {@'list', c_list, 1},
+  {@'list*', c_listA, 1},
+  {@'endp', c_endp, 1},
+  {@'si::cons-car', c_car, 1},
+  {@'si::cons-cdr', c_cdr, 1},
   {NULL, NULL, 1}
 };
 
@@ -486,7 +490,7 @@ c_register_var(cl_env_ptr env, cl_object var, bool special, bool bound)
 {
 	/* If this is just a declaration, ensure that the variable was not
 	 * declared before as special, to save memory. */
-	if (bound || (c_var_ref(env, var, 0, FALSE) >= ECL_UNDEFINED_VAR_REF)) {
+	if (bound || (c_var_ref(env, var, 1, FALSE) >= ECL_UNDEFINED_VAR_REF)) {
                 const cl_compiler_ptr c_env = env->c_env;
 		c_env->variables = CONS(cl_list(4, var,
                                                 special? @'special' : Cnil,
@@ -608,6 +612,10 @@ c_tag_ref(cl_env_ptr env, cl_object the_tag, cl_object the_type)
 	return Cnil;
 }
 
+ecl_def_ct_base_string(undefined_variable,
+                       "Undefined variable referenced in interpreted code"
+                       ".~%Name: ~A", 60, static, const);				
+
 static cl_fixnum
 c_var_ref(cl_env_ptr env, cl_object var, int allow_symbol_macro, bool ensure_defined)
 {
@@ -645,8 +653,7 @@ c_var_ref(cl_env_ptr env, cl_object var, int allow_symbol_macro, bool ensure_def
 	if (ensure_defined) {
 		l = ecl_symbol_value(@'si::*action-on-undefined-variable*');
 		if (l != Cnil) {
-			funcall(3, l, make_simple_base_string("Undefined variable referenced in interpreted code.~%Name: ~A"),
-				var);
+			funcall(3, l, undefined_variable, var);
 		}
 	}
 	return ECL_UNDEFINED_VAR_REF;
@@ -664,7 +671,7 @@ c_declare_specials(cl_env_ptr env, cl_object specials)
 	while (!Null(specials)) {
 		int ndx;
 		cl_object var = pop(&specials);
-		ndx = c_var_ref(env, var,0,FALSE);
+		ndx = c_var_ref(env, var, 1, FALSE);
 		if (ndx >= 0 || ndx == ECL_UNDEFINED_VAR_REF)
 			c_register_var(env, var, TRUE, FALSE);
 	}
@@ -1191,6 +1198,19 @@ c_while(cl_env_ptr env, cl_object body, int flags) {
 static int
 c_until(cl_env_ptr env, cl_object body, int flags) {
 	return c_while_until(env, body, flags, 0);
+}
+
+static int
+c_with_backend(cl_env_ptr env, cl_object args, int flags)
+{
+        cl_object forms = Cnil;
+        while (!Null(args)) {
+                cl_object tag = pop(&args);
+                cl_object form = pop(&args);
+                if (tag == @':bytecodes')
+                        forms = CONS(form, forms);
+        }
+        return compile_body(env, forms, flags);
 }
 
 static int
@@ -1914,8 +1934,8 @@ c_symbol_macrolet(cl_env_ptr env, cl_object args, int flags)
 		cl_object expansion = pop(&definition);
 		cl_object arglist = cl_list(2, @gensym(0), @gensym(0));
 		cl_object function;
-		if ((ecl_symbol_type(name) & (stp_special | stp_constant)) ||
-		    c_var_ref(env, name,1,FALSE) == -2)
+		if ((ecl_symbol_type(name) & (stp_constant|stp_special)) ||
+                    ecl_member_eq(name, specials))
 		{
 			FEprogram_error_noreturn("SYMBOL-MACROLET: Symbol ~A cannot be \
 declared special and appear in a symbol-macrolet.", 1, name);
@@ -2053,7 +2073,6 @@ static int
 compile_form(cl_env_ptr env, cl_object stmt, int flags) {
         const cl_compiler_ptr c_env = env->c_env;
 	cl_object code_walker = ECL_SYM_VAL(env, @'si::*code-walker*');
-	compiler_record *l;
 	cl_object function;
 	bool push = flags & FLAG_PUSH;
 	int new_flags;
@@ -2114,9 +2133,10 @@ compile_form(cl_env_ptr env, cl_object stmt, int flags) {
 		stmt = ECL_CONS_CAR(stmt);
 		goto QUOTED;
 	}
-	for (l = database; l->symbol != OBJNULL; l++) {
-		/*cl_print(1, l->symbol);*/
-		if (l->symbol == function) {
+	{
+		cl_object index = ecl_gethash(function, cl_core.compiler_dispatch);
+		if (index != OBJNULL) {
+			compiler_record *l = database + fix(index);
 			c_env->lexical_level += l->lexical_increment;
 			if (c_env->stepping && function != @'function' &&
 			    c_env->lexical_level)
@@ -2403,6 +2423,7 @@ c_listA(cl_env_ptr env, cl_object args, int flags)
 	}
 	/* END: SEARCH DECLARE */
 
+        declarations = cl_nreverse(declarations);
 	@(return declarations body documentation specials)
 @)
 
@@ -2482,7 +2503,7 @@ LOOP:
 	if (ATOM(lambda_list)) {
 		if (lambda_list == Cnil)
 			goto OUTPUT;
-		else if (context == @'function')
+		else if (context == @'function' || context == @'ftype')
 			goto ILLEGAL_LAMBDA;
 		else {
 			v = lambda_list;
@@ -2537,7 +2558,7 @@ REST:		if (stage >= AT_REST)
 	case AT_OPTIONALS:
 		spp = Cnil;
 		init = Cnil;
-		if (!ATOM(v)) {
+		if (!ATOM(v) && (context != @'ftype')) {
 			cl_object x = v;
 			v = ECL_CONS_CAR(x);
                         x = ECL_CONS_CDR(x);
@@ -2567,6 +2588,13 @@ REST:		if (stage >= AT_REST)
 	case AT_KEYS:
 		init = Cnil;
 		spp = Cnil;
+                if (context == @'ftype') {
+                        if (!CONSP(v))
+                                goto ILLEGAL_LAMBDA;
+                        key = ECL_CONS_CAR(v);
+                        v = CADR(v);
+                        goto KEY_PUSH;
+                }
 		if (!ATOM(v)) {
 			cl_object x = v;
 			v = ECL_CONS_CAR(x);
@@ -2594,6 +2622,7 @@ REST:		if (stage >= AT_REST)
 			key = ecl_intern(ecl_symbol_name(v), cl_core.keyword_package,
 					 &intern_flag);
 		}
+        KEY_PUSH:
 		nkey++;
 		push(key, keys);
 		push_var(v, keys);
@@ -2872,3 +2901,18 @@ si_make_lambda(cl_object name, cl_object rest)
                 return output;
 	}
 @)
+
+void
+init_compiler()
+{
+	cl_object dispatch_table =
+		cl_core.compiler_dispatch =
+		cl__make_hash_table(@'eq', MAKE_FIXNUM(128), /* size */
+                                    cl_core.rehash_size,
+                                    cl_core.rehash_threshold,
+				    Cnil); /* thread-safe */
+	int i;
+	for (i = 0; database[i].symbol; i++) {
+		ecl_sethash(database[i].symbol, dispatch_table, MAKE_FIXNUM(i));
+	}
+}

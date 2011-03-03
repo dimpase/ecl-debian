@@ -16,6 +16,8 @@
 
 (in-package "CLOS")
 
+(defparameter *clos-booted* nil)
+
 (defconstant *default-method-cache-size* 64 "Size of hash tables for methods")
 
 ;;;----------------------------------------------------------------------
@@ -31,9 +33,11 @@
 (defun create-accessors (slotds type)
   (let ((i 0)
 	(output '())
+        (names '())
 	name)	
-    (dolist (s slotds `(progn ,@output))
+    (dolist (s slotds)
       (when (setf name (getf (cdr s) :accessor))
+        (push name names)
 	(setf output
 	      (append output
 		      `((defun ,name (obj)
@@ -44,7 +48,12 @@
 			(define-compiler-macro ,name (obj)
 			  `(si:instance-ref ,obj ,,i))
 			))))
-      (incf i))))
+      (incf i))
+    `(progn
+       #+nil
+       (eval-when (:compile-toplevel :execute)
+         (proclaim '(notinline ,@names)))
+       ,@output)))
 (defun remove-accessors (slotds)
   (loop for i in slotds
      for j = (copy-list i)
@@ -71,7 +80,9 @@
       (documentation :initarg :documentation :initform nil)
       (size :accessor class-size)
       (sealedp :initarg :sealedp :initform nil :accessor class-sealedp)
-      (prototype))))
+      (prototype)
+      (dependents :initform nil :accessor class-dependents)
+      (valid-initargs :accessor class-valid-initargs))))
 
 ;#.(create-accessors +class-slots+ 'class)
 
@@ -110,7 +121,8 @@
        :accessor generic-function-method-class)
       (documentation :initarg :documentation :initform nil)
       (methods :initform nil :accessor generic-function-methods)
-      (a-p-o-function :initform nil :accessor generic-function-a-p-o-function))))
+      (a-p-o-function :initform nil :accessor generic-function-a-p-o-function)
+      (dependents :initform nil :accessor generic-function-dependents))))
 
 #.(create-accessors +standard-generic-function-slots+
 		    'standard-generic-function)
@@ -128,7 +140,8 @@
       (qualifiers :initform nil :initarg :qualifiers :accessor method-qualifiers)
       (function :initarg :function :accessor method-function)
       (documentation :initform nil :initarg documentation)
-      (plist :initform nil :initarg :plist :accessor method-plist))))
+      (plist :initform nil :initarg :plist :accessor method-plist)
+      (keywords :initform nil :accessor method-keywords))))
 
 #.(create-accessors +standard-method-slots+ 'standard-method)
 
@@ -198,6 +211,17 @@
 ;;; ----------------------------------------------------------------------
 ;;;                                                         early versions
 
+(defun map-dependents (c function)
+  (dolist (d (if (classp c)
+                 (class-dependents c)
+                 (generic-function-dependents c)))
+    (funcall function d)))
+
+(defun add-dependent (c d)
+  (if (classp c)
+      (pushnew d (class-dependents c))
+      (pushnew d (generic-function-dependents c))))
+
 ;;; early version used during bootstrap
 (defun ensure-generic-function (name &key (lambda-list (si::unbound) l-l-p))
   (if (and (fboundp name) (si::instancep (fdefinition name)))
@@ -213,7 +237,8 @@
 	      (generic-function-method-combination gfun) '(standard)
 	      (generic-function-methods gfun) nil
 	      (generic-function-spec-list gfun) nil
-	      (generic-function-method-class gfun) 'standard-method)
+	      (generic-function-method-class gfun) 'standard-method
+              (generic-function-dependents gfun) nil)
 	(when l-l-p
 	  (setf (generic-function-argument-precedence-order gfun)
 		(rest (si::process-lambda-list lambda-list t))))
@@ -233,6 +258,7 @@
 (defun compute-applicable-methods (gf args)
   (declare (optimize (safety 0) (speed 3)))
   (let* ((methods (generic-function-methods gf))
+	 (f (generic-function-a-p-o-function gf))
 	 applicable-list
 	 args-specializers)
     ;; first compute the applicable method list
@@ -258,10 +284,14 @@
     (dolist (arg args)
       (push (class-of arg) args-specializers))
     (setq args-specializers (nreverse args-specializers))
+    ;; reorder args to match the precedence order
+    (when f
+      (setf args-specializers
+	    (funcall f (subseq args-specializers 0
+			       (length (generic-function-argument-precedence-order gf))))))
     ;; then order the list
     (do* ((scan applicable-list)
 	  (most-specific (first scan) (first scan))
-	  (f (generic-function-a-p-o-function gf))
 	  (ordered-list))
 	 ((null (cdr scan)) (when most-specific
 			      ;; at least one method
@@ -334,8 +364,8 @@
 	  ((and (listp spec-2) (eq (car spec-2) 'eql)) '2) ; Beppe
 	  ((member spec-1 (member spec-2 cpl)) '2)
 	  ((member spec-2 (member spec-1 cpl)) '1)
-	  (t (error "Complex type specifiers are not yet supported."))
-	  )))
+	  ;; This will force an error in the caller
+	  (t nil))))
 
 (defun compute-g-f-spec-list (gf)
   (flet ((nupdate-spec-how-list (spec-how-list specializers gf)
