@@ -4,7 +4,18 @@ Priority: optional
 Maintainer: Debian Common Lisp Team <pkg-common-lisp-devel@lists.alioth.debian.org>
 Uploaders: Peter Van Eynde <pvaneynd@debian.org>,
  Christoph Egger <christoph@debian.org>
-Build-Depends: debhelper (>> 7.0.0), autotools-dev, libgmp3-dev,  automake1.9, file, texinfo, libncurses5-dev, fakeroot, libgc-dev (>= 1:7.1), dh-lisp (>= 0.6), chrpath, install-info
+Build-Depends: debhelper (>> 7.0.0),
+ autotools-dev,
+ libgmp3-dev,
+ automake1.9,
+ file,
+ texinfo,
+ libncurses5-dev,
+ fakeroot,
+ libgc-dev (>= 1:7.1),
+ chrpath,
+ install-info,
+ libatomic-ops-dev
 Build-Conflicts: autoconf2.13, automake1.4
 Standards-Version: 3.8.3
 Homepage: http://ecls.sourceforge.net/
