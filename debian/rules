@@ -27,6 +27,13 @@ ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
 	INSTALL_PROGRAM += -s
 endif
 
+DEB_HOST_ARCH := $(shell dpkg-architecture -qDEB_HOST_ARCH)
+
+# gengc doesn't work on ia64 right now -- check again for next version
+ifneq ($(DEB_HOST_ARCH),ia64)
+  confflags += --enable-gengc
+endif
+
 # force to use ginstall-info:
 export INSTALL_INFO=/usr/bin/ginstall-info
 
@@ -54,7 +61,6 @@ config.status: configure
 	   --with-clx  \
 	   --enable-threads=yes \
 	   --enable-boehm=system \
-	   --enable-gengc \
 	   --with-x
 
 	touch config.status
