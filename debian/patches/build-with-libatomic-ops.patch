@@ -1,3 +1,7 @@
+Description: Change the build to use the systems libatomic
+Author: Christoph Egger <christoph@debian.org>
+Forwarded: NA
+
 --- ecl.orig/src/configure
 +++ ecl/src/configure
 @@ -9064,11 +9064,11 @@

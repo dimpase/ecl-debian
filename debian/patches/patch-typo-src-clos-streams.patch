@@ -1,3 +1,7 @@
+Description: correct small typo
+Author: Peter Van Eynde <pvaneynd@debian.org>
+Forwarded: http://thread.gmane.org/gmane.lisp.ecl.general/8249
+
 diff --git a/src/clos/streams.lsp b/src/clos/streams.lsp
 index 389a9c6..321ee3d 100644
 --- a/src/clos/streams.lsp

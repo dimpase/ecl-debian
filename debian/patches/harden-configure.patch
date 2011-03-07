@@ -1,3 +1,7 @@
+Description: Make configure work even when the current directory contains spaces
+Author: Christoph Egger <christoph@debian.org>
+Forwarded: NA
+
 --- ecl.orig/configure
 +++ ecl/configure
 @@ -10,7 +10,7 @@

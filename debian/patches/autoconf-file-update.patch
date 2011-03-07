@@ -1,3 +1,8 @@
+Description: Update the autoconf files
+Author: none copied from debian sources
+Forwarded: NA
+
+
 --- ecl.orig/src/config.guess
 +++ ecl/src/config.guess
 @@ -1,9 +1,10 @@
