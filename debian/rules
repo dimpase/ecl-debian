@@ -34,14 +34,13 @@ config.status: configure
 	dh_testdir
 	# Add here commands to configure the package.
 	chmod a+x configure \
-	 src/gc/configure \
 	 src/gmp/macos/configure \
 	 src/gmp/configure \
 	 src/configure \
 	 src/gmp/mpn/m4-ccas
 
-	touch src/gc/configure.in src/configure.in && \
-	touch src/gc/aclocal.m4  src/aclocal.m4 && \
+	touch src/configure.in && \
+	touch src/aclocal.m4 && \
 	touch src/configure configure
 
 	./configure $(confflags) \
@@ -51,7 +50,7 @@ config.status: configure
 	   --with-tcp \
 	   --with-clx  \
 	   --enable-threads=yes \
-	   --enable-boehm=buildin  \
+	   --enable-boehm=system  \
 	   --enable-gengc \
 	   --with-x
 
