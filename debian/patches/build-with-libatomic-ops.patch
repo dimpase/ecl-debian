@@ -1,0 +1,30 @@
+--- ecl.orig/src/configure
++++ ecl/src/configure
+@@ -9064,11 +9064,11 @@
+         --libdir=${destdir} --build=${build_alias} --host=${host_alias} \
+         CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" CC="${CC} \
+         ${PICFLAG}")
+-  SUBDIRS="${SUBDIRS} atomic"
+-  CORE_LIBS="-leclatomic ${CORE_LIBS}"
+-  if test "${enable_shared}" = "no"; then
+-    LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclatomic.${LIBEXT}"
+-  fi
++#  SUBDIRS="${SUBDIRS} atomic"
++  CORE_LIBS="-latomic_ops ${CORE_LIBS}"
++#  if test "${enable_shared}" = "no"; then
++#    LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclatomic.${LIBEXT}"
++#  fi
+ fi
+ 
+ 
+--- ecl.orig/src/h/internal.h
++++ ecl/src/h/internal.h
+@@ -378,7 +378,7 @@
+ #endif /* ECL_THREADS */
+ 
+ #ifdef ECL_THREADS
+-# include <ecl/atomic_ops.h>
++# include <atomic_ops.h>
+ #else
+ # define AO_load(x) (x)
+ # define AO_store(x,y) ((x)=(y))

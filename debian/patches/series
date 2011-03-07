@@ -2,3 +2,5 @@ patch-typo-contrib-sockets-sockets.patch -p1
 patch-typo-src-clos-streams.patch -p1
 patch-typo-src-clx-image.patch -p1
 autoconf-file-update.patch
+build-with-libatomic-ops.patch
+harden-configure.patch
