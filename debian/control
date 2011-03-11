@@ -6,7 +6,7 @@ Uploaders: Peter Van Eynde <pvaneynd@debian.org>,
  Christoph Egger <christoph@debian.org>
 Build-Depends: debhelper (>> 7.0.0),
  autotools-dev,
- libgmp3-dev,
+ libgmp-dev,
  automake1.9,
  file,
  texinfo,
