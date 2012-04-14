@@ -39,7 +39,7 @@ export INSTALL_INFO=/usr/bin/ginstall-info
 
 config.status: configure
 	dh_testdir
-	# Add here commands to configure the package.
+#	Add here commands to configure the package.
 	chmod a+x configure \
 	 src/gmp/macos/configure \
 	 src/gmp/configure \
@@ -91,10 +91,10 @@ clean:
 #           cp -f /usr/share/misc/config.sub src/config.sub
 #	-test -r /usr/share/misc/config.guess && \
 #           cp -f /usr/share/misc/config.guess src/config.guess
-	# do this manually on a big change:
-	# autoreconf --force
-	# Add here commands to clean up after the build process.
-	# correct lintian warning debian-rules-ignores-make-clean-error
+#	do this manually on a big change:
+#	autoreconf --force
+#	Add here commands to clean up after the build process.
+#	correct lintian warning debian-rules-ignores-make-clean-error
 	[ ! -f Makefile ] || $(MAKE) distclean
 	rm -f src/gc/configure.in
 
@@ -124,14 +124,14 @@ install: build-arch
 
 #	rmdir $(CURDIR)/debian/ecl/usr/share/info
 
-	find $(CURDIR)/debian -name "*.lsp" -print0 | \
-	   xargs -0 chmod a-x || true
+#	find $(CURDIR)/debian -name "*.lsp" -print0 | \
+#	   xargs -0 chmod a-x || true
 
 #	remove rpath from /us/lib/ecl/ binaries (bug #495756)
 #	this is a workaround until upstream properly fixes it
 	find $(CURDIR)/debian/ecl/usr/lib/ -name "*.fas" -print0 | \
 	   xargs -0 chrpath -d
-	chrpath -d $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/libecl.so.11.1.1
+	chrpath -d $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/libecl.so.12.2.1
 
 	cp debian/overrides.ecl $(CURDIR)/debian/ecl/usr/share/lintian/overrides/ecl
 

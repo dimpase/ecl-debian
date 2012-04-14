@@ -2,9 +2,11 @@ Description: Change the build to use the systems libatomic
 Author: Christoph Egger <christoph@debian.org>
 Forwarded: NA
 
---- ecl.orig/src/configure
-+++ ecl/src/configure
-@@ -9064,11 +9064,11 @@
+Index: ecl/src/configure
+===================================================================
+--- ecl.orig/src/configure	2012-02-05 09:44:43.000000000 +0100
++++ ecl/src/configure	2012-04-14 13:13:48.426732831 +0200
+@@ -14329,11 +14329,11 @@
          --libdir=${destdir} --build=${build_alias} --host=${host_alias} \
          CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" CC="${CC} \
          ${PICFLAG}")
@@ -21,9 +23,11 @@ Forwarded: NA
  fi
  
  
---- ecl.orig/src/h/internal.h
-+++ ecl/src/h/internal.h
-@@ -378,7 +378,7 @@
+Index: ecl/src/h/internal.h
+===================================================================
+--- ecl.orig/src/h/internal.h	2012-02-05 09:44:47.000000000 +0100
++++ ecl/src/h/internal.h	2012-04-14 13:13:48.426732831 +0200
+@@ -402,7 +402,7 @@
  #endif /* ECL_THREADS */
  
  #ifdef ECL_THREADS

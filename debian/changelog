@@ -1,3 +1,10 @@
+ecl (12.2.1-1) experimental; urgency=low
+
+  * New upstream release
+  * Import patch to build on the hurd (Closes: #648993)
+
+ -- Christoph Egger <christoph@debian.org>  Sat, 14 Apr 2012 13:13:12 +0200
+
 ecl (11.1.1-4) unstable; urgency=low
 
   * disable gengc on ia64 again
