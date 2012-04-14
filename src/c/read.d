@@ -198,7 +198,7 @@ BEGIN:
 		if (ECL_HASH_TABLE_P(x)) {
 			o = dispatch_macro_character(x, in, c);
 		} else {
-			o = funcall(3, x, in, CODE_CHAR(c));
+			o = _ecl_funcall3(x, in, CODE_CHAR(c));
 		}
 		if (the_env->nvalues == 0) {
                         if (flags == ECL_READ_RETURN_IGNORABLE)
@@ -248,7 +248,7 @@ LOOP:
 			if (Null(p) && !suppress) {
 				/* When loading binary files, we sometimes must create
 				   symbols whose package has not yet been maked. We
-				   allow it, but later on in read_VV we make sure that
+				   allow it, but later on in ecl_init_module we make sure that
 				   all referenced packages have been properly built.
 				*/
 				cl_object name = cl_copy_seq(token);
@@ -580,7 +580,7 @@ dispatch_macro_character(cl_object table, cl_object in, int c)
 				       "for character ~S",
 				       in, 1, dc);
 		}
-		return funcall(4, fun, in, dc, arg);
+		return _ecl_funcall4(fun, in, dc, arg);
 	}
 }
 
@@ -713,7 +713,7 @@ sharp_Y_reader(cl_object in, cl_object c, cl_object d)
 	if (read_suppress) {
 		@(return Cnil);
         }
-	unlikely_if (!ECL_CONSP(x) || ecl_length(x) != 5) {
+	unlikely_if (!ECL_CONSP(x) || ecl_length(x) < 5) {
 		FEreader_error("Reader macro #Y should be followed by a list",
 			       in, 0);
         }
@@ -730,17 +730,32 @@ sharp_Y_reader(cl_object in, cl_object c, cl_object d)
 
         nth = ECL_CONS_CAR(x);
         x = ECL_CONS_CDR(x);
-        rv->bytecodes.code_size = fixint(cl_list_length(nth));
+        rv->bytecodes.code_size = ecl_to_fix(cl_list_length(nth));
         rv->bytecodes.code = ecl_alloc_atomic(rv->bytecodes.code_size * sizeof(uint16_t));
         for ( i=0; !ecl_endp(nth) ; i++, nth=ECL_CONS_CDR(nth) )
-             ((cl_opcode*)(rv->bytecodes.code))[i] = fixint(ECL_CONS_CAR(nth));
+             ((cl_opcode*)(rv->bytecodes.code))[i] = ecl_to_fix(ECL_CONS_CAR(nth));
 
         nth = ECL_CONS_CAR(x);
         x = ECL_CONS_CDR(x);
-        rv->bytecodes.data_size = fixint(cl_list_length(nth));
+        rv->bytecodes.data_size = ecl_to_fix(cl_list_length(nth));
         rv->bytecodes.data = ecl_alloc(rv->bytecodes.data_size * sizeof(cl_object));
         for ( i=0 ; !ecl_endp(nth) ; i++, nth=ECL_CONS_CDR(nth) )
              ((cl_object*)(rv->bytecodes.data))[i] = ECL_CONS_CAR(nth);
+
+        if (ECL_ATOM(x)) {
+                nth = Cnil;
+        } else {
+                nth = ECL_CONS_CAR(x);
+                x = ECL_CONS_CDR(x);
+        }
+        rv->bytecodes.file = nth;
+        if (ECL_ATOM(x)) {
+                nth = MAKE_FIXNUM(0);
+        } else {
+                nth = ECL_CONS_CAR(x);
+                x = ECL_CONS_CDR(x);
+        }
+        rv->bytecodes.file_position = nth;
 
         rv->bytecodes.entry = _ecl_bytecodes_dispatch_vararg;
 
@@ -785,7 +800,7 @@ sharp_left_parenthesis_reader(cl_object in, cl_object c, cl_object d)
 				       in, 0);
                 }
 		if (a == QUOTE) {
-			v = funcall(4, @'make-array', cl_list(1, cl_length(x)),
+			v = _ecl_funcall4(@'make-array', cl_list(1, cl_length(x)),
 				    @':initial-contents', x);
 		} else {
 			v = cl_list(2, @'si::unquote', 
@@ -800,7 +815,7 @@ sharp_left_parenthesis_reader(cl_object in, cl_object c, cl_object d)
 		/* Third case: no dimension provided. Read a list and
 		   coerce it to vector. */
 		cl_object x = do_read_delimited_list(')', in, 1);
-		v = funcall(4, @'make-array', cl_list(1, cl_length(x)),
+		v = _ecl_funcall4(@'make-array', cl_list(1, cl_length(x)),
 			    @':initial-contents', x);
 	} else {
 		/* Finally: Both dimension and data are provided. The
@@ -1157,8 +1172,7 @@ patch_sharp(cl_object x)
         cl_object table = 
                 cl__make_hash_table(@'eq', MAKE_FIXNUM(20), /* size */
                                     cl_core.rehash_size,
-                                    cl_core.rehash_threshold,
-                                    Cnil); /* thread-safe */
+                                    cl_core.rehash_threshold);
 
         pairs = ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*');
         loop_for_in(pairs) {
@@ -1484,7 +1498,7 @@ do_read_delimited_list(int d, cl_object in, bool proper_list)
 	strm = stream_or_default_input(strm);
 #ifdef ECL_CLOS_STREAMS
         if (!ECL_ANSI_STREAM_P(strm)) {
-		value0 = funcall(2, @'gray::stream-read-line', strm);
+		value0 = _ecl_funcall2(@'gray::stream-read-line', strm);
 		value1 = VALUES(1);
 		if (!Null(value1)) {
 			if (!Null(eof_errorp))
@@ -1597,7 +1611,8 @@ do_read_delimited_list(int d, cl_object in, bool proper_list)
 	strm = stream_or_default_input(strm);
 #ifdef ECL_CLOS_STREAMS
 	if (!ECL_ANSI_STREAM_P(strm)) {
-		cl_object output = funcall(2,@'gray::stream-read-char-no-hang', strm);
+		cl_object output =
+			_ecl_funcall2(@'gray::stream-read-char-no-hang', strm);
 		if (output == @':eof')
 			goto END_OF_FILE;
 		@(return output);
@@ -1756,8 +1771,7 @@ ecl_readtable_set(cl_object readtable, int c, enum ecl_chattrib cat,
 		if (Null(hash)) {
 			hash = cl__make_hash_table(@'eql', MAKE_FIXNUM(128),
                                                    cl_core.rehash_size,
-                                                   cl_core.rehash_threshold,
-						   Ct);
+                                                   cl_core.rehash_threshold);
 			readtable->readtable.hash = hash;
 		}
 		_ecl_sethash(CODE_CHAR(c), hash,
@@ -1812,7 +1826,7 @@ ecl_invalid_character_p(int c)
 	@(return Ct)
 @)
 
-@(defun get_macro_character (c &optional readtable)
+@(defun get_macro_character (c &optional (readtable ecl_current_readtable()))
 	enum ecl_chattrib cat;
 	cl_object dispatch;
 @
@@ -1835,8 +1849,7 @@ ecl_invalid_character_p(int c)
 	cat = Null(non_terminating_p)? cat_terminating : cat_non_terminating;
 	table = cl__make_hash_table(@'eql', MAKE_FIXNUM(128),
                                     cl_core.rehash_size,
-                                    cl_core.rehash_threshold,
-				    Ct);
+                                    cl_core.rehash_threshold);
 	ecl_readtable_set(readtable, c, cat, table);
 	@(return Ct)
 @)
@@ -2143,7 +2156,7 @@ init_read(void)
 /*
  *----------------------------------------------------------------------
  *
- * read_VV --
+ * ecl_init_module --
  *     reads the data vector from stream into vector VV
  *
  * Results:
@@ -2152,7 +2165,7 @@ init_read(void)
  *----------------------------------------------------------------------
  */
 cl_object
-read_VV(cl_object block, void (*entry_point)(cl_object))
+ecl_init_module(cl_object block, void (*entry_point)(cl_object))
 {
 	const cl_env_ptr env = ecl_process_env();
 	volatile cl_object old_eptbc = env->packages_to_be_created;
@@ -2161,26 +2174,8 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 	cl_object in;
 	cl_object *VV, *VVtemp = 0;
 
-	if (block == NULL) {
-		block = ecl_alloc_object(t_codeblock);
-		block->cblock.self_destruct = 0;
-		block->cblock.locked = 0;
-		block->cblock.handle = NULL;
-		block->cblock.data = NULL;
-		block->cblock.data_size = 0;
-		block->cblock.temp_data = NULL;
-		block->cblock.temp_data_size = 0;
-		block->cblock.data_text = NULL;
-		block->cblock.data_text_size = 0;
-		block->cblock.next = Cnil;
-		block->cblock.name = Cnil;
-		block->cblock.links = Cnil;
-		block->cblock.cfuns_size = 0;
-		block->cblock.cfuns = NULL;
-                block->cblock.source = Cnil;
-                block->cblock.refs = MAKE_FIXNUM(0);
-		si_set_finalizer(block, Ct);
-	}
+	if (block == NULL)
+                block = ecl_make_codeblock();
 	block->cblock.entry = entry_point;
 
 	in = OBJNULL;
@@ -2199,7 +2194,7 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 		temp_len = block->cblock.temp_data_size;
 		len = perm_len + temp_len;
 
-                if (block->cblock.data_text == 0) {
+                if (block->cblock.data_text == 0 || block->cblock.data_text_size == 0) {
                         if (len) {
                                 /* Code from COMPILE uses data in *compiler-constants* */
                                 cl_object v = ECL_SYM_VAL(env,@'si::*compiler-constants*');
@@ -2237,10 +2232,14 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
                         memcpy(VV, v->vector.self.t, len * sizeof(cl_object));
                 }
 #else
-		in=ecl_make_string_input_stream
-                        (ecl_make_simple_base_string(block->cblock.data_text,
-                                                     block->cblock.data_text_size),
-                         0, block->cblock.data_text_size);
+		in = ecl_make_simple_base_string((char *)block->cblock.data_text,
+						 block->cblock.data_text_size);
+# ifdef ECL_UNICODE
+		in = si_make_sequence_input_stream(3, in, @':external-format',
+						   @':utf-8');
+# else
+		in=ecl_make_string_input_stream(in, 0, block->cblock.data_text_size);
+# endif
                 progv_list = ECL_SYM_VAL(env, @'si::+ecl-syntax-progv-list+');
                 bds_ndx = ecl_progv(env, ECL_CONS_CAR(progv_list),
                                     ECL_CONS_CDR(progv_list));
@@ -2266,6 +2265,8 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
 		unlikely_if (i < len)
 			FEreader_error("Not enough data while loading"
                                        "binary file", in, 0);
+                cl_close(1,in);
+                in = OBJNULL;
 #endif
 	NO_DATA_LABEL:
                 env->packages_to_be_created_p = Cnil;
@@ -2291,7 +2292,7 @@ read_VV(cl_object block, void (*entry_point)(cl_object))
                         }
 		}
 		/* Execute top-level code */
-		(*entry_point)(MAKE_FIXNUM(0));
+		(*entry_point)(OBJNULL);
 		x = cl_set_difference(2, env->packages_to_be_created, old_eptbc);
                 old_eptbc = env->packages_to_be_created;
                 unlikely_if (!Null(x)) {

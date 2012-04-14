@@ -48,6 +48,7 @@ static void ecl_mark_env(struct cl_env_struct *env);
 static int cl_object_kind, cl_object_mark_proc_index;
 static void **cl_object_free_list;
 #  endif
+extern void GC_init_explicit_typing(void);
 # endif
 #endif
 
@@ -353,9 +354,6 @@ cl_object_mark_proc(void *addr, struct GC_ms_entry *msp, struct GC_ms_entry *msl
                 MAYBE_MARK(o->pack.name);
 		break;
         case t_hashtable:
-# ifdef ECL_THREADS
-                MAYBE_MARK(o->hash.lock);
-# endif
                 MAYBE_MARK(o->hash.threshold);
                 MAYBE_MARK(o->hash.rehash_size);
                 MAYBE_MARK(o->hash.data);
@@ -775,7 +773,7 @@ init_alloc(void)
 # else
 #  ifdef GBC_BOEHM_OWN_MARKER
         cl_object_free_list = (void **)GC_new_free_list_inner();
-	cl_object_mark_proc_index = GC_new_proc(cl_object_mark_proc);
+	cl_object_mark_proc_index = GC_new_proc((GC_mark_proc)cl_object_mark_proc);
         cl_object_kind = GC_new_kind_inner(cl_object_free_list,
                                            GC_MAKE_PROC(cl_object_mark_proc_index, 0),
                                            FALSE, TRUE);
@@ -886,9 +884,6 @@ init_alloc(void)
                 to_bitmap(&o, &(o.pack.internal)) |
                 to_bitmap(&o, &(o.pack.external));
         type_info[t_hashtable].descriptor =
-# ifdef ECL_THREADS
-                to_bitmap(&o, &(o.hash.lock)) |
-# endif
                 to_bitmap(&o, &(o.hash.data)) |
                 to_bitmap(&o, &(o.hash.rehash_size)) |
                 to_bitmap(&o, &(o.hash.threshold));
@@ -1080,7 +1075,7 @@ standard_finalizer(cl_object o)
 	case t_rwlock: {
 		const cl_env_ptr the_env = ecl_process_env();
 		ecl_disable_interrupts_env(the_env);
-		pthread_rwlock_destroy(&o->lock.mutex);
+		pthread_rwlock_destroy(&o->rwlock.mutex);
 		ecl_enable_interrupts_env(the_env);
 		break;
 	}
@@ -1202,13 +1197,6 @@ si_gc_stats(cl_object enable)
         } else {
                 old_status = Ct;
         }
-        if (enable == Cnil) {
-                GC_print_stats = 0;
-                cl_core.gc_stats = 0;
-        } else {
-                cl_core.gc_stats = 1;
-                GC_print_stats = (enable == @':full');
-        }
 	if (cl_core.bytes_consed == Cnil) {
 		cl_core.bytes_consed = ecl_alloc_object(t_bignum);
 		mpz_init2(cl_core.bytes_consed->big.big_num, 128);
@@ -1218,17 +1206,24 @@ si_gc_stats(cl_object enable)
                 /* We need fresh copies of the bignums */
                 size1 = _ecl_big_plus_fix(cl_core.bytes_consed, 1);
                 size2 = _ecl_big_plus_fix(cl_core.gc_counter, 1);
+        }
+        if (enable == Cnil) {
+                GC_print_stats = 0;
+                cl_core.gc_stats = 0;
+        } else if (enable == MAKE_FIXNUM(0)) {
                 mpz_set_ui(cl_core.bytes_consed->big.big_num, 0);
                 mpz_set_ui(cl_core.gc_counter->big.big_num, 0);
+        } else {
+                cl_core.gc_stats = 1;
+                GC_print_stats = (enable == @':full');
         }
 	@(return size1 size2 old_status)
 }
 
 /*
- * This procedure is invoked after garbage collection. It invokes
- * finalizers for all objects that are to be reclaimed by the
- * colector. Note that we cannot cons because this procedure is
- * invoked with the garbage collection lock on.
+ * This procedure is invoked after garbage collection. Note that we
+ * cannot cons because this procedure is invoked with the garbage
+ * collection lock on.
  */
 static void
 gather_statistics()

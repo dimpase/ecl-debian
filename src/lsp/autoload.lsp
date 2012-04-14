@@ -35,11 +35,10 @@ Returns the string \"ECL\"."
   "Args: (decl-spec)
 Gives a global declaration.  See DECLARE for possible DECL-SPECs."
   (when (eq (car d) 'SPECIAL) (mapc #'sys::*make-special (cdr d))))
-
-(autoload "SYS:cmp" 'compile-file 'compile 'compile-file-pathname 'disassemble)
 )
 
 (defmacro with-compilation-unit (options &rest body)
+  (declare (ignore options))
   `(progn ,@body))
 
 ;;; Editor.
@@ -48,7 +47,7 @@ Gives a global declaration.  See DECLARE for possible DECL-SPECs."
   "Args: (&optional filename)
 Invokes the editor.  The action depends on the version of ECL.  See the ECL
 Report for details."
-  (si:system (format nil "~S ~A" (or (si::getenv "EDITOR") "vi") filename)))
+  (ext:system (format nil "~S ~A" (or (si::getenv "EDITOR") "vi") filename)))
 
 
 ;;; Allocator.
@@ -74,6 +73,7 @@ Displays information about storage allocation in the following format.
 	* number of pages ECL can use.
 The number of times the garbage collector has been called is not shown, if the
 number is zero.  The optional X is simply ignored."
+  (declare (ignorable x))
   #+boehm-gc
   (progn
     (format t "
@@ -145,6 +145,8 @@ in Windows) to learn this.")
 
 
 ;;; Help.
+
+(autoload "sys:ecl-help" 'dump-help-file 'search-help-file)
 
 (defun help (&optional (symbol 'help))
   "Args: (&optional symbol)

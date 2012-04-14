@@ -7,8 +7,8 @@ VPATH	= @srcdir@
 
 # Programs used by "make":
 #
-TRUE_CC = @CC@
 CC	= @CC@
+TRUE_CC = $(CC)
 CFLAGS	= -I. -I@true_builddir@ -I$(srcdir) -I../ecl/gc -DECL_API -DECL_NO_LEGACY  @CPPFLAGS@ @CFLAGS@ @ECL_CFLAGS@ -c
 
 # The following flags could be added and used by GCC
@@ -36,11 +36,12 @@ includedir=@includedir@
 HDIR	= ../ecl
 HFILES	= $(HDIR)/config.h $(HDIR)/ecl.h $(HDIR)/ecl-cmp.h\
 	$(HDIR)/object.h $(HDIR)/cs.h $(HDIR)/stacks.h\
-	$(HDIR)/external.h $(HDIR)/eval.h\
+	$(HDIR)/external.h $(HDIR)/cons.h $(HDIR)/legacy.h\
 	$(HDIR)/number.h $(HDIR)/page.h $(HDIR)/unify.h
-OBJS	= main.o symbol.o package.o list.o\
+OBJS	= main.o symbol.o package.o cons.o list.o\
 	apply.o eval.o interpreter.o compiler.o disassembler.o \
-	instance.o gfun.o reference.o character.o\
+	instance.o gfun.o clos/cache.o clos/accessor.o \
+	reference.o character.o\
 	file.o read.o print.o error.o string.o cfun.o\
 	reader/parse_integer.o reader/parse_number.o \
 	printer/float_to_digits.o printer/float_to_string.o \
@@ -48,7 +49,7 @@ OBJS	= main.o symbol.o package.o list.o\
 	printer/write_object.o printer/write_symbol.o \
 	printer/write_array.o printer/write_list.o printer/write_code.o \
 	printer/write_sse.o printer/print_unreadable.o \
-	ffi/libraries.o ffi/backtrace.o \
+	ffi/libraries.o ffi/backtrace.o ffi/mmap.o ffi/cdata.o \
 	numbers/cos.o numbers/sin.o numbers/tan.o numbers/atan.o \
 	numbers/cosh.o numbers/sinh.o numbers/tanh.o \
 	numbers/exp.o numbers/expt.o numbers/log.o \
@@ -76,13 +77,15 @@ all:	$(DPP) ../libeclmin.a ../cinit.o
 .d.c: $(DPP)
 	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< $@ ; else $(DPP) $< $@ ; fi
 .d.o: $(DPP)
-	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< tmp.c ; else $(DPP) $< tmp.c ; fi
-	$(CC) -DECLDIR="\"@ecldir@\"" $(CFLAGS) -o $@ tmp.c
-	$(RM) tmp.c
-.c.s: $(HFILES)
-	$(CC) -DECLDIR="\"@ecldir@\"" $(CFLAGS) -S -o $@ $<
-.c.o: $(HFILES)
+	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< $@.c ; else $(DPP) $< $@.c ; fi
+	$(CC) -DECLDIR="\"@ecldir@\"" $(CFLAGS) -o $@ $@.c
+.c.o:
 	$(CC) -DECLDIR="\"@ecldir@\"" $(CFLAGS) -o $@ $<
+.d.s: $(HFILES)
+	if test -f ../CROSS-DPP ; then ../CROSS-DPP $< $@.c ; else $(DPP) $< $@.c ; fi
+	$(CC) -DECLDIR="\"@ecldir@\"" $(CFLAGS) -S -o $@ $@.c
+#.c.o: $(HFILES)
+#	$(CC) -DECLDIR="\"@ecldir@\"" $(CFLAGS) -o $@ $<
 apply_x86.c: $(srcdir)/arch/apply_x86.d $(DPP) $(HFILES)
 	if test -f ../CROSS-DPP ; then \
 	  ../CROSS-DPP $(srcdir)/arch/apply_x86.d $@ ; \
@@ -123,7 +126,8 @@ $(srcdir)/symbols_list2.h: $(srcdir)/symbols_list.h Makefile
 	cat $(srcdir)/symbols_list.h | \
 	sed -e 's%{\([A-Z ]*.*".*"\),[^,]*,[ ]*NULL,.*}%{\1,NULL}%g' \
 	    -e 's%{\([A-Z ]*.*".*"\),[^,]*,[ ]*\([^,]*\),.*}%{\1,"\2"}%g' \
-	    -e 's%{NULL.*%{NULL,NULL}};%' > tmp.h
+	    -e 's%{NULL.*%{NULL,NULL}};%' | \
+	sed -e 's%"\(IF_[A-Z0-9]*\)(\([^)]*\))"%\1("\2")%g' > tmp.h
 	mv tmp.h $@
 
 #

@@ -47,7 +47,8 @@ ecl_sequence_start_end(cl_object fun, cl_object sequence,
 	}
         unlikely_if (p.end < p.start) {
                 FEwrong_type_key_arg(fun, @[:start], start,
-                                     ecl_make_integer_type(MAKE_FIXNUM(0), end));
+                                     ecl_make_integer_type(MAKE_FIXNUM(0),
+							   MAKE_FIXNUM(p.end)));
         }
         return p;
 }
@@ -63,7 +64,7 @@ si_sequence_start_end(cl_object fun, cl_object sequence, cl_object start, cl_obj
 cl_object
 cl_elt(cl_object x, cl_object i)
 {
-	@(return ecl_elt(x, fixint(i)))
+	@(return ecl_elt(x, ecl_to_size(i)))
 }
 
 cl_object
@@ -98,13 +99,13 @@ ecl_elt(cl_object seq, cl_fixnum index)
 		FEtype_error_sequence(seq);
 	}
 E:
-	FEtype_error_index(seq, MAKE_FIXNUM(index));
+	FEtype_error_index(seq, index);
 }
 
 cl_object
 si_elt_set(cl_object seq, cl_object index, cl_object val)
 {
-	@(return ecl_elt_set(seq, fixint(index), val))
+	@(return ecl_elt_set(seq, ecl_to_size(index), val))
 }
 
 cl_object
@@ -140,7 +141,7 @@ ecl_elt_set(cl_object seq, cl_fixnum index, cl_object val)
 		FEtype_error_sequence(seq);
 	}
 E:
-	FEtype_error_index(seq, MAKE_FIXNUM(index));
+	FEtype_error_index(seq, index);
 }
 
 cl_object

@@ -117,16 +117,13 @@
 
 (declaim (inline index-posn posn-index posn-column))
 (defun index-posn (index stream)
-  (declare (type index index) (type pretty-stream stream)
-	   (values posn))
+  (declare (type index index) (type pretty-stream stream))
   (+ index (pretty-stream-buffer-offset stream)))
 (defun posn-index (posn stream)
-  (declare (type posn posn) (type pretty-stream stream)
-	   (values index))
+  (declare (type posn posn) (type pretty-stream stream))
   (- posn (pretty-stream-buffer-offset stream)))
 (defun posn-column (posn stream)
-  (declare (type posn posn) (type pretty-stream stream)
-	   (values posn))
+  (declare (type posn posn) (type pretty-stream stream))
   (index-column (posn-index posn stream) stream))
 
 
@@ -136,6 +133,7 @@
   (pretty-out stream char))
 
 (defmethod gray::stream-force-output ((stream pretty-stream))
+  (declare (ignore stream))
   ;(force-pretty-output stream)
 )
 
@@ -303,16 +301,16 @@
 		(entry `(,constructor :posn
 				      (index-posn
 				       (pretty-stream-buffer-fill-pointer
-					(the pretty-stream ,stream))
+					(truly-the pretty-stream ,stream))
 				       ,stream)
 				      ,@args))
 		(op `(list ,entry))
-		(head `(pretty-stream-queue-head (the pretty-stream ,stream))))
+		(head `(pretty-stream-queue-head (truly-the pretty-stream ,stream))))
       `(progn
 	 (if ,head
 	     (setf (cdr ,head) ,op)
-	     (setf (pretty-stream-queue-tail (the pretty-stream ,stream)) ,op))
-	 (setf (pretty-stream-queue-head (the pretty-stream ,stream)) ,op)
+	     (setf (pretty-stream-queue-tail (truly-the pretty-stream ,stream)) ,op))
+	 (setf (pretty-stream-queue-head (truly-the pretty-stream ,stream)) ,op)
 	 ,entry))))
 )
 

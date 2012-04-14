@@ -18,13 +18,17 @@
 #include <string.h>
 #include <stdio.h>
 #include <limits.h>
+
 #ifndef _MSC_VER
 # include <unistd.h>
 #else
 # include <io.h>
+# include <direct.h>
 # define access _access
 # define F_OK 0
+typedef int mode_t; 
 #endif
+
 #include <sys/types.h>
 #include <ecl/ecl.h>
 #ifdef HAVE_PWD_H
@@ -48,17 +52,30 @@
 #include <fcntl.h>
 #include <errno.h>
 
+ecl_def_ct_base_string(str_slash,"/",1,static,const);
+
+static cl_object
+coerce_to_posix_filename(cl_object filename)
+{
+	/* This converts a pathname designator into a namestring, with the
+	 * particularity that directories do not end with a slash '/', because
+	 * this is not supported on all POSIX platforms (most notably Windows)
+	 */
+	filename = si_coerce_to_filename(filename);
+	return cl_string_right_trim(str_slash, filename);
+}
+
 static int
 safe_chdir(const char *path, cl_object prefix)
 {
 	if (prefix != Cnil) {
 		cl_object aux = make_constant_base_string(path);
 		aux = si_base_string_concatenate(2, prefix, aux);
-		return safe_chdir(aux->base_string.self, Cnil);
+		return safe_chdir((char *)aux->base_string.self, Cnil);
 	} else {
 		int output;
 		ecl_disable_interrupts();
-		output = chdir(path);
+		output = chdir((char *)path);
 		ecl_enable_interrupts();
 		return output;
 	}
@@ -204,7 +221,7 @@ file_kind(char *filename, bool follow_links) {
 
 cl_object
 si_file_kind(cl_object filename, cl_object follow_links) {
-	filename = si_coerce_to_filename(filename);
+	filename = coerce_to_posix_filename(filename);
 	@(return file_kind((char*)filename->base_string.self, !Null(follow_links)))
 }
 
@@ -284,7 +301,7 @@ enter_directory(cl_object base_dir, cl_object subdir)
         }
         if (subdir == @':up') {
                 cl_object newdir= output->pathname.directory;
-                newdir = ecl_nbutlast(newdir, 0);
+                newdir = ecl_nbutlast(newdir, 2);
                 if (Null(newdir)) {
                         FEerror("Pathname contained an :UP component  "
                                 "that goes above the base directory:"
@@ -312,8 +329,10 @@ make_base_pathname(cl_object pathname)
 				 Cnil, Cnil, Cnil, @':local');
 }
 
+#define FOLLOW_SYMLINKS 1
+
 static cl_object
-file_truename(cl_object pathname, cl_object filename)
+file_truename(cl_object pathname, cl_object filename, int flags)
 {
 	cl_object kind;
 	if (Null(pathname)) {
@@ -332,7 +351,7 @@ file_truename(cl_object pathname, cl_object filename)
         if (kind == Cnil) {
                 FEcannot_open(pathname);
 #ifdef HAVE_LSTAT
-        } else if (kind == @':link') {
+        } else if (kind == @':link' && (flags & FOLLOW_SYMLINKS)) {
                 /* The link might be a relative pathname. In that case we have
                  * to merge with the original pathname */
                 filename = si_readlink(filename);
@@ -341,7 +360,7 @@ file_truename(cl_object pathname, cl_object filename)
 					     pathname->pathname.directory,
 					     Cnil, Cnil, Cnil, @':local');
                 pathname = ecl_merge_pathnames(filename, pathname, @':default');
-                return file_truename(pathname, Cnil);
+                return cl_truename(pathname);
 #endif
         } else if (kind == @':directory'){
                 /* If the pathname is a directory but we have supplied
@@ -352,7 +371,7 @@ file_truename(cl_object pathname, cl_object filename)
                         pathname = si_base_string_concatenate
                                 (2, filename,
                                  make_constant_base_string("/"));
-                        pathname = cl_pathname(pathname);
+                        pathname = cl_truename(pathname);
                 }
         }
         /* ECL does not contemplate version numbers
@@ -394,7 +413,7 @@ cl_truename(cl_object orig_pathname)
                 base_dir = enter_directory(base_dir, ECL_CONS_CAR(dir));
         }
         pathname = ecl_merge_pathnames(base_dir, pathname, @':default');
-	@(return file_truename(pathname, Cnil))
+	@(return file_truename(pathname, Cnil, FOLLOW_SYMLINKS))
 }
 
 int
@@ -445,9 +464,8 @@ ecl_file_len(int f)
 	 *    or if it does not exist. Notice that the filename to be renamed
 	 *    is not the truename, because we might be renaming a symbolic link.
 	 */
-	old_filename = cl_string_right_trim(ecl_list1(CODE_CHAR('/')),
-                                            si_coerce_to_filename(oldn));
 	old_truename = cl_truename(oldn);
+	old_filename = coerce_to_posix_filename(old_truename);
 
 	/* 2) Create the new file name. */
 	newn = ecl_merge_pathnames(newn, oldn, @':newest');
@@ -534,18 +552,32 @@ SUCCESS:
 	@(return newn old_truename new_truename)
 @)
 
+static int
+directory_pathname_p(cl_object path)
+{
+        return (path->pathname.name == Cnil) &&
+                (path->pathname.type == Cnil);
+}
+
 cl_object
 cl_delete_file(cl_object file)
 {
-	cl_object filename = si_coerce_to_filename(file);
+        cl_object path = cl_pathname(file);
+        int isdir = directory_pathname_p(path);
+	cl_object filename = coerce_to_posix_filename(path);
 	int ok;
 
 	ecl_disable_interrupts();
-	ok = unlink((char*)filename->base_string.self);
+        ok = (isdir? rmdir : unlink)((char*)filename->base_string.self);
 	ecl_enable_interrupts();
 
-	if (ok < 0)
-		FElibc_error("Cannot delete the file ~S.", 1, file);
+	if (ok < 0) {
+                const char *msg =
+                        isdir?
+                        "Cannot delete the file ~S." :
+                        "Cannot delete the directory ~S.";
+		FElibc_error(msg, 1, file);
+        }
 	@(return Ct)
 }
 
@@ -559,19 +591,20 @@ cl_probe_file(cl_object file)
 cl_object
 cl_file_write_date(cl_object file)
 {
-	cl_object time, filename = si_coerce_to_filename(file);
+	cl_object time, filename = coerce_to_posix_filename(file);
 	struct stat filestatus;
-	if (safe_stat((char*)filename->base_string.self, &filestatus) < 0)
+	if (safe_stat((char*)filename->base_string.self, &filestatus) < 0) {
 		time = Cnil;
-	else
+	} else {
 		time = UTC_time_to_universal_time(filestatus.st_mtime);
+	}
 	@(return time)
 }
 
 cl_object
 cl_file_author(cl_object file)
 {
-	cl_object output, filename = si_coerce_to_filename(file);
+	cl_object output, filename = coerce_to_posix_filename(file);
 	struct stat filestatus;
 	if (safe_stat((char*)filename->base_string.self, &filestatus) < 0)
 		FElibc_error("Cannot get the file status of ~S.", 1, file);
@@ -662,7 +695,8 @@ string_match(const char *s, const char *p)
  * by following the symlinks.
  */
 static cl_object
-list_directory(cl_object base_dir, const char *text_mask, cl_object pathname_mask)
+list_directory(cl_object base_dir, const char *text_mask, cl_object pathname_mask,
+               int flags)
 {
 	cl_object out = Cnil;
 	cl_object prefix = ecl_namestring(base_dir, ECL_NAMESTRING_FORCE_BASE_STRING);
@@ -737,8 +771,8 @@ list_directory(cl_object base_dir, const char *text_mask, cl_object pathname_mas
                         if (Null(cl_pathname_match_p(component, pathname_mask)))
                                 continue;
                 }
-		component_path = file_truename(component_path, component);
-		kind = VALUES(1);
+                component_path = file_truename(component_path, component, flags);
+                kind = VALUES(1);
 		out = CONS(CONS(component_path, kind), out);
 	}
 #ifdef HAVE_DIRENT_H
@@ -762,10 +796,8 @@ OUTPUT:
  * of pathnames. BASEDIR is the truename of the current directory and it is
  * used to build these pathnames.
  */
-extern cl_object dir_files(cl_object base_dir, cl_object pathname);
-
-cl_object
-dir_files(cl_object base_dir, cl_object pathname)
+static cl_object
+dir_files(cl_object base_dir, cl_object pathname, int flags)
 {
 	cl_object all_files, output = Cnil;
 	cl_object mask;
@@ -777,7 +809,7 @@ dir_files(cl_object base_dir, cl_object pathname)
 	mask = ecl_make_pathname(Cnil, Cnil, Cnil,
                                  name, type, pathname->pathname.version,
                                  @':local');
-	for (all_files = list_directory(base_dir, NULL, mask);
+	for (all_files = list_directory(base_dir, NULL, mask, flags);
 	     !Null(all_files);
 	     all_files = ECL_CONS_CDR(all_files))
 	{
@@ -798,7 +830,7 @@ dir_files(cl_object base_dir, cl_object pathname)
  * list.
  */
 static cl_object
-dir_recursive(cl_object base_dir, cl_object directory, cl_object filemask)
+dir_recursive(cl_object base_dir, cl_object directory, cl_object filemask, int flags)
 {
 	cl_object item, output = Cnil;
  AGAIN:
@@ -810,7 +842,7 @@ dir_recursive(cl_object base_dir, cl_object directory, cl_object filemask)
 	 * we have to find a file which corresponds to the description.
 	 */
 	if (directory == Cnil) {
-		return ecl_nconc(dir_files(base_dir, filemask), output);
+		return ecl_nconc(dir_files(base_dir, filemask, flags), output);
 	}
 	/*
 	 * 2) We have not yet exhausted the DIRECTORY component of the
@@ -826,7 +858,7 @@ dir_recursive(cl_object base_dir, cl_object directory, cl_object filemask)
 		 */
 		const char *mask = (item == @':wild')? "*" :
 			(const char *)item->base_string.self;
-		cl_object next_dir = list_directory(base_dir, mask, Cnil);
+		cl_object next_dir = list_directory(base_dir, mask, Cnil, flags);
 		for (; !Null(next_dir); next_dir = ECL_CONS_CDR(next_dir)) {
 			cl_object record = ECL_CONS_CAR(next_dir);
 			cl_object component = ECL_CONS_CAR(record);
@@ -835,7 +867,7 @@ dir_recursive(cl_object base_dir, cl_object directory, cl_object filemask)
 				continue;
 			item = dir_recursive(cl_pathname(component),
 					     ECL_CONS_CDR(directory),
-					     filemask);
+					     filemask, flags);
 			output = ecl_nconc(item, output);
 		}
 	} else if (item == @':wild-inferiors') {
@@ -844,7 +876,7 @@ dir_recursive(cl_object base_dir, cl_object directory, cl_object filemask)
 		 * scan all subdirectories from _all_ levels, looking for a
 		 * tree that matches the remaining part of DIRECTORY.
 		 */
-		cl_object next_dir = list_directory(base_dir, "*", Cnil);
+		cl_object next_dir = list_directory(base_dir, "*", Cnil, flags);
 		for (; !Null(next_dir); next_dir = ECL_CONS_CDR(next_dir)) {
 			cl_object record = ECL_CONS_CAR(next_dir);
 			cl_object component = ECL_CONS_CAR(record);
@@ -852,8 +884,7 @@ dir_recursive(cl_object base_dir, cl_object directory, cl_object filemask)
 			if (kind != @':directory')
 				continue;
 			item = dir_recursive(cl_pathname(component),
-					     directory,
-					     filemask);
+					     directory, filemask, flags);
 			output = ecl_nconc(item, output);
 		}
 		directory = ECL_CONS_CDR(directory);
@@ -870,14 +901,15 @@ dir_recursive(cl_object base_dir, cl_object directory, cl_object filemask)
 	return output;
 }
 
-@(defun directory (mask &key &allow_other_keys)
+@(defun directory (mask &key (resolve_symlinks Ct) &allow_other_keys)
         cl_object base_dir;
 	cl_object output;
 @
         mask = coerce_to_file_pathname(mask);
         mask = make_absolute_pathname(mask);
         base_dir = make_base_pathname(mask);
-        output = dir_recursive(base_dir, mask->pathname.directory, mask);
+	output = dir_recursive(base_dir, mask->pathname.directory, mask,
+                               Null(resolve_symlinks)? 0 : FOLLOW_SYMLINKS);
         @(return output)
 @)
 
@@ -1067,16 +1099,9 @@ si_mkstemp(cl_object template)
 cl_object
 si_rmdir(cl_object directory)
 {
-	int code;
-	directory = si_coerce_to_filename(directory);
-
-	ecl_disable_interrupts();
-	code = rmdir((char*)directory->base_string.self);
-	ecl_enable_interrupts();
-
-        if (code != 0)
-             FElibc_error("Can't remove directory ~A.", 1, directory);
-        @(return Cnil)
+        return cl_delete_file(cl_make_pathname(6, @':name', Cnil,
+                                               @':type', Cnil,
+                                               @':defaults', directory));
 }
 
 cl_object
@@ -1104,4 +1129,16 @@ si_copy_file(cl_object orig, cl_object dest)
 	}
 	ecl_enable_interrupts();
 	@(return (ok? Ct : Cnil))
+}
+
+cl_object
+si_chmod(cl_object file, cl_object mode)
+{
+	mode_t code = ecl_to_uint32_t(mode);
+	cl_object filename = coerce_to_posix_filename(file);
+	unlikely_if (chmod((char*)filename->base_string.self, code)) {
+		FElibc_error("Unable to change mode of file~%~S~%to value ~O",
+			     2, file, mode);
+	}
+	@(return)
 }

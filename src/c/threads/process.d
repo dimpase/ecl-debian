@@ -333,18 +333,19 @@ mp_break_suspend_loop()
         if (frs_sch(@'mp::suspend-loop')) {
                 cl_throw(@'mp::suspend-loop');
         }
+        @(return)
 }
 
 cl_object
 mp_process_suspend(cl_object process)
 {
-        mp_interrupt_process(process, @'mp::suspend-loop');
+        return mp_interrupt_process(process, @'mp::suspend-loop');
 }
 
 cl_object
 mp_process_resume(cl_object process)
 {
-        mp_interrupt_process(process, @'mp::break-suspend-loop');
+        return mp_interrupt_process(process, @'mp::break-suspend-loop');
 }
 
 cl_object
@@ -380,14 +381,12 @@ mp_process_enable(cl_object process)
 	 */
 	cl_env_ptr process_env;
 	int ok;
-	if (Null(mp_get_lock_nowait(process->process.exit_lock))) {
+	unlikely_if (Null(mp_get_lock_nowait(process->process.exit_lock))) {
 		FEerror("Cannot enable the running process ~A.", 1, process);
-		return;
 	}
-	if (process->process.active) {
+	unlikely_if (process->process.active) {
 		mp_giveup_lock(process->process.exit_lock);
 		FEerror("Cannot enable the running process ~A.", 1, process);
-		return;
 	}
 	process_env = _ecl_alloc_env();
 	ecl_init_env(process_env);
@@ -428,7 +427,7 @@ mp_process_enable(cl_object process)
 #ifdef HAVE_SIGPROCMASK
 	{
 		sigset_t previous;
-		pthread_sigmask(SIG_SETMASK, cl_core.default_sigmask, &previous);
+		pthread_sigmask(SIG_SETMASK, process_env->default_sigmask, &previous);
 		code = pthread_create(&process->process.thread, &pthreadattr,
 				      thread_entry_point, process);
 		pthread_sigmask(SIG_SETMASK, &previous, NULL);
@@ -579,8 +578,8 @@ mp_block_signals(void)
 {
 #ifdef ECL_WINDOWS_THREADS
         cl_env_ptr the_env = ecl_process_env();
-        cl_object previous = ecl_symbol_value(@'si::*interrupts-enabled*');
-        ECL_SETQ(the_env, @'si::*interrupts-enabled*', Cnil);
+        cl_object previous = ecl_symbol_value(@'ext::*interrupts-enabled*');
+        ECL_SETQ(the_env, @'ext::*interrupts-enabled*', Cnil);
         @(return previous)
 #else
         cl_object previous = mp_get_sigmask();
@@ -597,7 +596,7 @@ mp_restore_signals(cl_object sigmask)
 {
 #ifdef ECL_WINDOWS_THREADS
         cl_env_ptr the_env = ecl_process_env();
-        ECL_SETQ(the_env, @'si::*interrupts-enabled*', sigmask);
+        ECL_SETQ(the_env, @'ext::*interrupts-enabled*', sigmask);
         ecl_check_pending_interrupts();
         @(return sigmask)
 #else
@@ -653,7 +652,8 @@ init_threads(cl_env_ptr env)
 	env->own_process = process;
 
         cl_core.global_lock = ecl_make_lock(@'mp::global-lock', 1);
+        cl_core.external_processes_lock = ecl_make_lock(@'ext::run-program', 1);
         cl_core.error_lock = ecl_make_lock(@'mp::error-lock', 1);
-        cl_core.package_lock = ecl_make_rwlock(@'mp::package-lock');
+        cl_core.global_env_lock = ecl_make_rwlock(@'ext::package-lock');
 	cl_core.processes = ecl_list1(process);
 }

@@ -345,25 +345,26 @@ FEwrong_index(cl_object function, cl_object a, int which, cl_object ndx,
         if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
                 ecl_ihs_push(env,&tmp_ihs,function,Cnil);
         }        
-        si_signal_simple_error(8,
-                               @'type-error', /* condition name */
-                               Cnil, /* not correctable */
-                               message, /* format control */
-                               cl_list(5, function, MAKE_FIXNUM(which+1), ndx,
-                                       a, type),
-                               @':expected-type', type,
-                               @':datum', ndx);
+        cl_error(9,
+                 @'simple-type-error', /* condition name */
+                 @':format-control', message,
+                 @':format-arguments',
+                 cl_list(5, function, MAKE_FIXNUM(which+1), a, ndx, type),
+                 @':expected-type', type,
+                 @':datum', ndx);
 }
 
 void
 FEunbound_variable(cl_object sym)
 {
+	cl_print(1, sym);
 	cl_error(3, @'unbound-variable', @':name', sym);
 }
 
 void
 FEundefined_function(cl_object fname)
 {
+	cl_print(1, fname);
 	cl_error(3, @'undefined-function', @':name', fname);
 }
 
@@ -457,12 +458,6 @@ universal_error_handler(cl_object continue_string, cl_object datum,
 }
 
 void
-FEillegal_index(cl_object x, cl_object i)
-{
-	FEerror("~S is an illegal index to ~S.", 2, i, x);
-}
-
-void
 FEdivision_by_zero(cl_object x, cl_object y)
 {
 	cl_error(5, @'division-by-zero', @':operation', @'/',
@@ -487,7 +482,6 @@ FElibc_error(const char *msg, int narg, ...)
 	cl_va_start(args, narg, narg, 0);
 	rest = cl_grab_rest_args(args);
 
-        printf("%s\n", error);
 	FEerror("~?~%Explanation: ~A.", 3, make_constant_base_string(msg), rest,
 		make_constant_base_string(error));
 }

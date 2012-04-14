@@ -140,6 +140,7 @@ typedef cl_object (*cl_objectfn_fixed)();
 #define ecl_fixnum_geq(a,b)     ((cl_fixnum)(a) >= (cl_fixnum)(b))
 #define ecl_fixnum_plusp(a)     ((cl_fixnum)(a) > (cl_fixnum)MAKE_FIXNUM(0))
 #define ecl_fixnum_minusp(a)    ((cl_fixnum)(a) < (cl_fixnum)(0))
+#define ecl_fix(a)              (((cl_fixnum)(a)) >> 2)
 
 /* Immediate characters:	*/
 #define CHARACTER_TAG		t_character
@@ -366,13 +367,20 @@ enum ecl_httest {		/*  hash table key test function  */
 	htt_pack		/*  symbol hash  */
 };
 
+enum ecl_htweak {
+	htt_not_weak = 0,
+	htt_weak_key,
+	htt_weak_value,
+	htt_weak_key_and_value
+};
+
 struct ecl_hashtable_entry {	/*  hash table entry  */
 	cl_object key;		/*  key  */
 	cl_object value;	/*  value  */
 };
 
 struct ecl_hashtable {		/*  hash table header  */
-	HEADER1(test);
+	HEADER2(test,weak);
 	struct ecl_hashtable_entry *data; /*  pointer to the hash table  */
 	cl_index entries;	/*  number of entries  */
 	cl_index size;		/*  hash table size  */
@@ -380,11 +388,9 @@ struct ecl_hashtable {		/*  hash table header  */
 	cl_object rehash_size;	/*  rehash size  */
 	cl_object threshold;	/*  rehash threshold  */
 	double factor;		/*  cached value of threshold  */
-#ifdef ECL_THREADS
-	cl_object lock;		/*  mutex to prevent race conditions  */
-#endif
-	struct ecl_hashtable_entry *(*get)(cl_object, cl_object);
+	cl_object (*get)(cl_object, cl_object, cl_object);
 	cl_object (*set)(cl_object, cl_object, cl_object);
+	bool (*rem)(cl_object, cl_object);
 };
 
 typedef enum {			/*  array element type  */
@@ -412,13 +418,6 @@ typedef enum {			/*  array element type  */
 	aet_bc,			/*  base-char        */
 	aet_last_type = aet_bc
 } cl_elttype;
-
-typedef unsigned char ecl_base_char;
-#ifdef ECL_UNICODE
-typedef int32_t ecl_character;
-#else
-typedef int ecl_character;
-#endif
 
 union ecl_array_data {
 	cl_object     *t;
@@ -542,13 +541,14 @@ enum ecl_smmode {		/*  stream mode  */
 	smm_echo,		/*  echo  */
 	smm_string_input,	/*  string input  */
 	smm_string_output,	/*  string output  */
-	smm_probe		/*  probe (only used in open_stream())  */
+	smm_probe,		/*  probe (only used in open_stream())  */
 #if defined(ECL_WSOCK)
-	,
 	smm_input_wsock,	/* input socket (Win32) */
 	smm_output_wsock,	/* output socket (Win32) */
-	smm_io_wsock		/* input/output socket (Win32) */
+	smm_io_wsock,		/* input/output socket (Win32) */
 #endif
+	smm_sequence_input,	/*  sequence input  */
+	smm_sequence_output	/*  sequence output  */
 };
 
 struct ecl_file_ops {
@@ -613,9 +613,9 @@ enum {
 	ECL_STREAM_CLOSE_COMPONENTS = 1024
 };
 
+typedef int (*cl_eformat_decoder)(cl_object stream);
 typedef int (*cl_eformat_encoder)(cl_object stream, unsigned char *buffer, int c);
 typedef cl_index (*cl_eformat_read_byte8)(cl_object object, unsigned char *buffer, cl_index n);
-typedef int (*cl_eformat_decoder)(cl_object stream, cl_eformat_read_byte8 read_byte8, cl_object source);
 
 #define ECL_ANSI_STREAM_P(o) \
         (IMMEDIATE(o) == 0 && ((o)->d.t == t_stream))
@@ -937,7 +937,9 @@ struct ecl_semaphore {
 #define ECL_INSTANCEP(x)	((IMMEDIATE(x)==0) && ((x)->d.t==t_instance))
 #define ECL_NOT_FUNCALLABLE	0
 #define ECL_STANDARD_DISPATCH	1
-#define ECL_USER_DISPATCH	2
+#define ECL_READER_DISPATCH	2
+#define ECL_WRITER_DISPATCH	3
+#define ECL_USER_DISPATCH	4
 
 struct ecl_instance {		/*  instance header  */
 	HEADER1(isgf);

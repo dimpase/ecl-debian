@@ -160,10 +160,11 @@
 	    (setf recompute t finish nil))))
       t)))
 
-(defun c2locals (funs body labels ;; labels is T when deriving from labels
-		      &aux block-p
-		      (*env* *env*)
-		      (*env-lvl* *env-lvl*) env-grows)
+(defun c2locals (c1form funs body labels ;; labels is T when deriving from labels
+		 &aux block-p
+		 (*env* *env*)
+		 (*env-lvl* *env-lvl*) env-grows)
+  (declare (ignore c1form))
   ;; create location for each function which is returned,
   ;; either in lexical:
   (dolist (fun funs)
@@ -238,7 +239,7 @@
       (when (functionp fun) 
 	(when build-object
 	  ;; Macro definition appears in #'.... This should not happen.
-	  (cmperr "The name of a macro ~A was found in special form FUNCTION." name))
+	  (cmperr "The name of a macro ~A was found in special form FUNCTION." fname))
 	(return-from local-function-ref nil))
       (incf (fun-ref fun))
       (cond (build-object
@@ -256,8 +257,9 @@
 			   (var-kind var) 'LEXICAL))))))
     fun))
 
-(defun c2call-local (fun args &optional narg)
-  (declare (type fun fun))
+(defun c2call-local (c1form fun args)
+  (declare (type fun fun)
+	   (ignore c1form))
   (unless (c2try-tail-recursive-call fun args)
     (let ((*inline-blocks* 0)
           (*temp* *temp*))

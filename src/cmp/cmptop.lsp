@@ -29,35 +29,33 @@
                      (*current-form* form)
                      (*first-error* t)
                      (*setjmps* 0))
-  ;(let ((*print-level* 3)) (print form))
-  (catch *cmperr-tag*
-    (when (consp form)
-      (let ((fun (car form)) (args (cdr form)) fd)
-	(when (member fun *toplevel-forms-to-print*)
-	  (print-current-form))
-	(cond
-            ((consp fun) (t1ordinary form))
-            ((not (symbolp fun))
-	     (cmperr "~s is illegal function." fun))
-	    ((eq fun 'QUOTE)
-	     (t1ordinary 'NIL))
-	    ((setq fd (gethash fun *t1-dispatch-table*))
-	     (funcall fd args))
-	    ((gethash fun *c1-dispatch-table*)
-             (t1ordinary form))
-	    ((and (setq fd (compiler-macro-function fun))
-		  (inline-possible fun)
-		  (let ((success nil))
-		    (multiple-value-setq (fd success)
-		      (cmp-expand-macro fd form))
-		    success))
-             (push 'macroexpand *current-toplevel-form*)
-	     (t1expr* fd))
-	    ((setq fd (cmp-macro-function fun))
-             (push 'macroexpand *current-toplevel-form*)
-	     (t1expr* (cmp-expand-macro fd form)))
-	    (t (t1ordinary form))
-	   )))))
+  (when (consp form)
+    (let ((fun (car form)) (args (cdr form)) fd)
+      (when (member fun *toplevel-forms-to-print*)
+	(print-current-form))
+      (cond
+	((consp fun) (t1ordinary form))
+	((not (symbolp fun))
+	 (cmperr "~s is illegal function." fun))
+	((eq fun 'QUOTE)
+	 (t1ordinary 'NIL))
+	((setq fd (gethash fun *t1-dispatch-table*))
+	 (funcall fd args))
+	((gethash fun *c1-dispatch-table*)
+	 (t1ordinary form))
+	((and (setq fd (compiler-macro-function fun))
+	      (inline-possible fun)
+	      (let ((success nil))
+		(multiple-value-setq (fd success)
+		  (cmp-expand-macro fd form))
+		success))
+	 (push 'macroexpand *current-toplevel-form*)
+	 (t1expr* fd))
+	((setq fd (cmp-macro-function fun))
+	 (push 'macroexpand *current-toplevel-form*)
+	 (t1expr* (cmp-expand-macro fd form)))
+	(t (t1ordinary form))
+	))))
 
 (defun t1/c1expr (form)
   (cond ((not *compile-toplevel*)
@@ -75,9 +73,8 @@
                 (*compile-file-position* (c1form-file-position form))
                 (*current-toplevel-form* (c1form-form form))
                 (*current-form* (c1form-form form))
-                (*current-c2form* form)
                 (*cmp-env* (c1form-env form)))
-            (apply def (c1form-args form)))
+            (apply def form (c1form-args form)))
           (cmperr "Unhandled T2FORM found at the toplevel:~%~4I~A"
                   form)))))
 
@@ -107,11 +104,9 @@
 	   (t3local-fun (first lfs)))))))
 
 (defun ctop-write (name h-pathname data-pathname
-		        &key shared-data
 			&aux def top-output-string
 			(*volatile* " volatile "))
 
-  ;(let ((*print-level* 3)) (pprint *top-level-forms*))
   (setq *top-level-forms* (nreverse *top-level-forms*))
   (wt-nl1 "#include \"" (brief-namestring h-pathname) "\"")
 
@@ -134,8 +129,7 @@
 	 (*compiler-output1* (make-string-output-stream))
 	 (*emitted-local-funs* nil)
 	 (*compiler-declared-globals* (make-hash-table)))
-    (unless shared-data
-      (wt-nl1 "#include \"" (brief-namestring data-pathname) "\""))
+    (wt-nl1 "#include \"" (brief-namestring data-pathname) "\"")
     (wt-nl1 "#ifdef __cplusplus")
     (wt-nl1 "extern \"C\"")
     (wt-nl1 "#endif")
@@ -147,35 +141,35 @@
     (wt-nl "const cl_env_ptr cl_env_copy = ecl_process_env();")
     (wt-nl "cl_object value0;")
     (wt-nl "cl_object *VVtemp;")
-    (when shared-data
-      (wt-nl "Cblock=flag;")
-      (wt-nl "VV = flag->cblock.data;"))
-    (unless shared-data
-      (wt-nl "if (!FIXNUMP(flag)){")
-      (wt-nl "Cblock=flag;")
-      (wt-nl "#ifndef ECL_DYNAMIC_VV")
-      (wt-nl "flag->cblock.data = VV;")
-      (wt-nl "#endif")
-      (when *self-destructing-fasl*
-	(wt-nl "flag->cblock.self_destruct=1;"))
-      (wt-nl "flag->cblock.data_size = VM;")
-      (wt-nl "flag->cblock.temp_data_size = VMtemp;")
+
+    (wt-nl "if (flag != OBJNULL){")
+    (wt-nl "Cblock=flag;")
+    (wt-nl "#ifndef ECL_DYNAMIC_VV")
+    (wt-nl "flag->cblock.data = VV;")
+    (wt-nl "#endif")
+    (when *self-destructing-fasl*
+      (wt-nl "flag->cblock.self_destruct=1;"))
+    (wt-nl "flag->cblock.data_size = VM;")
+    (wt-nl "flag->cblock.temp_data_size = VMtemp;")
+    (when (or *compile-in-constants* si::*compiler-constants*)
       (wt-nl "flag->cblock.data_text = compiler_data_text;")
-      (wt-nl "flag->cblock.data_text_size = compiler_data_text_size;")
-      (wt-nl "flag->cblock.cfuns_size = compiler_cfuns_size;")
-      (wt-nl "flag->cblock.cfuns = compiler_cfuns;")
-      (when ext:*source-location*
-        (wt-nl "flag->cblock.source = make_constant_base_string(\""
-               (namestring (car ext:*source-location*)) "\");"))
-      (wt-nl "return;}")
-      (wt-nl "#ifdef ECL_DYNAMIC_VV")
-      (wt-nl "VV = Cblock->cblock.data;")
-      (wt-nl "#endif")
-      ;; With this we ensure creating a constant with the tag
-      ;; and the initialization file
-      (wt-nl "Cblock->cblock.data_text = \"" (init-name-tag name) "\";")
-      )
+      (wt-nl "flag->cblock.data_text_size = compiler_data_text_size;"))
+    (wt-nl "flag->cblock.cfuns_size = compiler_cfuns_size;")
+    (wt-nl "flag->cblock.cfuns = compiler_cfuns;")
+    (when ext:*source-location*
+      (wt-nl "flag->cblock.source = make_constant_base_string(\""
+             (namestring (car ext:*source-location*)) "\");"))
+    (wt-nl "return;}")
+    (wt-nl "#ifdef ECL_DYNAMIC_VV")
+    (wt-nl "VV = Cblock->cblock.data;")
+    (wt-nl "#endif")
+    ;; With this we ensure creating a constant with the tag
+    ;; and the initialization file
+    (wt-nl "Cblock->cblock.data_text = \"" (init-name-tag name) "\";")
+
     (wt-nl "VVtemp = Cblock->cblock.temp_data;")
+
+    (wt-nl "ECL_DEFINE_SETF_FUNCTIONS")
 
     ;; Type propagation phase
 
@@ -236,6 +230,22 @@
 	   (lisp-name (third l)))
       (wt-nl1 "static cl_object " c-name "(cl_narg narg, ...)"
 	      "{TRAMPOLINK(narg," lisp-name ",&" var-name ",Cblock);}")))
+  #+(or)
+  (wt-nl-h "static cl_object ECL_SETF_DEFINITION(cl_object setf_vv, cl_object setf_form) {
+cl_object f1 = ecl_fdefinition(setf_form);
+cl_object f2 = ECL_CONS_CAR(setf_vv);
+if (f1 != f2) {
+cl_print(1,f1);
+cl_print(1,f2);
+cl_print(1,setf_form);
+FEundefined_function(setf_form);
+}
+return f2;
+}
+")
+  (wt-nl-h "#define ECL_DEFINE_SETF_FUNCTIONS ")
+  (loop for (name setf-vv name-vv) in *setf-definitions*
+     do (wt-h #\\ #\Newline setf-vv "=ecl_setf_definition(" name-vv ",Ct);"))
 
   (wt-nl-h "#ifdef __cplusplus")
   (wt-nl-h "}")
@@ -288,10 +298,12 @@
 	  (t
 	   (c1progn 'NIL)))))
 
-(defun t2compiler-let (symbols values body)
+(defun t2compiler-let (c1form symbols values body)
+  (declare (ignore c1form))
   (progv symbols values (c2expr body)))
 
-(defun t2progn (args)
+(defun t2progn (c1form args)
+  (declare (ignore c1form))
   (mapc #'t2expr args))
 
 (defun exported-fname (name)
@@ -362,7 +374,6 @@
                     (equal (ref-ref-clb x) (ref-ref-clb y))
                     (equal (ref-ref x) (ref-ref y))))
              (similar-var (x y)
-               (print (list (var-loc x) (var-loc y)))
                (and! (similar-ref x y)
                     (equal (var-name x) (var-name y))
                     (equal (var-kind x) (var-kind y))
@@ -376,7 +387,6 @@
                     (eql (c1form-sp-change x) (c1form-sp-change y))
                     (eql (c1form-volatile x) (c1form-volatile y))))
              (similar-fun (x y)
-               (print (list '? (fun-name x) (fun-name y)))
                (and! (similar-ref x y)
                     (eql (fun-global x) (fun-global y))
                     (eql (fun-exported x) (fun-exported y))
@@ -501,7 +511,8 @@
 (defun p1ordinary (c1form assumptions form)
   (p1propagate form assumptions))
 
-(defun t2ordinary (form)
+(defun t2ordinary (c1form form)
+  (declare (ignore c1form))
   (let* ((*exit* (next-label))
 	 (*unwind-exit* (list *exit*))
          (*destination* 'TRASH))
@@ -545,19 +556,22 @@
 	   (setf loc (add-object (cmp-eval form)))))
     (make-c1form* 'LOCATION :type t :args loc)))
 
-(defun t2load-time-value (vv-loc form)
+(defun t2load-time-value (c1form vv-loc form)
+  (declare (ignore c1form))
   (let* ((*exit* (next-label)) (*unwind-exit* (list *exit*))
          (*destination* vv-loc))
     (c2expr form)
     (wt-label *exit*)))
 
-(defun t2make-form (vv-loc form)
+(defun t2make-form (c1form vv-loc form)
+  (declare (ignore c1form))
   (let* ((*exit* (next-label)) (*unwind-exit* (list *exit*))
          (*destination* vv-loc))
     (c2expr form)
     (wt-label *exit*)))
 
-(defun t2init-form (vv-loc form)
+(defun t2init-form (c1form vv-loc form)
+  (declare (ignore c1form))
   (let* ((*exit* (next-label)) (*unwind-exit* (list *exit*))
          (*destination* 'TRASH))
     (c2expr form)
@@ -740,7 +754,7 @@
 	    (wt-nl "CLV" n)
 	    (if first
 		(progn (wt "=env0;") (setf first nil))
-		(wt "=CDR(CLV" (1+ n) ");"))
+		(wt "=_ecl_cdr(CLV" (1+ n) ");"))
 	    (when (= n (var-loc (first bs)))
 	      (wt-comment (var-name (first clv-used)))
               (pop clv-used)))
@@ -778,7 +792,8 @@
 	  (let ((fun-object (c1form-arg 2 fun-form)))
 	    (when (fun-no-entry fun-object)
 	      (when macro
-		(cmperr "Declaration C-LOCAL used in macro ~a" (fun-name fun)))
+		(cmperr "Declaration C-LOCAL used in macro ~a"
+                        (fun-name fun-object)))
 	      (return-from c1fset
 		(make-c1form* 'SI:FSET :args fun-object nil nil nil nil)))
 	    (when (and (typep macro 'boolean)
@@ -801,7 +816,7 @@
 (defun p1fset (c1form assumptions fun fname macro pprint c1forms)
   (p1propagate (fun-lambda fun) assumptions))
 
-(defun c2fset (fun fname macro pprint c1forms)
+(defun c2fset (c1form fun fname macro pprint c1forms)
   (when (fun-no-entry fun)
     (wt-nl "(void)0; /* No entry created for "
 	   (format nil "~A" (fun-name fun))
@@ -812,7 +827,7 @@
   (unless (and (not (fun-closure fun))
 	       (eq *destination* 'TRASH))
     (return-from c2fset
-      (c2call-global 'SI:FSET c1forms (c1form-primary-type (second c1forms)))))
+      (c2call-global c1form 'SI:FSET c1forms)))
   (let ((*inline-blocks* 0)
 	(loc (data-empty-loc)))
     (push (list loc fname fun) *global-cfuns-array*)
@@ -820,6 +835,7 @@
     (new-local fun)
     (wt-nl (if macro "ecl_cmp_defmacro(" "ecl_cmp_defun(")
 	   loc ");")
+    (wt-comment (loc-immediate-value fname))
     (close-inline-blocks)))
 
 (defun output-cfuns (stream)

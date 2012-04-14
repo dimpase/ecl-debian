@@ -40,4 +40,3 @@ MODULES
 Makefile
 
 src/autom4te.cache
-.pc

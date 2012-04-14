@@ -17,7 +17,7 @@
 
 (sys:*make-constant '+ecl-optimization-settings+ 
   '((optimize (safety 2) (speed 1) (debug 1) (space 1))
-    (ext:no-check-arguments-type)))
+    (ext:check-arguments-type nil)))
 (sys:*make-constant '+ecl-unsafe-declarations+
   '(optimize (safety 0) (speed 3) (debug 0) (space 0)))
 (sys:*make-constant '+ecl-safe-declarations+
@@ -35,22 +35,10 @@
 (setq si::*keep-definitions* nil)
 
 ;;;
-;;; * Create commit version number
+;;; * Create bogus commit version number
 ;;;
 
 (setq si::+commit-id+ "UNKNOWN")
-(when (and (not (member :windows *features*))
-           (probe-file "@top_srcdir@/../.git/"))
-  (when (probe-file "COMMIT-ID")
-    (delete-file "COMMIT-ID"))
-  (when (and (zerop (si::system "(cd \"@top_srcdir@\" && git log --format=oneline -1) > COMMIT-ID"))
-             (probe-file "COMMIT-ID"))
-    (let* ((file (open "COMMIT-ID" :direction :input :element-type :default
-                       :external-format :default))
-           (line (read-line file))
-           (l (length line)))
-      (setq si::+commit-id+ (subseq line 0 (min l 40)))
-      (close file))))
 
 ;;;
 ;;; * Load Common-Lisp base library
@@ -127,32 +115,34 @@
 (defvar *module-files* nil)
 
 (defun build-fake-module (name lisp-files)
-  (let* ((output (make-pathname :type "fasb" :defaults name))
-         (pack *package*))
-    (with-open-file (sout output :direction :output :if-exists :supersede
-			  :if-does-not-exist :create)
-      (loop for file in lisp-files
-         and *package* = pack
-         and si::*bytecodes-compiler* = t
-         do (with-open-file (sin file :direction :input)
-              (loop for form = (read sin nil :eof)
-                 until (eq form :eof)
-                 do (let ((bytecodes (ext::eval-with-env form nil nil nil nil)))
-                      (with-standard-io-syntax
-                        (write `(funcall ,bytecodes) :stream sout :circle t :escape t
-                               :readably t :pretty nil)))))))
+  (let* ((output (make-pathname :type "fasc" :defaults name))
+         (files '()))
+    (unwind-protect
+         (let ((ext:*source-location* nil))
+           (loop for i in lisp-files do (push (open i :direction :input) files))
+           (setf files (nreverse files))
+           (let ((joined (apply #'make-concatenated-stream files)))
+             (ext::bc-compile-file joined :output-file output)))
+      (mapc #'close files))
     output))
 
 (make-package "ASDF")
 
-(defun build-fake-asdf (name &optional (filename (string name)))
-  (let ((path (make-pathname :name name :type "asd")))
+(defun build-fake-asdf (name static-library compiled-filename)
+  (let ((path (make-pathname :name name :type "asd"))
+	(compiled (make-pathname :host "SYS"
+				 :name (pathname-name compiled-filename)
+				 :type (pathname-type compiled-filename)))
+	(library (make-pathname :host "SYS"
+				:name (pathname-name static-library)
+				:type (pathname-type static-library))))
     (with-open-file (*standard-output* path
                      :direction :output :if-exists :supersede
                      :if-does-not-exist :create)
       (print `(defsystem ,name :class asdf::prebuilt-system
-                         :lib ,(format nil "SYS:~A" filename)
-                         :components ((:compiled-file ,filename)))))
+                         :lib ,library
+                         :components ((:compiled-file ,(string name)
+				       :pathname ,compiled)))))
     path))
 
 (defun build-module (name sources &key additional-files
@@ -163,17 +153,42 @@
     (when additional-files
       (setf *module-files* (append additional-files *module-files*)))
     (let* ((objects (compile-if-old dir sources :system-p t :c-file t
-                                    :data-file t :h-file t)))
-      (push (c::build-static-library name :lisp-files objects) *module-files*)
+                                    :data-file t :h-file t))
+	   (compiled-file-name (string name))
+	   (static-library (c::build-static-library name :lisp-files objects)))
+      (push static-library *module-files*)
       (when builtin
         (push (intern name) *module-symbols*))
-      (unless (equalp name "asdf")
-        (push (build-fake-asdf name) *module-files*))
       #-:wants-dlopen
       (push (build-fake-module name sources) *module-files*)
       #+:wants-dlopen
-      (push (c::build-fasl name :lisp-files objects) *module-files*))))
+      (push (setf compiled-file-name (c::build-fasl name :lisp-files objects))
+	    *module-files*)
+      (push (build-fake-asdf (if (equalp name "asdf") "prebuilt-asdf" name)
+			     static-library compiled-file-name)
+	    *module-files*)
+      )))
 
+;;;
+;;; * Update version number now that SI:SYSTEM is available
+;;;
+
+(let ((commit-id (probe-file "@true_srcdir@/../.git/logs/HEAD")))
+  (when commit-id
+    (let ((last nil))
+      (with-open-file (file commit-id :direction :input :element-type :default
+			    :external-format :default)
+	(loop for l = (read-line file nil nil nil)
+	   while l
+	   do (setf last l)))
+      (when last
+	(handler-case
+	    (let* ((start (position #\Space last)))
+	      (when start
+		(let ((end (position #\Space last :start (incf start))))
+		  (when end
+		    (setq si::+commit-id+ (subseq last start end))))))
+	  (serious-condition ()))))))
 ;;;
 ;;; * Go back to build directory to start compiling
 ;;;

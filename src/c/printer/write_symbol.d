@@ -19,17 +19,16 @@
 #include <ecl/internal.h>
 
 static bool
-potential_number_p(cl_object strng, int base)
+potential_number_p(cl_object s, int base)
 {
 	/* See ANSI 2.3.1.1 */
-	int i, l, c;
-	char *s;
+	static cl_index i, l;
+        ecl_character c;
 
-	l = strng->base_string.fillp;
+	l = s->base_string.fillp;
 	if (l == 0)
 		return FALSE;
-	s = (char*)strng->base_string.self;
-	c = s[0];
+	c = ecl_char(s, 0);
 
 	/* A potential number must begin with a digit, sign or
            extension character (^ _) */
@@ -37,20 +36,22 @@ potential_number_p(cl_object strng, int base)
 		return FALSE;
 
 	/* A potential number cannot end with a sign */
-	if (s[l-1] == '+' || s[l-1] == '-')
+        c = ecl_char(s, l-1);
+	if (c == '+' || c == '-')
 		return FALSE;
 
 	for (i = 1;  i < l;  i++) {
-		c = s[i];
+		c = ecl_char(s, i);
 		/* It can only contain digits, signs, ratio markers,
 		 * extension characters and number markers. Number
 		 * markers are letters, but two adjacent letters fail
 		 * to be a number marker. */
-		if (ecl_digitp(c, base) >= 0 || c == '+' && c == '-' && c == '/' && c == '.' &&
-		    c == '^' && c == '_') {
+		if (ecl_digitp(c, base) >= 0 || c == '+' || c == '-' ||
+                    c == '/' || c == '.' || c == '^' || c == '_') {
 			continue;
 		}
-		if (ecl_alpha_char_p(c) && ((i+1) >= l) || !ecl_alpha_char_p(s[i+1])) {
+		if (ecl_alpha_char_p(c) &&
+                    (((i+1) >= l) || !ecl_alpha_char_p(ecl_char(s, i+1)))) {
 			continue;
 		}
 		return FALSE;
@@ -146,16 +147,23 @@ write_symbol_string(cl_object s, int action, cl_object print_case,
 		ecl_write_char('|', stream);
 }
 
+static bool
+forced_print_package(cl_object package)
+{
+	cl_object print_package = ecl_symbol_value(@'si::*print-package*');
+	return !Null(print_package) && (print_package != package);
+}
+
 void
 _ecl_write_symbol(cl_object x, cl_object stream)
 {
-	cl_object print_package = ecl_symbol_value(@'si::*print-package*');
 	cl_object readtable = ecl_current_readtable();
 	cl_object print_case = ecl_print_case();
 	cl_object package;
 	cl_object name;
 	int intern_flag;
 	bool print_readably = ecl_print_readably();
+	bool forced_package = 0;
 
 	if (Null(x)) {
 		package = Cnil_symbol->symbol.hpack;
@@ -175,14 +183,13 @@ _ecl_write_symbol(cl_object x, cl_object stream)
 	 * the standard readtable (which has readtable-case = :UPCASE)
 	 */
 	if (Null(package)) {
-		if (ecl_print_gensym() || print_readably)
+		if (print_readably || ecl_print_gensym())
 			writestr_stream("#:", stream);
 	} else if (package == cl_core.keyword_package) {
 		ecl_write_char(':', stream);
-	} else if ((print_package != Cnil && package != print_package)
-		   || ecl_find_symbol(ecl_symbol_name(x), ecl_current_package(),
-                                      &intern_flag)!=x
-		   || intern_flag == 0)
+	} else if ((forced_package = forced_print_package(package))
+		   || ecl_find_symbol(name, ecl_current_package(), &intern_flag) != x
+		   || (intern_flag == 0))
 	{
 		cl_object name = package->pack.name;
 		write_symbol_string(name, readtable->readtable.read_case,
@@ -190,8 +197,7 @@ _ecl_write_symbol(cl_object x, cl_object stream)
 				    needs_to_be_escaped(name, readtable, print_case));
 		if (ecl_find_symbol(ecl_symbol_name(x), package, &intern_flag) != x)
 			ecl_internal_error("can't print symbol");
-		if ((print_package != Cnil && package != print_package)
-		    || intern_flag == INTERNAL) {
+		if (intern_flag == INTERNAL || forced_package) {
 			writestr_stream("::", stream);
 		} else if (intern_flag == EXTERNAL) {
 			ecl_write_char(':', stream);

@@ -13,6 +13,75 @@
 
 (in-package "COMPILER")
 
+(eval-when (:compile-toplevel :execute)
+(defconstant +all-c1-forms+
+  '((LOCATION		loc :pure :single-valued)
+    (VAR		var :single-valued)
+    (SETQ		var value-c1form :side-effects)
+    (PSETQ		var-list value-c1form-list :side-effects)
+    (BLOCK		blk-var progn-c1form :pure)
+    (PROGN		body :pure)
+    (PROGV		symbols values form :side-effects)
+    (TAGBODY		tag-var tag-body :pure)
+    (RETURN-FROM	blk-var return-type value variable-or-nil :side-effects)
+    (FUNCALL		fun-value (arg-value*) :side-effects)
+    (CALL-LOCAL		obj-fun (arg-value*) :side-effects)
+    (CALL-GLOBAL	fun-name (arg-value*))
+    (CATCH		catch-value body :side-effects)
+    (UNWIND-PROTECT	protected-c1form body :side-effects)
+    (THROW		catch-value output-value :side-effects)
+    (GO			tag-var return-type :side-effects)
+    (C-INLINE		(arg-c1form*)
+			(arg-type-symbol*)
+			output-rep-type
+			c-expression-string
+			side-effects-p
+			one-liner-p)
+    (LOCALS		local-fun-list body labels-p :pure)
+    (IF			fmla-c1form true-c1form false-c1form :pure)
+    (FMLA-NOT		fmla-c1form :pure)
+    (FMLA-AND		* :pure)
+    (FMLA-OR		* :pure)
+    (LAMBDA		lambda-list doc body-c1form)
+    (LET*		vars-list var-init-c1form-list decl-body-c1form :pure)
+    (VALUES		values-c1form-list :pure)
+    (MULTIPLE-VALUE-SETQ vars-list values-c1form-list :side-effects)
+    (MULTIPLE-VALUE-BIND vars-list init-c1form body :pure)
+    (COMPILER-LET	symbols values body)
+    (FUNCTION		(GLOBAL/CLOSURE) lambda-form fun-object :single-valued)
+    (RPLACD		(dest-c1form value-c1form) :side-effects)
+
+    (SI:STRUCTURE-REF	struct-c1form type-name slot-index (:UNSAFE/NIL) :pure)
+    (SI:STRUCTURE-SET	struct-c1form type-name slot-index value-c1form :side-effects)
+
+    (WITH-STACK		body :side-effects)
+    (STACK-PUSH-VALUES value-c1form push-statement-c1form :side-effects)
+
+    (ORDINARY		c1form :pure)
+    (LOAD-TIME-VALUE	dest-loc value-c1form :pure :single-valued)
+    (SI:FSET		function-object vv-loc macro-p pprint-p lambda-form
+			:side-effects)
+    (MAKE-FORM		vv-loc value-c1form :side-effects)
+    (INIT-FORM		vv-loc value-c1form :side-effects)
+    (EXT:COMPILER-TYPECASE var expressions)
+    (CHECKED-VALUE  type value-c1form let-form))))
+
+(defconstant +c1-form-hash+
+  #.(loop with hash = (make-hash-table :size 128 :test #'eq)
+       for (name . rest) in +all-c1-forms+
+       for length = (if (member '* rest) nil (length rest))
+       for side-effects = (if (member :side-effects rest)
+                              (progn (and length (decf length)) t)
+                              nil)
+       for movable = (if (member :pure rest)
+                         (progn (and length (decf length)) t)
+                         nil)
+       for single-valued = (if (member :single-valued rest)
+                               (progn (and length (decf length)) t)
+                               nil)
+       do (setf (gethash name hash) (list length side-effects movable single-valued))
+       finally (return hash)))
+
 (defconstant +c1-dispatch-alist+
   '((block . c1block) ; c1special
     (return-from . c1return-from) ; c1special
@@ -46,11 +115,12 @@
     (multiple-value-bind . c1multiple-value-bind) ; c1
 
     (ext:compiler-typecase . c1compiler-typecase) ; c1special
-    (c::compiler-typecases . c1compiler-typecases) ; c1special
+    (checked-value . c1checked-value) ; c1special
 
     (quote . c1quote) ; c1special
     (function . c1function) ; c1special
     (the . c1the) ; c1special
+    (ext:truly-the . c1truly-the) ; c1special
     (eval-when . c1eval-when) ; c1special
     (declare . c1declare) ; c1special
     (ext:compiler-let . c1compiler-let) ; c1special
@@ -69,16 +139,10 @@
     (progv . c1progv) ; c1special
     (psetq . c1psetq) ; c1special
 
-    (sys:structure-ref . c1structure-ref) ; c1
-    (sys:structure-set . c1structure-set) ; c1
-
     (load-time-value . c1load-time-value) ; c1
     (si:fset . c1fset) ; c1
 
-    (princ . c1princ) ; c1
-    (terpri . c1terpri) ; c1
     (apply . c1apply) ; c1
-    (rplacd . c1rplacd) ; c1
     ))
 
 (defconstant +t1-dispatch-alist+
@@ -102,6 +166,8 @@
     (value0 . set-value0-loc)
     (return . set-return-loc)
     (trash . set-trash-loc)
+
+    (the . set-the-loc)
     ))
 
 (defconstant +wt-loc-dispatch-alist+
@@ -113,9 +179,6 @@
 
     (temp . wt-temp)
     (lcl . wt-lcl-loc)
-    (car . wt-car)
-    (cdr . wt-cdr)
-    (cadr . wt-cadr)
     (fixnum-value . wt-number)
     (long-float-value . wt-number)
     (double-float-value . wt-number)
@@ -124,6 +187,7 @@
     (character-value . wt-character)
     (value . wt-value)
     (keyvars . wt-keyvars)
+    (the . wt-the)
 
     (fdefinition . wt-fdefinition)
     (make-cclosure . wt-make-closure)
@@ -159,8 +223,6 @@
 
     (let* . c2let*)
 
-    (multiple-value-call . c2multiple-value-call) ; c2
-    (multiple-value-prog1 . c2multiple-value-prog1) ; c2
     (values . c2values) ; c2
     (multiple-value-setq . c2multiple-value-setq) ; c2
     (multiple-value-bind . c2multiple-value-bind) ; c2
@@ -174,19 +236,16 @@
     (tagbody . c2tagbody) ; c2
     (go . c2go) ; c2
 
-    (var . c2var) ; c2
-    (location . c2location) ; c2
+    (var . c2var/location) ; c2
+    (location . c2var/location) ; c2
     (setq . c2setq) ; c2
     (progv . c2progv) ; c2
     (psetq . c2psetq) ; c2
 
     (si:fset . c2fset) ; c2
 
-    (sys:structure-ref . c2structure-ref) ; c2
-    (sys:structure-set . c2structure-set) ; c2
-
-    (c2princ . c2princ) ; c2
-    (rplacd . c2rplacd) ; c2
+    (ext:compiler-typecase . c2compiler-typecase)
+    (checked-value . c2checked-value)
     ))
 
 (defconstant +t2-dispatch-alist+
@@ -215,12 +274,14 @@
     (multiple-value-bind . p1multiple-value-bind)
     (multiple-value-setq . p1multiple-value-setq)
     (progn . p1progn)
+    (progv . p1progv)
     (setq . p1setq)
+    (psetq . p1psetq)
     (tagbody . p1tagbody)
     (go . p1go)
     (unwind-protect . p1unwind-protect)
     (ordinary . p1ordinary)
-    (si::fset . p1fset)
+    (sys::fset . p1fset)
     (var . p1var)
     (values . p1values)
     (location . p1trivial) ;; Some of these can be improved
@@ -228,6 +289,12 @@
     (function . p1trivial)
     (funcall . p1trivial)
     (load-time-value . p1trivial)
+    (make-form . p1trivial)
+    (init-form . p1trivial)
+    (c::with-stack . p1with-stack)
+    (c::stack-push-values . p1stack-push-values)
+    (ext:compiler-typecase . p1compiler-typecase)
+    (checked-value . p1checked-value)
     ))
 
 (defun make-dispatch-table (alist)

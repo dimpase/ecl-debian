@@ -119,10 +119,13 @@
 #define ecl_int16_t short
 #define ecl_uint32_t unsigned int
 #define ecl_int32_t int
-/* #undef ecl_uint64_t */
-/* #undef ecl_int64_t */
-/* #undef ecl_long_long_t */
-/* #undef ecl_ulong_long_t */
+
+#ifdef _WIN64
+# define ecl_uint64_t unsigned __int64
+# define ecl_int64_t __int64
+# define ecl_long_long_t long long
+# define ecl_ulong_long_t unsigned long long
+#endif
 
 /*
  * C TYPES AND SYSTEM LIMITS
@@ -137,7 +140,7 @@
  */
 #ifdef _M_X64
 #define ECL_INT_BITS		64
-#define ECL_LONG_BITS		64
+#define ECL_LONG_BITS		32
 #define FIXNUM_BITS		64
 #define MOST_POSITIVE_FIXNUM	((cl_fixnum)2305843009213693951LL)
 #define MOST_NEGATIVE_FIXNUM	((cl_fixnum)-2305843009213693952LL)
@@ -163,6 +166,8 @@ typedef unsigned int cl_hashkey;
 #else
 #define	CHAR_CODE_LIMIT	256	/*  unicode character code limit  */
 #endif
+typedef int ecl_character;
+typedef unsigned char ecl_base_char;
 
 /*
  * Array limits
@@ -365,7 +370,7 @@ typedef unsigned int uint32_t;
 /* #undef HAVE_UNISTD_H */
 /* #undef HAVE_SYS_WAIT_H */
 /* size of long long            					*/
-/* #undef ECL_LONG_LONG_BITS */
+#define ECL_LONG_LONG_BITS 64
 
 /*
  * we do not manage to get proper signal handling of floating point

@@ -149,6 +149,7 @@
   lambda-list		;;; List of (requireds optionals rest-var keywords-p
 		        ;;;          keywords allow-other-keys-p)
   lambda		;;; Lambda c1-form for this function.
+  lambda-expression     ;;; LAMBDA or LAMBDA-BLOCK expression
   (minarg 0)		;;; Min. number arguments that the function receives.
   (maxarg call-arguments-limit)
 			;;; Max. number arguments that the function receives.
@@ -229,6 +230,7 @@
   return-type		;;; Lisp type for the output
   exact-return-type	;;; Only use this expansion when the output is
 			;;; declared to have a subtype of RETURN-TYPE
+  multiple-values       ;;; Works with all destinations, including VALUES / RETURN
   expansion		;;; C template containing the expansion
   one-liner		;;; Whether the expansion spans more than one line
 )

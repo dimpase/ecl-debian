@@ -39,7 +39,6 @@
     forms))
 
 (defun expand-typep (form object type env)
-  (declare (si::c-local))
   ;; This function is reponsible for expanding (TYPEP object type)
   ;; forms into a reasonable set of system calls. When it fails to
   ;; match the compiler constraints on speed and space, it simply
@@ -48,12 +47,17 @@
   ;; step. Otherwise the compiler macro will enter an infinite loop.
   (let* ((orig-type type)
 	 aux function
-	 first rest)
+	 first rest function)
     (cond ((not (and (constantp type) (setf type (cmp-eval type)) t))
 	   form)
 	  ;; Type is not known
 	  ((not (known-type-p type))
 	   form)
+	  ;; Variable declared with a given type
+	  ((and (symbolp object)
+		(setf aux (cmp-env-search-var object env))
+		(subtypep (var-type aux) type))
+	   t)
 	  ;; Simple ones
 	  ((subtypep 'T type) T)
 	  ((eq type 'NIL) NIL)
@@ -62,9 +66,7 @@
 	  ;; safety, we will simply assume the user knows what she's doing.
 	  ((subtypep type NIL)
 	   (cmpwarn "TYPEP form contains an empty type ~S and cannot be optimized" type)
-	   (if (policy-assume-no-errors)
-	       NIL
-	       form))
+	   form)
 	  ;;
 	  ;; There exists a function which checks for this type?
 	  ((setf function (get-sysprop type 'si::type-predicate))
@@ -95,12 +97,12 @@
 	  ;;
 	  ;; CONS types. They must be checked _before_ sequence types. We
 	  ;; do not produce optimized forms because they can be recursive.
-	  ((and (consp type) (eq (first type) 'CONS))
+	  ((and (consp type) (eq first 'CONS))
 	   form)
 	  ;;
 	  ;; The type denotes a known class and we can check it
 	  #+clos
-	  ((setf aux (find-class type nil))
+	  ((and (symbolp type) (setf aux (find-class type nil)))
 	   `(si::of-class-p ,object ',type))
 	  ;;
 	  ;; There are no other atomic types to optimize
@@ -108,7 +110,10 @@
 	   form)
 	  ;;
 	  ;; (TYPEP o '(NOT t)) => (NOT (TYPEP o 't))
-	  ((eq first 'NOT)
+	  ((progn
+	     (setf rest (rest type)
+		   first (first type))
+	     (eq first 'NOT))
 	   `(not (typep ,object ',(first rest))))
 	  ;;
 	  ;; (TYPEP o '(AND t1 t2 ...)) => (AND (TYPEP o 't1) (TYPEP o 't2) ...)
@@ -127,16 +132,21 @@
 	  ;; (INTEGER * *), etc
 	  ((member first '(INTEGER RATIONAL FLOAT REAL SINGLE-FLOAT
 			   DOUBLE-FLOAT #+long-float LONG-FLOAT))
-	   (let ((var (gensym)))
+	   (let ((var1 (gensym))
+		 (var2 (gensym)))
 	     ;; Small optimization: it is easier to check for fixnum
 	     ;; than for integer. Use it when possible.
 	     (when (and (eq first 'integer)
 			(subtypep type 'fixnum))
 	       (setf first 'fixnum))
-	     `(LET ((,var ,object))
-                (declare (:read-only ,var))
-		(AND (TYPEP ,var ',first)
-		     ,@(expand-in-interval-p `(the ,first ,var) rest)))))
+	     `(LET ((,var1 ,object)
+		    (,var2 ,(coerce 0 first)))
+                (declare (:read-only ,var1)
+			 (type ,first ,var2))
+		(AND (TYPEP ,var1 ',first)
+		     (locally (declare (optimize (speed 3) (safety 0) (space 0)))
+		       (setf ,var2 (truly-the ,first ,var1))
+		       (AND ,@(expand-in-interval-p var2 rest)))))))
           ;;
           ;; (SATISFIES predicate)
 	  ((and (eq first 'SATISFIES)
@@ -145,9 +155,7 @@
 	   `(,function ,object))
 	  ;;
 	  ;; Complex types with arguments.
-	  ((setf rest (rest type)
-		 first (first type)
-		 function (get-sysprop first 'SI::DEFTYPE-DEFINITION))
+	  ((setf function (get-sysprop first 'SI::DEFTYPE-DEFINITION))
 	   (expand-typep form object `',(apply function rest) env))
 	  (t
 	   form))))
@@ -162,25 +170,26 @@
 ;;; other possible type checks.
 ;;;
 
-(eval-when (:load-toplevel)
-(defmacro dolist ((var expression &optional output-form) &body body &environment env)
+(define-compiler-macro dolist
+    ((var expression &optional output-form) &body body &environment env)
   (multiple-value-bind (declarations body)
       (si:process-declarations body nil)
     (let* ((list-var (gensym))
 	   (typed-var (if (policy-assume-no-errors env)
 			  list-var
-			  `(the cons ,list-var))))
+			  `(truly-the cons ,list-var))))
       `(block nil
-	 (let* ((,list-var ,expression)
-		,var)
-	   (declare ,@declarations)
+	 (let* ((,list-var ,expression))
 	   (si::while ,list-var
-	      (setq ,var (first ,typed-var))
-	      ,@body
+	      (let ((,var (first ,typed-var)))
+		(declare ,@declarations)
+		(tagbody
+		   ,@body))
 	      (setq ,list-var (rest ,typed-var)))
-	   ,(when output-form `(setq ,var nil))
-	   ,output-form)))))
-)
+	   ,(when output-form
+	      `(let ((,var nil))
+		 (declare ,@declarations)
+		 ,output-form)))))))
 
 ;;;
 ;;; COERCE
@@ -242,9 +251,8 @@
 	  ;;
 	  ;; Complex types defined with DEFTYPE.
 	  ((and (atom type)
-		(get-sysprop type 'SI::DEFTYPE-DEFINITION)
-		(setq function (get-sysprop type 'SI::DEFTYPE-DEFINITION)))
-	   (expand-coerce form value `',(funcall function) env))
+		(setq first (get-sysprop type 'SI::DEFTYPE-DEFINITION)))
+	   (expand-coerce form value `',(funcall first) env))
 	  ;;
 	  ;; CONS types are not coercible.
 	  ((and (consp type)

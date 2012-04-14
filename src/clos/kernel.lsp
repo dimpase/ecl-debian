@@ -10,7 +10,7 @@
 ;;;;    See file '../Copyright' for full details.
 
 (defpackage "CLOS"
-  (:use "CL")
+  (:use "CL" "EXT")
   (:import-from "SI" "UNBOUND" "GET-SYSPROP" "PUT-SYSPROP" "REM-SYSPROP"
 		"SIMPLE-PROGRAM-ERROR"))
 
@@ -162,6 +162,7 @@
     (warn "Ignoring class definition for ~S" class)))
 
 (defun setf-find-class (new-value name &optional errorp env)
+  (declare (ignore errorp env))
   (let ((old-class (find-class name nil)))
     (cond
       ((and old-class
@@ -245,6 +246,35 @@
 	(set-funcallable-instance-function gfun t)
 	(setf (fdefinition name) gfun)
 	gfun)))
+
+(defun set-generic-function-dispatch (gfun)
+  (flet ((gf-type (gfun)
+	   (loop with common-class = nil
+	      for method in (generic-function-methods gfun)
+	      for class = (si::instance-class method)
+	      for specializers = (method-specializers method)
+	      do (cond ((null common-class)
+			(setf common-class class))
+		       ((not (eq common-class class))
+			(return t)))
+	      do (loop for spec in specializers
+		    unless (or (eq spec t)
+			       (null spec)
+			       (eq spec +the-t-class+)
+			       (and (si::instancep spec)
+				    (eq (si::instance-class spec)
+					+the-standard-class+)))
+		    do (return-from gf-type t))
+	      finally (cond ((null class)
+			     (return t))
+			    ((eq class (find-class 'standard-reader-method nil))
+			     (return 'standard-reader-method))
+			    ((eq class (find-class 'standard-writer-method nil))
+			     (return 'standard-writer-method))
+			    (t
+			     (return t))))))
+    (set-funcallable-instance-function gfun (gf-type gfun))))
+		    
 
 
 ;;; ----------------------------------------------------------------------
@@ -401,7 +431,6 @@
 	    (nupdate-spec-how-list spec-how-list (method-specializers method) gf)))
     (setf (generic-function-spec-list gf)
 	  (loop for type in spec-how-list
-		for name in (generic-function-lambda-list gf)
 		for i from 0
 		when type collect (cons type i)))
     (let* ((g-f-l-l (generic-function-lambda-list gf)))

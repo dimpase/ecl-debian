@@ -32,6 +32,7 @@
     form))
 
 (defun default-init (var &optional warn)
+  (declare (ignore warn))
   (let ((new-value (cdr (assoc (var-type var)
 			       '((fixnum . 0) (character . #\space)
                                  #+long-float (long-float 0.0L1)
@@ -63,6 +64,7 @@
         (multiple-value-bind (req-types opt-types rest-flag key-flag
                                         key-types allow-other-keys)
             (si::process-lambda-list arg-types 'ftype)
+	  (declare (ignore rest-flag key-flag allow-other-keys))
           (nconc 
            (loop for var in requireds
               for type in (rest req-types)
@@ -128,8 +130,8 @@
             ;; We remove assumption about types, which will be checked
             ;; later due to this assertion...
             (setf (var-type var) t
-                  checks (list* `(assert-type-if-known ,name ,type) checks)
-                  new-auxs (list* `(the ,type ,name) name new-auxs))
+                  checks (list* `(type-assertion ,name ,type) checks)
+                  new-auxs (list* `(truly-the ,type ,name) name new-auxs))
             ;; Or simply enforce the variable's type.
             (setf (var-type var) (type-and (var-type var) type)))
      finally
@@ -174,10 +176,27 @@
         value
         (with-clean-symbols (%value)
           `(let* ((%value ,value))
-             ,(type-error-check '%value type)
-             (the ,type %value))))))
+             ,(type-error-check '%value (replace-invalid-types type))
+             (truly-the ,type %value))))))
+
+(defun replace-invalid-types (type)
+  ;; Some types which are acceptable in DECLARE are not
+  ;; accepted by TYPEP. We thus simplify the type replacing
+  ;; the offending ones by more general types. No problem
+  ;; doing this since the type checks are optional.
+  (if (atom type)
+      type
+      (let ((name (car type)))
+	(case name
+	  (FUNCTION 'FUNCTION)
+	  ((OR AND NOT CONS)
+	   (list* name (mapcar #'replace-invalid-types (rest type))))
+	  (otherwise
+	   type)))))
 
 (defmacro optional-type-check (&whole whole value type &environment env)
+  (declare (ignore env))
   (if (policy-assume-right-type)
       value
       `(assert-type-if-known ,value ,type)))
+

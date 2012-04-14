@@ -31,7 +31,7 @@ ecl_allocate_instance(cl_object clas, cl_index size)
 cl_object
 si_allocate_raw_instance(cl_object orig, cl_object clas, cl_object size)
 {
-	cl_object output = ecl_allocate_instance(clas, fixnnint(size));
+	cl_object output = ecl_allocate_instance(clas, ecl_to_size(size));
 	if (orig == Cnil) {
 		orig = output;
 	} else {
@@ -79,7 +79,7 @@ ecl_instance_ref(cl_object x, cl_fixnum i)
 	if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_nth_arg(@[si::instance-ref], 1, x, @[ext::instance]);
 	if (ecl_unlikely(i < 0 || i >= (cl_fixnum)x->instance.length))
-	        FEtype_error_index(x, MAKE_FIXNUM(i));
+	        FEtype_error_index(x, i);
 	return(x->instance.slots[i]);
 }
 
@@ -118,7 +118,7 @@ ecl_instance_set(cl_object x, cl_fixnum i, cl_object v)
         if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_nth_arg(@[si::instance-set], 1, x, @[ext::instance]);
 	if (ecl_unlikely(i >= x->instance.length || i < 0))
-	        FEtype_error_index(x, MAKE_FIXNUM(i));
+	        FEtype_error_index(x, i);
 	x->instance.slots[i] = v;
 	return(v);
 }
@@ -140,7 +140,7 @@ si_instance_set(cl_object x, cl_object index, cl_object value)
 cl_object
 si_instancep(cl_object x)
 {
-	@(return (ECL_INSTANCEP(x) ? Ct : Cnil))
+	@(return (ECL_INSTANCEP(x) ? MAKE_FIXNUM(x->instance.length) : Cnil))
 }
 
 cl_object
@@ -233,6 +233,7 @@ enum ecl_built_in_classes {
 	ECL_BUILTIN_SYNONYM_STREAM,
 	ECL_BUILTIN_BROADCAST_STREAM,
 	ECL_BUILTIN_CONCATENATED_STREAM,
+	ECL_BUILTIN_SEQUENCE_STREAM,
 	ECL_BUILTIN_CHARACTER,
 	ECL_BUILTIN_NUMBER,
 	ECL_BUILTIN_REAL,
@@ -273,12 +274,10 @@ enum ecl_built_in_classes {
 cl_object
 cl_class_of(cl_object x)
 {
-	cl_env_ptr the_env = ecl_process_env();
 	size_t index;
-	cl_type tp = type_of(x);
-	if (tp == t_instance)
-		@(return CLASS_OF(x));
-	switch (tp) {
+	switch (type_of(x)) {
+	case t_instance:
+		@(return CLASS_OF(x))
 	case t_fixnum:
 	case t_bignum:
 		index = ECL_BUILTIN_INTEGER; break;
@@ -327,10 +326,12 @@ cl_class_of(cl_object x)
 		case smm_synonym:	index = ECL_BUILTIN_SYNONYM_STREAM; break;
 		case smm_broadcast:	index = ECL_BUILTIN_BROADCAST_STREAM; break;
 		case smm_concatenated:	index = ECL_BUILTIN_CONCATENATED_STREAM; break;
-		case smm_two_way:	index =  ECL_BUILTIN_TWO_WAY_STREAM; break;
+		case smm_two_way:	index = ECL_BUILTIN_TWO_WAY_STREAM; break;
 		case smm_string_input:
 		case smm_string_output:	index = ECL_BUILTIN_STRING_STREAM; break;
 		case smm_echo:		index = ECL_BUILTIN_ECHO_STREAM; break;
+                case smm_sequence_input:
+                case smm_sequence_output: index = ECL_BUILTIN_SEQUENCE_STREAM; break;
 		default:		index = ECL_BUILTIN_FILE_STREAM; break;
 		}
 		break;
@@ -374,14 +375,13 @@ cl_class_of(cl_object x)
 		ecl_internal_error("not a lisp data object");
 	}
 	{
-		cl_object output;
-		x = ECL_SYM_VAL(the_env, @'clos::*builtin-classes*');
-		/* We have to be careful because *builtin-classes* might be empty! */
-		if (Null(x)) {
-			output = cl_find_class(1,@'t');
-		} else {
-			output = ecl_aref(x, index);
-		}
+		/* We have to be careful because +builtin-classes+ might be empty! */
+		/* In any case, since +builtin-classes+ is a constant, we may
+		 * optimize the slot access */
+		cl_object v = @'clos::+builtin-classes+'->symbol.value;
+		cl_object output = Null(v)?
+			cl_find_class(1,@'t') :
+			v->vector.self.t[index];
 		@(return output)
 	}
 }

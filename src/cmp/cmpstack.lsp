@@ -35,7 +35,8 @@
 		    :type (c1form-type body)
 		    :args body)))
 
-(defun c2with-stack (body)
+(defun c2with-stack (c1form body)
+  (declare (ignore c1form))
   (let* ((new-destination (tmp-destination *destination*))
 	 (*temp* *temp*))
     (wt-nl "{ struct ecl_stack_frame _ecl_inner_frame_aux;")
@@ -47,14 +48,14 @@
     (unwind-exit new-destination)))
 
 (defun c1innermost-stack-frame (args)
-  (c1expr `(c-inline () () :object ,+ecl-stack-frame-variable+
-	    :one-liner t :side-effects nil)))
+  `(c-inline () () :object ,+ecl-stack-frame-variable+
+	     :one-liner t :side-effects nil))
 
 (defun c1stack-push (args)
-  (c1expr `(progn
-	     (c-inline ,args (t t) :void "ecl_stack_frame_push(#0,#1)"
-		       :one-liner t :side-effects t)
-	     1)))
+  `(progn
+     (c-inline ,args (t t) :void "ecl_stack_frame_push(#0,#1)"
+	       :one-liner t :side-effects t)
+     1))
 
 (defun c1stack-push-values (args)
   (let ((frame-var (pop args))
@@ -65,17 +66,18 @@
 		  (c1expr `(c-inline (,frame-var) (t) :void "ecl_stack_frame_push_values(#0)"
 				     :one-liner t :side-effects t)))))
 
-(defun c2stack-push-values (form push-statement)
+(defun c2stack-push-values (c1form form push-statement)
+  (declare (ignore c1form))
   (let ((*destination* 'VALUES))
     (c2expr* form))
   (c2expr push-statement))
 
 (defun c1stack-pop (args)
-  (c1expr `(c-inline ,args (t) (values &rest t)
-		     "cl_env_copy->values[0]=ecl_stack_frame_pop_values(#0);"
-		     :one-liner nil :side-effects t)))
+  `(c-inline ,args (t) (values &rest t)
+	     "cl_env_copy->values[0]=ecl_stack_frame_pop_values(#0);"
+	     :one-liner nil :side-effects t))
 
 (defun c1apply-from-stack-frame (args)
-  (c1expr `(c-inline ,args (t t) (values &rest t)
-		     "cl_env_copy->values[0]=ecl_apply_from_stack_frame(#0,#1);"
-		     :one-liner nil :side-effects t)))
+  `(c-inline ,args (t t) (values &rest t)
+	     "cl_env_copy->values[0]=ecl_apply_from_stack_frame(#0,#1);"
+	     :one-liner nil :side-effects t))

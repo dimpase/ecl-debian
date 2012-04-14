@@ -190,7 +190,7 @@
 ;; and it outputs an anonymous function which is the effective method.
 ;;
 
-(defvar *method-combinations* '())
+(defparameter *method-combinations* '())
 
 (defun install-method-combination (name function)
   (setf (getf *method-combinations* name) function)
@@ -203,6 +203,7 @@
      ,name (&optional (order :MOST-SPECIFIC-FIRST))
      ((around (:AROUND))
       (principal (,name) :REQUIRED t))
+     ,documentation
      (let ((main-effective-method
 	    `(,',operator ,@(mapcar #'(lambda (x) `(CALL-METHOD ,x NIL))
 				    (if (eql order :MOST-SPECIFIC-LAST)
@@ -267,7 +268,12 @@
 	    (:most-specific-first
 	     (push `(setf ,group-name (nreverse ,group-name)) group-after))
 	    (:most-specific-last)
-	    (otherwise (syntax-error)))))
+	    (otherwise
+             (let ((order-var (gensym)))
+               (setf group-names (append group-names (list (list order-var order)))
+                     group-after (list* `(when (eq ,order-var :most-specific-first)
+                                           (setf ,group-name (nreverse ,group-name)))
+                                        group-after)))))))
       `(install-method-combination ',name
 	  (ext::lambda-block ,name (,generic-function .methods-list. ,@lambda-list)
 	    (let (,@group-names)
@@ -301,7 +307,6 @@
 ;;;
 
 (defun compute-effective-method (gf method-combination applicable-methods)
-  (declare (ignore method-combination-type method-combination-args))
   (let* ((method-combination-name (car method-combination))
 	 (method-combination-args (cdr method-combination)))
     (if (eq method-combination-name 'STANDARD)

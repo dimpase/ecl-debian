@@ -164,7 +164,7 @@
       (write-byte (length mapping-array) s)
       (write-sequence mapping-array s))))
 
-(defun copy-file (in out)
+(defun copy-encoding-file (in out)
   (let ((buffer (make-array 8192 :element-type '(unsigned-byte 8))))
     (format t "~%;;; Copying ~A to ~A" in out)
     (with-open-file (sin in :direction :input :element-type '(unsigned-byte 8))

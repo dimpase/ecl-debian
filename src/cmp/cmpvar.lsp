@@ -125,7 +125,7 @@
 
 ;;;  Bootstrap problem: proclaim needs this function:
 (defun sch-global (name)
-  (dolist (var *undefined-vars* nil)
+  (dolist (var *undefined-vars*)
     (declare (type var var))
     (when (eq (var-name var) name)
       (return-from sch-global var))))
@@ -138,12 +138,29 @@
   (member name *global-vars* :test #'eq :key #'var-name))
 
 (defun special-variable-p (name)
+  "Return true if NAME is associated to a special variable in the lexical environment."
   (or (si::specialp name)
       (check-global name)
       (let ((v (cmp-env-search-var name *cmp-env-root*)))
         ;; Fixme! Revise the declamation code to ensure whether
         ;; we also have to consider 'GLOBAL here.
         (and v (eq (var-kind v) 'SPECIAL)))))
+
+(defun local-variable-p (name &optional (env *cmp-env*))
+  (let ((record (cmp-env-search-var name env)))
+    (and record (var-p record))))
+
+(defun symbol-macro-p (name &optional (env *cmp-env*))
+  (let ((record (cmp-env-search-var name env)))
+    (and record (not (var-p record)))))
+
+(defun variable-type-in-env (name &optional (env *cmp-env*))
+  (multiple-value-bind (var ccb clb unw)
+      (cmp-env-search-var name)
+    (cond ((var-p var)
+	   (var-type var))
+	  ((get-sysprop name 'CMP-TYPE))
+	  (t))))
 
 ;;;
 ;;; Check if the symbol has a symbol macro
@@ -245,21 +262,23 @@
     (or (eq kind 'global)
         (eq kind 'special))))
 
-(defun c2var (vref) (unwind-exit vref))
+(defun c2var/location (c1form loc)
+  #+(or)
+  (unwind-exit loc)
+  (unwind-exit (precise-loc-type loc (c1form-primary-type c1form))))
 
-(defun c2location (loc) (unwind-exit loc))
-
-(defun wt-var (var &aux (var-loc (var-loc var))) ; ccb
+(defun wt-var (var)
   (declare (type var var))
-  (case (var-kind var)
-    (CLOSURE (wt-env var-loc))
-    (LEXICAL (wt-lex var-loc))
-    ((SPECIAL GLOBAL)
-     (if (safe-compile)
-	 (wt "ecl_symbol_value(" var-loc ")")
-	 (wt "ECL_SYM_VAL(cl_env_copy," var-loc ")")))
-    (t (wt var-loc))
-    ))
+  (let ((var-loc (var-loc var)))
+    (case (var-kind var)
+      (CLOSURE (wt-env var-loc))
+      (LEXICAL (wt-lex var-loc))
+      ((SPECIAL GLOBAL)
+       (if (safe-compile)
+	   (wt "ecl_symbol_value(" var-loc ")")
+	   (wt "ECL_SYM_VAL(cl_env_copy," var-loc ")")))
+      (t (wt var-loc))
+      )))
 
 (defun var-rep-type (var)
   (case (var-kind var)
@@ -267,28 +286,28 @@
     (t (var-kind var))))
 
 (defun set-var (loc var &aux (var-loc (var-loc var))) ;  ccb
-  (if (var-p var)
-    (case (var-kind var)
-      (CLOSURE
-       (wt-nl)(wt-env var-loc)(wt "= ")
-       (wt-coerce-loc (var-rep-type var) loc)
-       (wt #\;))
-      (LEXICAL
-       (wt-nl)(wt-lex var-loc)(wt "= ")
-       (wt-coerce-loc (var-rep-type var) loc)
-       (wt #\;))
-      ((SPECIAL GLOBAL)
-       (if (safe-compile)
-	   (wt-nl "cl_set(" var-loc ",")
-	   (wt-nl "ECL_SETQ(cl_env_copy," var-loc ","))
-       (wt-coerce-loc (var-rep-type var) loc)
-       (wt ");"))
-      (t
-       (wt-nl var-loc "= ")
-       (wt-coerce-loc (var-rep-type var) loc)
-       (wt #\;))
-    )
-    (baboon)))
+  (unless (var-p var)
+    (baboon))
+  (case (var-kind var)
+    (CLOSURE
+     (wt-nl)(wt-env var-loc)(wt "= ")
+     (wt-coerce-loc (var-rep-type var) loc)
+     (wt #\;))
+    (LEXICAL
+     (wt-nl)(wt-lex var-loc)(wt "= ")
+     (wt-coerce-loc (var-rep-type var) loc)
+     (wt #\;))
+    ((SPECIAL GLOBAL)
+     (if (safe-compile)
+	 (wt-nl "cl_set(" var-loc ",")
+	 (wt-nl "ECL_SETQ(cl_env_copy," var-loc ","))
+     (wt-coerce-loc (var-rep-type var) loc)
+     (wt ");"))
+    (t
+     (wt-nl var-loc "= ")
+     (wt-coerce-loc (var-rep-type var) loc)
+     (wt #\;))
+    ))
 
 (defun wt-lex (lex)
   (if (consp lex)
@@ -323,42 +342,38 @@
 
 (defun c1setq (args)
   (let ((l (length args)))
-    (declare (fixnum l))
     (cmpck (oddp l) "SETQ requires an even number of arguments.")
     (cond ((zerop l) (c1nil))
 	  ((= l 2) (c1setq1 (first args) (second args)))
 	  (t
-	   (do ((pairs args (cddr pairs))
-		(forms nil))
-	       ((endp pairs)
-		(make-c1form* 'PROGN
-			      :type (c1form-type (first forms))
-			      :args (nreverse forms)))
-             (push (c1setq1 (first pairs) (second pairs)) forms)
-             )))))
+	   (c1progn
+	    (loop while args
+	       collect `(setq ,(pop args) ,(pop args))))))))
 
 (defun c1setq1 (name form)
   (cmpck (not (symbolp name)) "The variable ~s is not a symbol." name)
   (cmpck (constantp name) "The constant ~s is being assigned a value." name)
   (setq name (chk-symbol-macrolet name))
-  (unless (symbolp name)
-    (return-from c1setq1 (c1expr `(setf ,name ,form))))
-  (let* ((name1 (c1vref name))
-	 (form1 (c1expr form))
-	 (type (type-and (var-type name1) (c1form-primary-type form1))))
-    (unless type
-      (cmpwarn "Type mismatch between ~s and ~s." name form)
-      (setq type T))
-    ;; Is this justified????
-    #+nil(setf (c1form-type form1) type)
-    (add-to-set-nodes name1 (make-c1form* 'SETQ :type type :args name1 form1))))
+  (if (symbolp name)
+      (let* ((name (c1vref name))
+	     (type (var-type name))
+	     (form (c1expr (if (trivial-type-p type)
+			       form
+			       `(checked-value ,type ,form)))))
+	(add-to-set-nodes name (make-c1form* 'SETQ
+					     :type (c1form-type form)
+					     :args name form)))
+      `(setf ,name ,form)))
 
-(defun c2setq (vref form)
-  (let ((*destination* vref)) (c2expr* form))
+(defun c2setq (c1form vref form)
+  (declare (ignore c1form))
+  ;; First comes the assignement
+  (let ((*destination* vref))
+    (c2expr* form))
+  ;; Then the returned value
   (if (eq (c1form-name form) 'LOCATION)
-    (c2location (c1form-arg 0 form))
-    (unwind-exit vref))
-  )
+      (c2var/location form (c1form-arg 0 form))
+      (unwind-exit vref)))
 
 (defun c1progv (args)
   (check-args-number 'PROGV args 2)
@@ -368,7 +383,8 @@
     (make-c1form* 'PROGV :type (c1form-type forms)
 		  :args symbols values forms)))
 
-(defun c2progv (symbols values body)
+(defun c2progv (c1form symbols values body)
+  (declare (ignore c1form))
   (let* ((*lcl* *lcl*)
          (lcl (next-lcl))
          (sym-loc (make-lcl-var))
@@ -383,41 +399,43 @@
     ))
 
 (defun c1psetq (old-args &aux (args nil) (use-psetf nil))
-  (do (var (l old-args (cddr l)))
+  ;; A first pass ensures that none of the assigned locations is
+  ;; a SETF form. Otherwise we have to resort to PSETF.
+  (do ((l old-args))
       ((endp l))
-      (declare (object l))
-      (setq var (car l))
+    (let ((var (pop l)))
       (cmpck (not (symbolp var))
-             "The variable ~s is not a symbol." var)
-      (cmpck (endp (cdr l))
-             "No form was given for the value of ~s." var)
+	     "The variable ~s is not a symbol." var)
+      (cmpck (endp l)
+	   "No form was given for the value of ~s." var)
       (setq var (chk-symbol-macrolet var))
-      (setq args (nconc args (list var (second l))))
+      (setq args (nconc args (list var (pop l))))
       (if (symbolp var)
-	(cmpck (constantp var)
-	       "The constant ~s is being assigned a value." var)
-	(setq use-psetf t)))
+	  (cmpck (constantp var)
+		 "The constant ~s is being assigned a value." var)
+	  (setq use-psetf t))))
   (when use-psetf
-    (return-from c1psetq (c1expr `(psetf ,@args))))
-  (do ((l args (cddr l))
-       (vrefs '())
+    (return-from c1psetq `(psetf ,@args)))
+  ;; In the second pass we compile the variable references and the
+  ;; assignments. Here we may need to create checked values if the
+  ;; variables have been proclaimed.
+  (do ((vrefs '())
        (forms '()))
-      ((endp l)
+      ((endp args)
        (add-to-set-nodes-of-var-list
 	vrefs (make-c1form* 'PSETQ :type '(MEMBER NIL)
 			    :args (reverse vrefs) (nreverse forms))))
-    (let* ((vref (c1vref (first l)))
-	   (form (c1expr (second l)))
-	   (type (type-and (var-type vref) (c1form-primary-type form))))
-      (unless type
-	(cmpwarn "Type mismatch between ~s and ~s." name form)
-	(setq type T))
-	;; Is this justified????
-	#+nil(setf (c1form-type form) type)
-	(push vref vrefs)
-	(push form forms))))
+    (let* ((vref (c1vref (pop args)))
+	   (type (var-type vref))
+	   (form (pop args)))
+      (push vref vrefs)
+      (push (c1expr (if (trivial-type-p type)
+			form
+			`(checked-value ,type ,form)))
+	    forms))))
 
-(defun c2psetq (vrefs forms &aux (*lcl* *lcl*) (saves nil) (blocks 0))
+(defun c2psetq (c1form vrefs forms &aux (*lcl* *lcl*) (saves nil) (blocks 0))
+  (declare (ignore c1form))
   ;; similar to inline-args
   (do ((vrefs vrefs (cdr vrefs))
        (forms forms (cdr forms))
