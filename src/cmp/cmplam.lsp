@@ -77,8 +77,12 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 
 (defun c1compile-function (lambda-list-and-body &key (fun (make-fun))
 			   (name (fun-name fun)) (CB/LB 'CB))
-  (setf (fun-name fun) name
-	(fun-parent fun) *current-function*)
+  (let ((lambda (if name
+		    `(ext:lambda-block ,name ,@lambda-list-and-body)
+		    `(lambda ,@lambda-list-and-body))))
+    (setf (fun-name fun) name
+	  (fun-lambda-expression fun) lambda 
+	  (fun-parent fun) *current-function*))
   (when *current-function*
     (push fun (fun-child-funs *current-function*)))
   (let* ((*current-function* fun)
@@ -159,8 +163,8 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
   (cmpck (endp lambda-expr)
          "The lambda expression ~s is illegal." (cons 'LAMBDA lambda-expr))
 
-  (multiple-value-setq (body ss ts is other-decls doc all-declarations)
-                       (c1body (cdr lambda-expr) t))
+  (multiple-value-setq (body ss ts is other-decls doc)
+    (c1body (cdr lambda-expr) t))
 
   (when block-name (setq body (list (cons 'BLOCK (cons block-name body)))))
 
@@ -355,7 +359,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
     (setf optionals (nconc (reduce #'nconc (mapcar #'(lambda (var) (list var *c1nil* NIL))
 						   (subseq requireds si::c-arguments-limit)))
 				  (rest optionals))
-	  required (subseq requireds 0 si::c-arguments-limit)
+	  requireds (subseq requireds 0 si::c-arguments-limit)
 	  varargs t))
 
   ;; For each variable, set its var-loc.
@@ -373,15 +377,12 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
              (do-decl (var)
 	       (when (local var) ; no LCL needed for SPECIAL or LEX
 		 (setf (var-loc var) (wt-decl var)))))
-      (do ((reqs requireds (cdr reqs))
-	   (reqi (1+ req0) (1+ reqi)) (var))
-	  ((endp reqs))
-	(declare (fixnum reqi) (type cons reqs) (type var var))
-	(setq var (first reqs))
-	(cond (local-entry-p
-	       (bind `(LCL ,reqi) var))
-	      ((unboxed var) ; create unboxed variable
-	       (setf (var-loc var) (wt-decl var)))))
+      (loop for var in requireds
+	 for reqi of-type fixnum from (1+ req0)
+	 do (cond (local-entry-p
+		   (bind `(LCL ,reqi) var))
+		  ((unboxed var) ; create unboxed variable
+		   (setf (var-loc var) (wt-decl var)))))
       ;; dont create rest or varargs if not used
       (when (and rest (< (var-ref rest) 1))
 	(setq rest nil
@@ -409,11 +410,10 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	     first-arg nreq))))
 
     ;; Bind required parameters.
-    (do ((reqs requireds (cdr reqs))
-	 (reqi (1+ req0) (1+ reqi)))
-	((or local-entry-p (endp reqs)))
-      (declare (fixnum reqi) (type cons reqs))
-      (bind `(LCL ,reqi) (first reqs)))
+    (unless local-entry-p
+      (loop for var in requireds
+	 for reqi of-type fixnum from (1+ req0)
+	 do (bind `(LCL ,reqi) var)))
 
     (when fname-in-ihs-p
       (wt-nl "{")
@@ -577,6 +577,8 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 			     `(list ,@arguments))
 			 (if apply-p apply-var nil)))
 	    let-vars))
+    (loop while aux-vars
+       do (push (list (pop aux-vars) (pop aux-vars)) let-vars))
     (do ((scan (cdr keywords) (cddddr scan)))
 	((endp scan))
       (let ((keyword (first scan))

@@ -22,10 +22,10 @@
                           (EQ 'SI::HASH-EQ)
                           (EQL 'SI::HASH-EQL)
                           (EQUAL 'SI::HASH-EQUAL)
-                          (t (setf test 'EQUALP) 'SI::HASH-EQUALP)))
-         (hash (gensym "HASH")))
+                          (t (setf test 'EQUALP) 'SI::HASH-EQUALP))))
     `(progn
-       (defparameter ,cache-name (make-array 1024 :element-type t :adjustable nil))
+       (eval-when (:compile-toplevel :load-toplevel :execute)
+	 (defparameter ,cache-name (make-array 1024 :element-type t :adjustable nil)))
        (defun ,reset-name ()
          (make-array 1024 :element-type t :adjustable nil))
        (defun ,name ,lambda-list
@@ -35,8 +35,8 @@
              (declare (type (integer 0 1023) hash)
                       (type (array t (*)) ,cache-name))
              (if (and elt ,@(loop for arg in lambda-list
-                               collect `(,test (pop (the cons elt)) ,arg)))
-                 (first (the cons elt))
+                               collect `(,test (pop (truly-the cons elt)) ,arg)))
+                 (first (truly-the cons elt))
                  (let ((output (,name ,@lambda-list)))
                    (setf (aref ,cache-name hash) (list ,@lambda-list output))
                    output))))))))

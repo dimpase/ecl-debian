@@ -40,6 +40,7 @@
 #endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <ecl/cache.h>
 #include <ecl/internal.h>
 #include <ecl/ecl-inl.h>
 extern int GC_dont_gc;
@@ -72,6 +73,7 @@ static cl_fixnum option_values[ECL_OPT_LIMIT+1] = {
 	1,		/* ECL_OPT_TRAP_SIGILL */
 	1,		/* ECL_OPT_TRAP_SIGBUS */
 	1,		/* ECL_OPT_TRAP_SIGPIPE */
+	1,		/* ECL_OPT_TRAP_SIGCHLD */
 	1,		/* ECL_OPT_TRAP_INTERRUPT_SIGNAL */
 	1,		/* ECL_OPT_SIGNAL_HANDLING_THREAD */
 	128,		/* ECL_OPT_SIGNAL_QUEUE_SIZE */
@@ -82,8 +84,8 @@ static cl_fixnum option_values[ECL_OPT_LIMIT+1] = {
 	128,		/* ECL_OPT_FRAME_STACK_SAFETY_AREA */
 	32768,		/* ECL_OPT_LISP_STACK_SIZE */
 	128,		/* ECL_OPT_LISP_STACK_SAFETY_AREA */
-	512*1024,	/* ECL_OPT_C_STACK_SIZE */
-	16*1024,	/* ECL_OPT_C_STACK_SAFETY_AREA */
+	128*sizeof(cl_index)*1024, /* ECL_OPT_C_STACK_SIZE */
+	4*sizeof(cl_index)*1024, /* ECL_OPT_C_STACK_SAFETY_AREA */
 	1,		/* ECL_OPT_SIGALTSTACK_SIZE */
 #if ECL_FIXNUM_BITS <= 32
 	1024*1024*1024, /* ECL_OPT_HEAP_SIZE */
@@ -152,13 +154,8 @@ ecl_init_env(cl_env_ptr env)
 #endif
 
 #ifdef CLOS
-	env->method_hash = Cnil;
-	env->method_spec_vector = Cnil;
-	env->method_generation = 0;
-	_ecl_set_method_hash_size(env, 4096);
-#ifdef ECL_THREADS
-	env->method_hash_clear_list = Cnil;
-#endif
+	env->method_cache = ecl_make_cache(64, 4096);
+	env->slot_cache = ecl_make_cache(3, 4096);
 #endif
         env->pending_interrupt = Cnil;
 
@@ -232,6 +229,19 @@ _ecl_alloc_env()
 	}
 # endif
 #endif
+        {
+                size_t bytes = cl_core.default_sigmask_bytes;
+                if (bytes == 0) {
+                        output->default_sigmask = 0;
+                } else if (ecl_get_option(ECL_OPT_BOOTED)) {
+                        output->default_sigmask = ecl_alloc_atomic(bytes);
+                        memcpy(output->default_sigmask,
+                               ecl_process_env()->default_sigmask,
+                               bytes);
+                } else {
+                        output->default_sigmask = cl_core.default_sigmask;
+                }
+        }
 	/*
 	 * An uninitialized environment _always_ disables interrupts. They
 	 * are activated later on by the thread entry point or init_unixint().
@@ -261,51 +271,6 @@ cl_shutdown(void)
 	}
 	ecl_set_option(ECL_OPT_BOOTED, -1);
 }
-
-#ifdef ECL_UNICODE
-static void
-read_char_database()
-{
-	cl_object s = si_base_string_concatenate(2,
-						 si_get_library_pathname(),
-						 make_constant_base_string("ucd.dat"));
-	cl_object output = Cnil;
-	FILE *f = fopen(s->base_string.self, "rb");
-	if (f) {
-		cl_index size, read;
-		if (!fseek(f, 0, SEEK_END)) {
-			size = ftell(f);
-			fseek(f, 0, SEEK_SET);
-			output = ecl_alloc_simple_vector(size, aet_b8);	    
-			read = 0;
-			while (read < size) {
-				cl_index res;
-				res = fread(output->vector.self.b8 + read, 1, size - read, f);
-				if (res > 0) {
-					read += res;
-                                } else {
-					output = Cnil;
-					break;
-				}
-			}
-		}
-		fclose(f);
-	}
-	if (output == Cnil) {
-		printf("Unable to read Unicode database: %s\n", s->base_string.self);
-		abort();
-	} else {
-		uint8_t *p = output->vector.self.b8;
-		cl_core.unicode_database = output;
-		cl_core.ucd_misc = p + 2;
-		cl_core.ucd_pages = cl_core.ucd_misc + (p[0] + (p[1]<<8));
-		cl_core.ucd_data = cl_core.ucd_pages + (0x110000 / 256);
-	}
-	ECL_SET(@'si::+unicode-database+', output);
-}
-#else
-#define read_char_database() (void)0
-#endif
 
 ecl_def_ct_single_float(default_rehash_size,1.5f,static,const);
 ecl_def_ct_single_float(default_rehash_threshold,0.75f,static,const);
@@ -344,7 +309,9 @@ ecl_def_ct_base_string(str_fas,"fas",3,static,const);
 ecl_def_ct_base_string(str_fasl,"fasl",4,static,const);
 #endif
 ecl_def_ct_base_string(str_fasb,"fasb",4,static,const);
+ecl_def_ct_base_string(str_fasc,"fasc",4,static,const);
 ecl_def_ct_base_string(str_FASB,"FASB",4,static,const);
+ecl_def_ct_base_string(str_FASC,"FASC",4,static,const);
 ecl_def_ct_base_string(str_lsp,"lsp",3,static,const);
 ecl_def_ct_base_string(str_LSP,"LSP",3,static,const);
 ecl_def_ct_base_string(str_lisp,"lisp",4,static,const);
@@ -374,6 +341,7 @@ struct cl_core_struct cl_core = {
 	Cnil, /* user_package */
 	Cnil, /* keyword_package */
 	Cnil, /* system_package */
+        Cnil, /* ext_package */
 #ifdef CLOS
 	Cnil, /* clos_package */
 # ifdef ECL_CLOS_STREAMS
@@ -419,12 +387,13 @@ struct cl_core_struct cl_core = {
 	Cnil, /* Jan1st1970UT */
 
 	Cnil, /* system_properties */
+	Cnil, /* setf_definition */
 
 #ifdef ECL_THREADS
 	Cnil, /* processes */
 	Cnil, /* global_lock */
         Cnil, /* error_lock */
-        Cnil, /* package_lock */
+        Cnil, /* global_env_lock */
 #endif
 	/* LIBRARIES is an adjustable vector of objects. It behaves as
 	   a vector of weak pointers thanks to the magic in
@@ -444,13 +413,8 @@ struct cl_core_struct cl_core = {
 #endif
 	Cnil, /* signal_queue */
 
-#ifdef ECL_UNICODE
-	Cnil, /* unicode_database */
-	NULL, /* ucd_misc */
-	NULL, /* ucd_pages */
-	NULL, /* ucd_data */
-#endif
 	NULL, /* default_sigmask */
+        0, /* default_sigmask_bytes */
 
 #ifdef ECL_THREADS
         0, /* last_var_index */
@@ -461,7 +425,10 @@ struct cl_core_struct cl_core = {
 	Cnil, /* compiler_dispatch */
 
         (cl_object)&default_rehash_size_data, /* rehash_size */
-        (cl_object)&default_rehash_threshold_data /* rehash_threshold */
+        (cl_object)&default_rehash_threshold_data, /* rehash_threshold */
+
+        Cnil, /* external_processes */
+        Cnil /* external_processes_lock */
 };
 
 int
@@ -549,10 +516,14 @@ cl_boot(int argc, char **argv)
 				 ecl_list1(cl_core.lisp_package));
 	cl_core.keyword_package =
 		ecl_make_package(str_keyword, Cnil, Cnil);
+	cl_core.ext_package =
+		ecl_make_package(str_ext, Cnil,
+				 ecl_list1(cl_core.lisp_package));
 	cl_core.system_package =
 		ecl_make_package(str_si,
-                                 cl_list(3,str_system,str_sys,str_ext),
-				 ecl_list1(cl_core.lisp_package));
+                                 cl_list(2,str_system,str_sys),
+				 cl_list(2,cl_core.ext_package,
+                                         cl_core.lisp_package));
 	cl_core.c_package =
 		ecl_make_package(str_c,
                                  ecl_list1(str_compiler),
@@ -617,11 +588,6 @@ cl_boot(int argc, char **argv)
 	ECL_SET(@'mp::*current-process*', env->own_process);
 #endif
 
-        /*
-         * Initialize Unicode character database.
-         */
-	read_char_database();
-
 	/*
          * Load character names. The following hash table is a map
          * from names to character codes and viceversa. Note that we
@@ -630,8 +596,7 @@ cl_boot(int argc, char **argv)
 	cl_core.char_names = aux =
 	    cl__make_hash_table(@'equalp', MAKE_FIXNUM(128), /* size */
 				cl_core.rehash_size,
-                                cl_core.rehash_threshold,
-				Cnil); /* thread-safe */
+                                cl_core.rehash_threshold);
 	for (i = 0; char_names[i].elt.self; i++) {
                 cl_object name = (cl_object)(char_names + i);
 		cl_object code = MAKE_FIXNUM(i);
@@ -661,8 +626,11 @@ cl_boot(int argc, char **argv)
 	cl_core.system_properties =
 	    cl__make_hash_table(@'equal', MAKE_FIXNUM(1024), /* size */
 				cl_core.rehash_size,
-                                cl_core.rehash_threshold,
-				Ct); /* thread-safe */
+                                cl_core.rehash_threshold);
+	cl_core.setf_definitions =
+	    cl__make_hash_table(@'eq', MAKE_FIXNUM(256), /* size */
+				cl_core.rehash_size,
+                                cl_core.rehash_threshold);
 
 	ECL_SET(@'*random-state*', ecl_make_random_state(Ct));
 
@@ -672,6 +640,10 @@ cl_boot(int argc, char **argv)
 	ECL_SET(@'si::c-long-min', ecl_make_integer(LONG_MIN));
 	ECL_SET(@'si::c-uint-max', ecl_make_unsigned_integer(UINT_MAX));
 	ECL_SET(@'si::c-ulong-max', ecl_make_unsigned_integer(ULONG_MAX));
+#ifdef ecl_long_long_t
+	ECL_SET(@'si::c-long-long-max', ecl_make_unsigned_integer(LLONG_MAX));
+	ECL_SET(@'si::c-ulong-long-max', ecl_make_unsigned_integer(ULLONG_MAX));
+#endif
 
 	init_unixtime();
 
@@ -692,9 +664,11 @@ cl_boot(int argc, char **argv)
 #endif
 	aux = cl_list(
 #ifdef ENABLE_DLOPEN
-		10,CONS(str_fas, @'si::load-binary'),
+		11,
+                CONS(str_fas, @'si::load-binary'),
 		CONS(str_fasl, @'si::load-binary'),
 		CONS(str_fasb, @'si::load-binary'),
+		CONS(str_FASB, @'si::load-binary'),
 #else
 		7,
 #endif
@@ -702,10 +676,10 @@ cl_boot(int argc, char **argv)
 		CONS(str_lisp, @'si::load-source'),
 		CONS(str_LSP, @'si::load-source'),
 		CONS(str_LISP, @'si::load-source'),
-		CONS(str_fasb, @'si::load-source'),
-		CONS(str_FASB, @'si::load-source'),
+		CONS(str_fasc, @'si::load-bytecodes'),
+		CONS(str_FASC, @'si::load-bytecodes'),
 		CONS(Cnil, @'si::load-source'));
-	ECL_SET(@'si::*load-hooks*', aux);
+	ECL_SET(@'ext::*load-hooks*', aux);
 	init_error();
 	init_macros();
 	init_compiler();
@@ -717,8 +691,7 @@ cl_boot(int argc, char **argv)
 	ECL_SET(@'si::*class-name-hash-table*',
 		cl__make_hash_table(@'eq', MAKE_FIXNUM(1024), /* size */
                                     cl_core.rehash_size,
-                                    cl_core.rehash_threshold,
-				    Ct)); /* thread safe */
+                                    cl_core.rehash_threshold));
 #endif
 
 	/*
@@ -744,7 +717,7 @@ cl_boot(int argc, char **argv)
 	 * ecl_clear_compiler_properties() to work in init_CLOS(). */
 	ecl_set_option(ECL_OPT_BOOTED, 1);
 
-	read_VV(OBJNULL,init_lib_LSP);
+	ecl_init_module(OBJNULL,init_lib_LSP);
 
 	/* Jump to top level */
 	ECL_SET(@'*package*', cl_core.user_package);
@@ -808,7 +781,8 @@ si_getenv(cl_object var)
 {
 	const char *value;
 
-	var = ecl_check_cl_type(@'ext::getenv', var, t_base_string);
+        /* Strings have to be null terminated base strings */
+	var = si_copy_to_simple_base_string(var);
 	value = getenv((char*)var->base_string.self);
 	@(return ((value == NULL)? Cnil : make_base_string_copy(value)))
 }

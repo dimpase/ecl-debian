@@ -105,11 +105,12 @@ struct cl_compiler_env {
 	cl_object macros;		/* Macros and function bindings */
 	cl_fixnum lexical_level;	/* =0 if toplevel form */
 	cl_object constants;		/* Constants for this form */
+	cl_index constants_size;	/* Number of constants registered */
+        cl_object load_time_forms;	/* Constants that have to be rebuilt */
 	cl_object lex_env;		/* Lexical env. for eval-when */
 	cl_index env_depth;
 	cl_index env_size;
         int mode;
-	bool coalesce;
 	bool stepping;
 };
 
@@ -132,6 +133,19 @@ typedef struct cl_compiler_env *cl_compiler_env_ptr;
 /* error.d */
 
 extern void _ecl_unexpected_return() ecl_attr_noreturn;
+
+/* eval.d */
+
+#define _ecl_funcall5(fun, a, b, c, d) \
+	ecl_function_dispatch(ecl_process_env(), (fun))(4, (a),(b),(c),(d))
+#define _ecl_funcall4(fun, a, b, c) \
+	ecl_function_dispatch(ecl_process_env(), (fun))(3, (a),(b),(c))
+#define _ecl_funcall3(fun, a, b) \
+	ecl_function_dispatch(ecl_process_env(), (fun))(2, (a),(b))
+#define _ecl_funcall2(fun, a) \
+	ecl_function_dispatch(ecl_process_env(), (fun))(1, (a))
+#define _ecl_funcall1(fun) \
+	ecl_function_dispatch(ecl_process_env(), (fun))(0)
 
 /* interpreter.d */
 
@@ -276,6 +290,24 @@ extern void* ecl_dynamic_callback_make(cl_object data, enum ecl_ffi_calling_conv
 #define IO_FILE_COLUMN(strm) (strm)->stream.int1
 #define IO_FILE_ELT_TYPE(strm) (strm)->stream.object0
 #define IO_FILE_FILENAME(strm) (strm)->stream.object1
+#define SEQ_OUTPUT_VECTOR(strm) (strm)->stream.object1
+#define SEQ_OUTPUT_POSITION(strm) (strm)->stream.int0
+#define SEQ_INPUT_VECTOR(strm) (strm)->stream.object1
+#define SEQ_INPUT_POSITION(strm) (strm)->stream.int0
+#define SEQ_INPUT_LIMIT(strm) (strm)->stream.int1
+
+#ifndef HAVE_FSEEKO
+#define ecl_off_t int
+#define ecl_fseeko fseek
+#define ecl_ftello ftell
+#else
+#define ecl_off_t off_t
+#define ecl_fseeko fseeko
+#define ecl_ftello ftello
+#endif
+
+extern cl_object ecl_off_t_to_integer(ecl_off_t offset);
+extern ecl_off_t ecl_integer_to_off_t(cl_object offset);
 
 /* format.d */
 
@@ -293,6 +325,8 @@ extern cl_object ecl_extend_hashtable(cl_object hashtable);
 #define GFUN_COMB(x) ((x)->instance.slots[2])
 
 extern cl_object FEnot_funcallable_vararg(cl_narg narg, ...);
+extern cl_object ecl_slot_reader_dispatch(cl_narg narg, cl_object instance);
+extern cl_object ecl_slot_writer_dispatch(cl_narg narg, cl_object value, cl_object instance);
 
 /* load.d */
 
@@ -327,52 +361,42 @@ extern void cl_write_object(cl_object x, cl_object stream);
 /* global locks */
 
 #ifdef ECL_THREADS
-# define HASH_TABLE_LOCK(h) do {                                        \
-                cl_object lock = (h)->hash.lock;                        \
-                if (lock != Cnil) mp_get_lock_wait(lock);               \
-        } while (0);
-# define HASH_TABLE_UNLOCK(h) do {                                      \
-                cl_object lock = (h)->hash.lock;                        \
-                if (lock != Cnil) mp_giveup_lock(lock);                 \
-        } while (0);
-# define ECL_WITH_GLOBAL_LOCK_BEGIN(the_env)    \
+# define ECL_WITH_GLOBAL_LOCK_BEGIN(the_env)                    \
         ECL_WITH_LOCK_BEGIN(the_env, cl_core.global_lock)
 # define ECL_WITH_GLOBAL_LOCK_END               \
         ECL_WITH_LOCK_END
-# define ECL_WITH_PACKAGE_RDLOCK_BEGIN(the_env) {                 \
+# define ECL_WITH_GLOBAL_ENV_RDLOCK_BEGIN(the_env) {            \
         const cl_env_ptr __ecl_pack_env = the_env;              \
         ecl_disable_interrupts_env(__ecl_pack_env);             \
-        mp_get_rwlock_read_wait(cl_core.package_lock);
-# define ECL_WITH_PACKAGE_RDLOCK_END              \
-        mp_giveup_rwlock_read(cl_core.package_lock);   \
+        mp_get_rwlock_read_wait(cl_core.global_env_lock);
+# define ECL_WITH_GLOBAL_ENV_RDLOCK_END                   \
+        mp_giveup_rwlock_read(cl_core.global_env_lock);   \
         ecl_enable_interrupts_env(__ecl_pack_env); }
-# define ECL_WITH_PACKAGE_WRLOCK_BEGIN(the_env) {                 \
+# define ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(the_env) {            \
         const cl_env_ptr __ecl_pack_env = the_env;              \
         ecl_disable_interrupts_env(__ecl_pack_env);             \
-        mp_get_rwlock_write_wait(cl_core.package_lock);
-# define ECL_WITH_PACKAGE_WRLOCK_END              \
-        mp_giveup_rwlock_write(cl_core.package_lock);   \
+        mp_get_rwlock_write_wait(cl_core.global_env_lock);
+# define ECL_WITH_GLOBAL_ENV_WRLOCK_END                    \
+        mp_giveup_rwlock_write(cl_core.global_env_lock);   \
         ecl_enable_interrupts_env(__ecl_pack_env); }
 # define ECL_WITH_LOCK_BEGIN(the_env,lock) {            \
         const cl_env_ptr __ecl_the_env = the_env;       \
         const cl_object __ecl_the_lock = lock;          \
         ecl_disable_interrupts_env(the_env);            \
         mp_get_lock_wait(__ecl_the_lock);               \
-        CL_UNWIND_PROTECT_BEGIN(__ecl_the_env)
+        CL_UNWIND_PROTECT_BEGIN(__ecl_the_env);	        \
+	ecl_enable_interrupts_env(__ecl_the_env);
 # define ECL_WITH_LOCK_END                                    \
         CL_UNWIND_PROTECT_EXIT {                              \
                 mp_giveup_lock(__ecl_the_lock);               \
-                ecl_enable_interrupts_env(__ecl_the_env);     \
         } CL_UNWIND_PROTECT_END; }
 #else
-# define HASH_TABLE_LOCK(h)
-# define HASH_TABLE_UNLOCK(h)
 # define ECL_WITH_GLOBAL_LOCK_BEGIN(the_env)
 # define ECL_WITH_GLOBAL_LOCK_END
-# define ECL_WITH_PACKAGE_RDLOCK_BEGIN(the_env)
-# define ECL_WITH_PACKAGE_RDLOCK_END
-# define ECL_WITH_PACKAGE_WRLOCK_BEGIN(the_env)
-# define ECL_WITH_PACKAGE_WRLOCK_END
+# define ECL_WITH_GLOBAL_ENV_RDLOCK_BEGIN(the_env)
+# define ECL_WITH_GLOBAL_ENV_RDLOCK_END
+# define ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(the_env)
+# define ECL_WITH_GLOBAL_ENV_WRLOCK_END
 # define ECL_WITH_LOCK_BEGIN(the_env,lock)
 # define ECL_WITH_LOCK_END
 #endif /* ECL_THREADS */
@@ -408,6 +432,9 @@ extern cl_object ecl_deserialize(uint8_t *data);
 /* string.d */
 #define ecl_vector_start_end ecl_sequence_start_end
 
+/* stacks.d */
+extern void ecl_cs_set_org(cl_env_ptr env);
+
 /* threads.d */
 
 #ifdef ECL_THREADS
@@ -420,6 +447,13 @@ extern ECL_API cl_object mp_break_suspend_loop();
 #define UTC_time_to_universal_time(x) ecl_plus(ecl_make_integer(x),cl_core.Jan1st1970UT)
 extern cl_fixnum ecl_runtime(void);
 
+/* threads/rwlock.d */
+
+#ifdef ECL_RWLOCK
+extern cl_object mp_get_rwlock_read_wait(cl_object lock);
+extern cl_object mp_get_rwlock_write_wait(cl_object lock);
+#endif
+
 /* unixint.d */
 
 #define ECL_PI_D 3.14159265358979323846264338327950288
@@ -427,7 +461,10 @@ extern cl_fixnum ecl_runtime(void);
 #define ECL_PI2_D 1.57079632679489661923132169163975144
 #define ECL_PI2_L 1.57079632679489661923132169163975144l
 
-void ecl_interrupt_process(cl_object process, cl_object function);
+extern void ecl_interrupt_process(cl_object process, cl_object function);
+
+/* unixsys.d */
+extern cl_object si_wait_for_all_processes(cl_narg,...);
 
 /*
  * Fake several ISO C99 mathematical functions

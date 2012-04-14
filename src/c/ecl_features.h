@@ -112,6 +112,14 @@ ecl_def_string_array(feature_names,static,const) = {
 #ifdef ECL_RWLOCK
 	ecl_def_string_array_elt("ECL-READ-WRITE-LOCK"),
 #endif
+#ifdef WORDS_BIGENDIAN
+	ecl_def_string_array_elt("BIG-ENDIAN"),
+#else
+	ecl_def_string_array_elt("LITTLE-ENDIAN"),
+#endif
+#ifdef ECL_WEAK_HASH
+	ecl_def_string_array_elt("ECL-WEAK-HASH"),
+#endif
         ecl_def_string_array_elt(0)
 };
 

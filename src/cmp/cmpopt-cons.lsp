@@ -19,7 +19,7 @@
                       (loop for v in values
                          for value-and-type in arg-types
                          collect (if (consp value-and-type)
-                                     `(assert-type-if-known ,v ,(second value-and-type))
+                                     `(checked-value ,(second value-and-type) ,v)
                                      v)))
                  ,@inline-form))
 
@@ -85,38 +85,59 @@
 ;;;
 
 (define-compiler-macro nth (&whole whole &rest args)
-  (if (and (not (endp args))
-	   (not (endp (cdr args)))
-	   (endp (cddr args))
-	   (numberp (car args))
-	   (<= 0 (car args) 7))
-      (case (car args)
-	(0 (cons 'CAR (cdr args)))
-	(1 (cons 'CADR (cdr args)))
-	(2 (cons 'CADDR (cdr args)))
-	(3 (cons 'CADDDR (cdr args)))
-	(4 (list 'CAR (cons 'CDDDDR (cdr args))))
-	(5 (list 'CADR (cons 'CDDDDR (cdr args))))
-	(6 (list 'CADDR (cons 'CDDDDR (cdr args))))
-	(7 (list 'CADDDR (cons 'CDDDDR (cdr args))))
-	(t whole))
-      whole))
+  (case (car args)
+    (0 (cons 'CAR (cdr args)))
+    (1 (cons 'CADR (cdr args)))
+    (2 (cons 'CADDR (cdr args)))
+    (3 (cons 'CADDDR (cdr args)))
+    (4 (list 'CAR (cons 'CDDDDR (cdr args))))
+    (5 (list 'CADR (cons 'CDDDDR (cdr args))))
+    (6 (list 'CADDR (cons 'CDDDDR (cdr args))))
+    (7 (list 'CADDDR (cons 'CDDDDR (cdr args))))
+    (t whole)))
 
 (define-compiler-macro nthcdr (&whole whole &rest args)
-  (if (and (not (endp args))
-	   (not (endp (cdr args)))
-	   (endp (cddr args))
-	   (numberp (car args))
-	   (<= 0 (car args) 7))
-      (case (car args)
-	(0 (second args))
-	(1 (cons 'CDR (cdr args)))
-	(2 (cons 'CDDR (cdr args)))
-	(3 (cons 'CDDDR (cdr args)))
-	(4 (cons 'CDDDDR (cdr args)))
-	(5 (list 'CDR (cons 'CDDDDR (cdr args))))
-	(6 (list 'CDDR (cons 'CDDDDR (cdr args))))
-	(7 (list 'CDDDR (cons 'CDDDDR (cdr args))))
-	(t whole))
-      whole))
+  (case (car args)
+    (0 (second args))
+    (1 (cons 'CDR (cdr args)))
+    (2 (cons 'CDDR (cdr args)))
+    (3 (cons 'CDDDR (cdr args)))
+    (4 (cons 'CDDDDR (cdr args)))
+    (5 (list 'CDR (cons 'CDDDDR (cdr args))))
+    (6 (list 'CDDR (cons 'CDDDDR (cdr args))))
+    (7 (list 'CDDDR (cons 'CDDDDR (cdr args))))
+    (t whole)))
 
+;;;
+;;; FIRST, SECOND, THIRD, ...
+;;;
+
+(progn .
+  #.(loop for n in '(first second third fourth fifth sixth seventh eighth ninth tenth)
+	for i from 0
+	collect `(define-compiler-macro ,n (x) (list 'nth ,i x))))
+
+(define-compiler-macro rest (x) `(cdr ,x))
+
+;;;
+;;; POP
+;;;
+
+(define-compiler-macro pop (&whole whole place &environment env)
+  (if (policy-inline-accessors)
+      (multiple-value-bind (vars vals stores store-form access-form)
+	  (get-setf-expansion place env)
+	(let* ((store-var (first stores))
+	       (saved-place (gensym)))
+	  `(let* ,(mapcar #'list
+			  (append vars (list saved-place))
+			  (append vals (list access-form)))
+	     (declare (:read-only ,@vars)) ; Beppe
+	     (optional-type-check ,saved-place list)
+	     (when ,saved-place
+	       (let ((,store-var (cons-cdr ,saved-place)))
+		 (declare (:read-only ,store-var))
+		 ,store-form
+		 (setq ,saved-place (cons-car ,saved-place))))
+	     ,saved-place)))
+    whole))

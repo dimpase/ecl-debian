@@ -165,11 +165,9 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 /*
  * The character type
  */
-#ifdef ECL_UNICODE
-#define	CHAR_CODE_LIMIT	1114112	/*  unicode character code limit  */
-#else
-#define	CHAR_CODE_LIMIT	256	/*  unicode character code limit  */
-#endif
+#define	CHAR_CODE_LIMIT	@CHAR_CODE_LIMIT@ /* ASCII or unicode character code limit  */
+typedef @ECL_CHARACTER@ ecl_character;
+typedef unsigned char ecl_base_char;
 
 /*
  * Array limits
@@ -228,8 +226,10 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
  */
 #if defined(__cplusplus) || (defined(__GNUC__) && !defined(__STRICT_ANSI__))
 #define ECL_INLINE inline
+#define ECL_CAN_INLINE 1
 #else
 #define ECL_INLINE
+#define ECL_CAN_INLINE 0
 #endif
 
 #if !defined(__GNUC__)
@@ -297,6 +297,11 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 
 /* Activate Boehm-Weiser precise garbage collector			*/
 #undef GBC_BOEHM_PRECISE
+
+/* Weak hash tables need the garbage collector and weak	pointers	*/
+#ifdef GBC_BOEHM
+#define ECL_WEAK_HASH
+#endif
 
 /*
  * SYSTEM FEATURES:
@@ -399,6 +404,7 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 #undef HAVE_UNAME
 #undef HAVE_UNISTD_H
 #undef HAVE_SYS_WAIT_H
+#undef HAVE_SYS_MMAN_H
 /* size of long long            					*/
 #undef ECL_LONG_LONG_BITS
 /* existence of char **environ         					*/

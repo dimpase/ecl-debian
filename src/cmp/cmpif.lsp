@@ -18,12 +18,11 @@
   (check-args-number 'IF args 2 3)
   (let ((test (c1expr (car args))))
     ;; Resolve IF expressions with constant arguments
-    (when (eq (c1form-name test) 'LOCATION)
-      (multiple-value-bind (constant-p value)
-          (loc-immediate-value-p (c1form-arg 0 test))
-        (when constant-p
-          (return-from c1if
-            (c1expr (if value (second args) (third args)))))))
+    (multiple-value-bind (constant-p value)
+	(c1form-constant-p test)
+      (when constant-p
+	(return-from c1if
+	  (if value (second args) (third args)))))
     ;; Otherwise, normal IF form
     (let* ((true-branch (c1expr (second args)))
            (false-branch (c1expr (third args))))
@@ -37,10 +36,10 @@
   (let* ((value (c1expr (first args))))
     ;; When the argument is constant, we can just return
     ;; a constant as well.
-    (when (eq (c1form-name value) 'LOCATION)
-      (multiple-value-bind (constant-p value)
-          (loc-immediate-value-p (c1form-arg 0 value))
-        (return-from c1not (c1expr (not value)))))
+    (multiple-value-bind (constant-p value)
+	(c1form-constant-p value)
+      (when constant-p
+	(return-from c1not (not value))))
     (make-c1form* 'FMLA-NOT
                   :type '(member t nil)
                   :args value)))
@@ -82,7 +81,8 @@
      ,@body
      (wt-label ,label))))
 
-(defun c2if (fmla form1 form2)
+(defun c2if (c1form fmla form1 form2)
+  (declare (ignore c1form))
   ;; FIXME! Optimize when FORM1 or FORM2 are constants
   (with-exit-label (normal-exit)
     (with-exit-label (false-label)
@@ -106,7 +106,8 @@
                  (:object '((:object) (:object) "Null(#0)?Ct:Cnil" nil t))
                  (otherwise (return-from negate-argument nil)))))))
 
-(defun c2fmla-not (arg)
+(defun c2fmla-not (c1form arg)
+  (declare (ignore c1form))
   (let ((dest *destination*))
     (cond ((and (consp dest) (eq (car dest) 'JUMP-TRUE))
            (let ((*destination* `(JUMP-FALSE ,@(cdr dest))))
@@ -130,7 +131,8 @@
   (let ((dest *destination*))
     (and (consp dest) (eq (car dest) 'JUMP-FALSE))))
 
-(defun c2fmla-and (butlast last)
+(defun c2fmla-and (c1form butlast last)
+  (declare (ignore c1form))
   (if (jump-false-destination?)
       (progn
 	(mapc #'c2expr* butlast)
@@ -142,7 +144,8 @@
 	  (c2expr last))
 	(unwind-exit nil))))
 
-(defun c2fmla-or (butlast last)
+(defun c2fmla-or (c1form butlast last)
+  (declare (ignore c1form))
   (cond ((jump-true-destination?)
 	 (mapc #'c2expr* butlast)
 	 (c2expr last))

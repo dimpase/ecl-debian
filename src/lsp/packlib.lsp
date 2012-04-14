@@ -19,15 +19,14 @@
 Returns a list of all symbols that have the specified print name.
 STRING-DESIGNATOR may be a symbol, in which case the print name of the symbol
 is used."
-  (when (symbolp string-or-symbol)
-        (setq string-or-symbol (symbol-name string-or-symbol)))
-  (mapcan #'(lambda (p)
-              (multiple-value-bind (s i)
-                  (find-symbol string-or-symbol p)
-                (if (or (eq i :internal) (eq i :external))
-                    (list s)
-                    nil)))
-          (list-all-packages)))
+  (let ((symbol-name (string string-or-symbol)))
+    (mapcan #'(lambda (p)
+		(multiple-value-bind (s i)
+		    (find-symbol symbol-name p)
+		  (if (or (eq i :internal) (eq i :external))
+		      (list s)
+		      nil)))
+	    (list-all-packages))))
 
 (defun packages-iterator (packages options maybe-list)
   (let ((all-symbols nil))
@@ -56,6 +55,7 @@ is used."
 		AGAIN
 		 (multiple-value-bind (found key value)
 		     (funcall iterator)
+		   (declare (ignore key))
 		   (cond 
 		     (found
 		      (when (eq type :inherited)
@@ -199,7 +199,7 @@ If PACKAGE is non-NIL, then only the specified PACKAGE is searched."
                (plusp (length name))
                (char= #\. (char name 0)))
       (let* ((last-dot-position (or (find-non-dot name) (length name)))
-	     (n-dots (the fixnum last-dot-position))
+	     (n-dots (truly-the fixnum last-dot-position))
 	     (name (subseq name last-dot-position)))
 	;; relative to our (- n-dots 1)'th parent
 	(let ((p *package*))

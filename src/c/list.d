@@ -133,22 +133,6 @@ setup_test(struct cl_test *t, cl_object item, cl_object test,
 	}
 }
 
-cl_object
-cl_car(cl_object x)
-{
-	if (ecl_unlikely(!LISTP(x)))
-                FEwrong_type_only_arg(@[car], x, @[list]);
-	return1(Null(x)? x : ECL_CONS_CAR(x));
-}
-
-cl_object
-cl_cdr(cl_object x)
-{
-	if (ecl_unlikely(!LISTP(x)))
-                FEwrong_type_only_arg(@[car], x, @[list]);
-	return1(Null(x)? x : ECL_CONS_CDR(x));
-}
-
 @(defun list (&rest args)
 	cl_object head = Cnil;
 @
@@ -230,52 +214,6 @@ ecl_append(cl_object x, cl_object y)
         *tail = y;
 	return head;
 }
-
-/* Open coded CARs and CDRs */
-#define car(foo)                                \
-	foo;                                    \
-	if (ecl_unlikely(!LISTP(x))) goto E;    \
-	if (!Null(x)) x = ECL_CONS_CAR(x);
-#define cdr(foo)                                \
-	foo;                                    \
-	if (ecl_unlikely(!LISTP(x))) goto E;    \
-	if (!Null(x)) x = ECL_CONS_CDR(x);
-#define defcxr(name, arg, code)                                 \
-        cl_object cl_##name(cl_object foo) {                    \
-                register cl_object arg = foo;                   \
-                code; return1(arg);                             \
-        E:	FEwrong_type_only_arg(@[car],arg,@[list]);}
-
-defcxr(caar, x, car(car(x)))
-defcxr(cadr, x, car(cdr(x)))
-defcxr(cdar, x, cdr(car(x)))
-defcxr(cddr, x, cdr(cdr(x)))
-defcxr(caaar, x, car(car(car(x))))
-defcxr(caadr, x, car(car(cdr(x))))
-defcxr(cadar, x, car(cdr(car(x))))
-defcxr(caddr, x, car(cdr(cdr(x))))
-defcxr(cdaar, x, cdr(car(car(x))))
-defcxr(cdadr, x, cdr(car(cdr(x))))
-defcxr(cddar, x, cdr(cdr(car(x))))
-defcxr(cdddr, x, cdr(cdr(cdr(x))))
-defcxr(caaaar, x, car(car(car(car(x)))))
-defcxr(caaadr, x, car(car(car(cdr(x)))))
-defcxr(caadar, x, car(car(cdr(car(x)))))
-defcxr(caaddr, x, car(car(cdr(cdr(x)))))
-defcxr(cadaar, x, car(cdr(car(car(x)))))
-defcxr(cadadr, x, car(cdr(car(cdr(x)))))
-defcxr(caddar, x, car(cdr(cdr(car(x)))))
-defcxr(cadddr, x, car(cdr(cdr(cdr(x)))))
-defcxr(cdaaar, x, cdr(car(car(car(x)))))
-defcxr(cdaadr, x, cdr(car(car(cdr(x)))))
-defcxr(cdadar, x, cdr(car(cdr(car(x)))))
-defcxr(cdaddr, x, cdr(car(cdr(cdr(x)))))
-defcxr(cddaar, x, cdr(cdr(car(car(x)))))
-defcxr(cddadr, x, cdr(cdr(car(cdr(x)))))
-defcxr(cdddar, x, cdr(cdr(cdr(car(x)))))
-defcxr(cddddr, x, cdr(cdr(cdr(cdr(x)))))
-#undef car
-#undef cdr
 
 #define LENTH(n) (cl_object x) {\
 	return1(ecl_nth(n, x));\
@@ -367,16 +305,40 @@ cl_list_length(cl_object x)
 }
 
 cl_object
+si_proper_list_p(cl_object x)
+{
+	cl_fixnum n;
+	cl_object fast, slow, test = Ct;
+	/* INV: A list's length always fits in a fixnum */
+	fast = slow = x;
+	for (n = 0; !Null(fast); n++, fast = ECL_CONS_CDR(fast)) {
+		if (!LISTP(fast)) {
+                        test = Cnil;
+                        break;
+		}
+		if (n & 1) {
+			/* Circular list? */
+			if (slow == fast) {
+                                test = Cnil;
+                                break;
+                        }
+			slow = ECL_CONS_CDR(slow);
+		}
+	}
+	@(return test);
+}
+
+cl_object
 cl_nth(cl_object n, cl_object x)
 {
-	@(return ecl_nth(fixint(n), x))
+	@(return ecl_nth(ecl_to_size(n), x))
 }
 
 cl_object
 ecl_nth(cl_fixnum n, cl_object x)
 {
 	if (n < 0)
-		FEtype_error_index(x, MAKE_FIXNUM(n));
+		FEtype_error_index(x, n);
 	/* INV: No need to check for circularity since we visit
 	   at most `n' conses */
 	for (; n > 0 && CONSP(x); n--)
@@ -391,14 +353,14 @@ ecl_nth(cl_fixnum n, cl_object x)
 cl_object
 cl_nthcdr(cl_object n, cl_object x)
 {
-	@(return ecl_nthcdr(fixint(n), x))
+	@(return ecl_nthcdr(ecl_to_size(n), x))
 }
 
 cl_object
 ecl_nthcdr(cl_fixnum n, cl_object x)
 {
 	if (n < 0)
-		FEtype_error_index(x, MAKE_FIXNUM(n));
+		FEtype_error_index(x, n);
 	while (n-- > 0 && !Null(x)) {
 		if (LISTP(x)) {
 			x = ECL_CONS_CDR(x);
@@ -441,14 +403,14 @@ ecl_last(cl_object l, cl_index n)
 @
 	if (type_of(k) == t_bignum)
 		@(return l)
-	@(return ecl_last(l, fixnnint(k)))
+	@(return ecl_last(l, ecl_to_size(k)))
 @)
 
 @(defun make_list (size &key initial_element &aux x)
 	cl_fixnum i;
 @
-	/* INV: fixnnint() signals a type-error if SIZE is not a integer >=0 */
-	i = fixnnint(size);
+	/* INV: ecl_to_size() signals a type-error if SIZE is not a integer >=0 */
+	i = ecl_to_size(size);
 	while (i-- > 0)
 		x = CONS(initial_element, x);
 	@(return x)
@@ -616,8 +578,8 @@ ecl_butlast(cl_object l, cl_index n)
 	/* INV: No list has more than MOST_POSITIVE_FIXNUM elements */
 	if (type_of(nn) == t_bignum)
 		@(return Cnil);
-	/* INV: fixnnint() signals a type-error if NN is not an integer >=0 */
-	@(return ecl_butlast(lis, fixnnint(nn)))
+	/* INV: ecl_to_size() signals a type-error if NN is not an integer >=0 */
+	@(return ecl_butlast(lis, ecl_to_size(nn)))
 @)
 
 cl_object
@@ -645,8 +607,8 @@ ecl_nbutlast(cl_object l, cl_index n)
 	/* INV: No list has more than MOST_POSITIVE_FIXNUM elements */
 	if (type_of(nn) == t_bignum)
 		@(return Cnil)
-	/* INV: fixnnint() signas a type-error if NN is not an integer >=0 */
-	@(return ecl_nbutlast(lis, fixnnint(nn)))
+	/* INV: ecl_to_size() signas a type-error if NN is not an integer >=0 */
+	@(return ecl_nbutlast(lis, ecl_to_size(nn)))
 @)
 
 cl_object
@@ -1026,6 +988,22 @@ ecl_remove_eq(cl_object x, cl_object l)
 			}
 		}
 	} end_loop_for_on_unsafe(l);
+	return head;
+}
+
+cl_object
+ecl_delete_eq(cl_object x, cl_object l)
+{
+	cl_object head = l;
+        cl_object *p = &head;
+        while (!ECL_ATOM(l)) {
+                if (ECL_CONS_CAR(l) == x) {
+                        *p = l = ECL_CONS_CDR(l);
+                } else {
+                        p = &ECL_CONS_CDR(l);
+                        l = *p;
+                }
+        }
 	return head;
 }
 

@@ -129,7 +129,7 @@
              (value (third scan))
              (supplied-value (si::search-keyword initargs initarg)))
         (when (or (eq supplied-value '+initform-unsupplied+)
-                  (eq supplied-value 'si::failed))
+                  (eq supplied-value 'si::missing-keyword))
           (when (eq supplied-value '+initform-unsupplied+)
             (remf initargs initarg))
           (setf output (list* (funcall value) initarg output)))))
@@ -138,9 +138,11 @@
         initargs)))
 
 (defmethod direct-slot-definition-class ((class T) &rest canonicalized-slot)
+  (declare (ignore class canonicalized-slot))
   (find-class 'standard-direct-slot-definition nil))
 
 (defmethod effective-slot-definition-class ((class T) &rest canonicalized-slot)
+  (declare (ignore class canonicalized-slot))
   (find-class 'standard-effective-slot-definition nil))
 
 (defun has-forward-referenced-parents (class)
@@ -155,6 +157,7 @@
 
 (defmethod initialize-instance ((class class) &rest initargs
 				&key sealedp direct-superclasses direct-slots)
+  (declare (ignore sealedp))
   ;; convert the slots from lists to direct slots
   (setf direct-slots (loop for s in direct-slots
                         collect (canonical-slot-to-direct-slot class s)))
@@ -194,6 +197,7 @@
 (defmethod shared-initialize ((class std-class) slot-names &rest initargs &key
                               (optimize-slot-access (list *optimize-slot-access*))
                               sealedp)
+  (declare (ignore initargs slot-names))
   (setf (slot-value class 'optimize-slot-access) (first optimize-slot-access)
 	(slot-value class 'sealedp) (and sealedp t))
   (setf class (call-next-method))
@@ -436,8 +440,10 @@ because it contains a reference to the undefined class~%  ~A"
 ;;;
 (defmethod ensure-class-using-class ((class class) name &rest rest
 				     &key direct-slots direct-default-initargs)
+  (declare (ignore direct-default-initargs direct-slots))
   (multiple-value-bind (metaclass direct-superclasses options)
       (apply #'help-ensure-class rest)
+    (declare (ignore direct-superclasses))
     (cond ((forward-referenced-class-p class)
 	   (change-class class metaclass))
 	  ((not (eq (class-of class) metaclass))
@@ -450,7 +456,7 @@ because it contains a reference to the undefined class~%  ~A"
 	 (error "~a is not a valid class specifier." class-or-symbol))
 	((find-class class-or-symbol fail))
 	(t
-	 (warn 'ext::simple-style-warning
+	 (warn 'si::simple-style-warning
 	       :format-control "Class ~A has been forward referenced."
 	       :format-arguments (list class-or-symbol))
 	 (ensure-class class-or-symbol
@@ -571,41 +577,41 @@ because it contains a reference to the undefined class~%  ~A"
 	       `(si::instance-ref ,slotd #.(position 'location +slot-definition-slots+
 						     :key #'first))))
     (values #'(lambda (self)
-                (declare (optimize (safety 1) (speed 3) (debug 0))
+                (declare (optimize (safety 0) (speed 3) (debug 0))
                          (standard-object self))
                 (ensure-up-to-date-instance self)
 		(let* ((class (si:instance-class self))
 		       (table (slot-table class))
-		       (slotd (gethash slot-name table))
+		       (slotd (truly-the slot-definition (gethash slot-name table)))
 		       (index (slot-definition-location slotd))
 		       (value (if (si::fixnump index)
-				  (si:instance-ref self (the fixnum index))
-				  (car (the cons index)))))
+				  (si:instance-ref self (truly-the fixnum index))
+				  (car (truly-the cons index)))))
 		  (if (si:sl-boundp value)
 		      value
 		      (values (slot-unbound (class-of self) self slot-name)))))
 	    #'(lambda (value self)
-                (declare (optimize (safety 1) (speed 3) (debug 0))
+                (declare (optimize (safety 0) (speed 3) (debug 0))
                          (standard-object self))
                 (ensure-up-to-date-instance self)
 		(let* ((class (si:instance-class self))
 		       (table (slot-table class))
-		       (slotd (gethash slot-name table))
+		       (slotd (truly-the slot-definition (gethash slot-name table)))
 		       (index (slot-definition-location slotd)))
 		  (if (si::fixnump index)
-		      (si:instance-set self (the fixnum index) value)
-		      (rplaca (the cons index) value)))))))
+		      (si:instance-set self (truly-the fixnum index) value)
+		      (rplaca (truly-the cons index) value)))))))
 
 (defun std-class-sealed-accessors (index)
   (declare (si::c-local)
-	   (fixnum slot-index))
+	   (fixnum index))
   (values #'(lambda (self)
-              (declare (optimize (safety 1) (speed 3) (debug 0))
+              (declare (optimize (safety 0) (speed 3) (debug 0))
                        (standard-object self))
               (ensure-up-to-date-instance self)
 	      (safe-instance-ref self index))
 	  #'(lambda (value self)
-              (declare (optimize (safety 1) (speed 3) (debug 0))
+              (declare (optimize (safety 0) (speed 3) (debug 0))
                        (standard-object self))
               (ensure-up-to-date-instance self)
 	      (si:instance-set self index value))))
@@ -634,8 +640,11 @@ because it contains a reference to the undefined class~%  ~A"
 	      (location (safe-slot-definition-location slotd)))
 	  (cond ((and (eq allocation :instance) (typep location 'fixnum))
 		 (std-class-sealed-accessors (slot-definition-location slotd)))
+		;; When a class is the specified STANDARD-CLASS, then the
+		;; user may not write any method around SLOT-VALUE-USING-CLASS
+		;; This allows us to write optimized versions of the accessors.
 		((and (eq allocation :instance)
-		      (slot-value standard-class 'optimize-slot-access))
+		      (eq standard-class +the-standard-class+))
 		 (std-class-optimized-accessors name))
 		(t
 		 (std-class-accessors name))))
@@ -755,21 +764,22 @@ because it contains a reference to the undefined class~%  ~A"
 
 (defmethod describe-object ((obj std-class) (stream t))
   (let ((slotds (class-slots (si:instance-class obj))))
-    (format t "~%~A is an instance of class ~A"
+    (format stream "~%~A is an instance of class ~A"
 	    obj (class-name (si:instance-class obj)))
     (do ((scan slotds (cdr scan))
 	 (i 0 (1+ i)))
 	((null scan))
       (declare (fixnum i))
-      (print (slot-definition-name (car scan))) (princ ":	")
+      (print (slot-definition-name (car scan)) stream)
+      (princ ":	" stream)
       (case (slot-definition-name (car scan))
 	    ((SUPERIORS INFERIORS PRECEDENCE-LIST)
-	     (princ "(")
+	     (princ "(" stream)
 	     (do* ((scan (si:instance-ref obj i) (cdr scan))
 		   (e (car scan) (car scan)))
 		  ((null scan))
-		  (prin1 (class-name e))
-		  (when (cdr scan) (princ " ")))
+		  (prin1 (class-name e) stream)
+		  (when (cdr scan) (princ " " stream)))
 	     (princ ")"))
-	    (otherwise (prin1 (si:instance-ref obj i))))))
+	    (otherwise (prin1 (si:instance-ref obj i) stream)))))
   obj)

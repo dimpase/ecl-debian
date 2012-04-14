@@ -90,9 +90,9 @@ si_write_object(cl_object x, cl_object stream)
 	bool circle;
 #ifdef ECL_CMU_FORMAT
 	if (ecl_symbol_value(@'*print-pretty*') != Cnil) {
-		cl_object f = funcall(2, @'pprint-dispatch', x);
+		cl_object f = _ecl_funcall2(@'pprint-dispatch', x);
 		if (VALUES(1) != Cnil) {
-			funcall(3, f, stream, x);
+			_ecl_funcall3(f, stream, x);
                         goto OUTPUT;
 		}
 	}
@@ -110,7 +110,7 @@ si_write_object(cl_object x, cl_object stream)
 				cl__make_hash_table(@'eq',
 						    MAKE_FIXNUM(1024),
                                                     cl_core.rehash_size,
-                                                    cl_core.rehash_threshold, Cnil);
+                                                    cl_core.rehash_threshold);
 			ecl_bds_bind(env, @'si::*circle-counter*', Ct);
 			ecl_bds_bind(env, @'si::*circle-stack*', hash);
 			si_write_object(x, cl_core.null_stream);

@@ -98,7 +98,8 @@ that are susceptible to be changed by PROCLAIM."
   env)
 
 (defun cmp-env-register-symbol-macro (name form &optional (env *cmp-env*))
-  (push (list name 'si::symbol-macro #'(lambda (whole env) form))
+  (push (list name 'si::symbol-macro
+	      #'(lambda (whole env) (declare (ignore env whole)) form))
 	(cmp-env-variables env))
   env)
 
@@ -123,7 +124,7 @@ that are susceptible to be changed by PROCLAIM."
 	(found nil))
     (dolist (record (cmp-env-functions env))
       (cond ((eq record 'CB)
-	     (setf ccbb t))
+	     (setf ccb t))
 	    ((eq record 'LB)
 	     (setf clb t))
 	    ((eq record 'UNWIND-PROTECT)
@@ -198,7 +199,7 @@ that are susceptible to be changed by PROCLAIM."
 	(cons mark (cdr env))))
 
 (defun cmp-env-new-variables (new-env old-env)
-  (loop for i in (ldiff (cmp-env-variables *cmp-env*)
+  (loop for i in (ldiff (cmp-env-variables new-env)
 			(cmp-env-variables old-env))
 	when (and (consp i) (var-p (fourth i)))
 	collect (fourth i)))

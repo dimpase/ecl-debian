@@ -13,18 +13,18 @@
 
 ;;; ----------------------------------------------------------------------
 
-(defvar *method-size* 32)		; Size of methods hash tables
+(defparameter *method-size* 32)		; Size of methods hash tables
 
 ;;; This holds fake methods created during bootstrap.
 ;;; It is  an alist of:
 ;;;	(method-name {method}+)
-(defvar *early-methods* nil)
+(defparameter *early-methods* nil)
 
 ;;;
 ;;; This is used by combined methods to communicate the next methods to
 ;;; the methods they call.
 ;;;
-(defvar *next-methods* nil)
+(defparameter *next-methods* nil)
 
 
 ;;; ----------------------------------------------------------------------
@@ -139,7 +139,8 @@
     (> (count-if #'function-boundary (car env)) 1)))
 
 (defun walk-method-lambda (method-lambda required-parameters env)
-  (declare (si::c-local))
+  (declare (si::c-local)
+	   (ignore required-parameters))
   (let ((call-next-method-p nil)
 	(next-method-p-p nil)
 	(in-closure-p nil))
@@ -270,6 +271,7 @@ have disappeared."
 (defun add-method-keywords (method)
   (multiple-value-bind (reqs opts rest key-flag keywords allow-other-keys)
       (si::process-lambda-list (method-lambda-list method) t)
+    (declare (ignore reqs opts rest key-flag))
     (setf (method-keywords method)
           (if allow-other-keys
               't
@@ -314,6 +316,7 @@ have disappeared."
       (setf (generic-function-argument-precedence-order gf)
 	    (rest (si::process-lambda-list (method-lambda-list method) t))))
     (compute-g-f-spec-list gf)
+    (set-generic-function-dispatch gf)
     (dolist (d (generic-function-dependents gf))
       (update-dependent gf d 'add-method method))
     method))
@@ -321,8 +324,6 @@ have disappeared."
 (defun find-method (gf qualifiers specializers &optional (errorp t))
   (declare (notinline method-qualifiers))
   (let* ((method-list (generic-function-methods gf))
-	 (required-args (subseq (generic-function-lambda-list gf) 0
-				(length specializers)))
 	 found)
     (dolist (method method-list)
       (when (and (equal qualifiers (method-qualifiers method))

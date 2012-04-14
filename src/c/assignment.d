@@ -15,8 +15,9 @@
     See file '../Copyright' for full details.
 */
 
-#include <ecl/ecl.h>
 #include <string.h>
+#include <ecl/ecl.h>
+#include <ecl/internal.h>
 
 cl_object
 cl_set(cl_object var, cl_object val)
@@ -25,6 +26,56 @@ cl_set(cl_object var, cl_object val)
 	if (ecl_symbol_type(var) & stp_constant)
 		FEinvalid_variable("Cannot assign to the constant ~S.", var);
 	return1(ECL_SETQ(env, var, val));
+}
+
+static cl_object
+unbound_setf_function_error(cl_narg narg, ...)
+{
+	const cl_env_ptr the_env = ecl_process_env();
+        cl_object name = the_env->function->cclosure.env;
+	FEundefined_function(cl_list(2, @'setf', name));
+}
+
+static cl_object
+make_setf_function_error(cl_object name)
+{
+	return ecl_make_cclosure_va((cl_objectfn)unbound_setf_function_error,
+				    name, Cnil);
+}
+
+cl_object
+ecl_setf_definition(cl_object sym, cl_object createp)
+{
+	cl_env_ptr the_env = ecl_process_env();
+	cl_object pair;
+        ECL_WITH_GLOBAL_ENV_RDLOCK_BEGIN(the_env) {
+                pair = ecl_gethash_safe(sym, cl_core.setf_definitions, Cnil);
+		if (Null(pair) && !Null(createp)) {
+			createp = make_setf_function_error(sym);
+			pair = ecl_cons(createp, Cnil);
+			ecl_sethash(sym, cl_core.setf_definitions, pair);
+		}
+        } ECL_WITH_GLOBAL_ENV_RDLOCK_END;
+	return pair;
+}
+
+cl_object
+si_setf_definition(cl_object sym, cl_object value)
+{
+	@(return ecl_setf_definition(sym, value))
+}
+
+static void
+ecl_rem_setf_definition(cl_object sym)
+{
+	cl_env_ptr the_env = ecl_process_env();
+        ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(the_env) {
+                cl_object pair = ecl_gethash_safe(sym, cl_core.setf_definitions, Cnil);
+		if (!Null(pair)) {
+			ECL_RPLACA(pair, Cnil);
+			ecl_remhash(sym, cl_core.setf_definitions);
+		}
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
 }
 
 @(defun si::fset (fname def &optional macro pprint)
@@ -61,13 +112,12 @@ cl_set(cl_object var, cl_object val)
 		else
 			si_put_sysprop(sym, @'si::pretty-print-format', pprint);
 #endif
+	} else if (mflag) {
+		FEerror("~S is not a valid name for a macro.", 1, fname);
 	} else {
-		if (mflag)
-			FEerror("~S is not a valid name for a macro.", 1, fname);
-		si_put_sysprop(sym, @'si::setf-symbol', def);
-		si_rem_sysprop(sym, @'si::setf-lambda');
-		si_rem_sysprop(sym, @'si::setf-method');
-		si_rem_sysprop(sym, @'si::setf-update');
+		cl_object pair = ecl_setf_definition(sym, def);
+		ECL_RPLACA(pair, def);
+		ECL_RPLACD(pair, sym);
 	}
 	@(return def)
 @)
@@ -97,10 +147,8 @@ cl_fmakunbound(cl_object fname)
 		SYM_FUN(sym) = Cnil;
 		ecl_symbol_type_set(sym, ecl_symbol_type(sym) & ~stp_macro);
 	} else {
-		si_rem_sysprop(sym, @'si::setf-symbol');
-		si_rem_sysprop(sym, @'si::setf-lambda');
+		ecl_rem_setf_definition(sym);
 		si_rem_sysprop(sym, @'si::setf-method');
-		si_rem_sysprop(sym, @'si::setf-update');
 	}
 	@(return fname)
 }
@@ -117,21 +165,25 @@ cl_object
 si_get_sysprop(cl_object sym, cl_object prop)
 {
 	cl_env_ptr the_env = ecl_process_env();
-	cl_object plist = ecl_gethash_safe(sym, cl_core.system_properties, Cnil);
-	prop = ecl_getf(plist, prop, OBJNULL);
-	if (prop == OBJNULL) {
-		@(return Cnil Cnil);
-	} else {
-		@(return prop Ct);
-	}
+        ECL_WITH_GLOBAL_ENV_RDLOCK_BEGIN(the_env) {
+                cl_object plist = ecl_gethash_safe(sym, cl_core.system_properties, Cnil);
+                prop = ecl_getf(plist, prop, OBJNULL);
+        } ECL_WITH_GLOBAL_ENV_RDLOCK_END;
+        if (prop == OBJNULL) {
+                @(return Cnil Cnil);
+        } else {
+                @(return prop Ct);
+        }
 }
 
 cl_object
 si_put_sysprop(cl_object sym, cl_object prop, cl_object value)
 {
-	cl_object plist;
-	plist = ecl_gethash_safe(sym, cl_core.system_properties, Cnil);
-	ecl_sethash(sym, cl_core.system_properties, si_put_f(plist, value, prop));
+	cl_env_ptr the_env = ecl_process_env();
+        ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(the_env) {
+                cl_object plist = ecl_gethash_safe(sym, cl_core.system_properties, Cnil);
+                ecl_sethash(sym, cl_core.system_properties, si_put_f(plist, value, prop));
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
 	@(return value);
 }
 

@@ -17,12 +17,32 @@
 ;; REPRESENTATION TYPES
 ;;
 
+(defconstant +all-integer-rep-type-pairs+
+  '((:byte . -8)
+    (:unsigned-byte . 8)
+    (:unsigned-short . #.(logcount si::c-ushort-max))
+    (:short . #.(- (logcount si::c-ushort-max)))
+    (:unsigned-int . #.(logcount si::c-uint-max))
+    (:int . #.(logcount si::c-uint-max))
+    (:unsigned-long . #.(logcount si::c-ulong-max))
+    (:long . #.(logcount si::c-ulong-max))
+    #+long-long
+    (:unsigned-long-long . #.(logcount si::c-ulong-long-max))
+    #+long-long
+    (:long-long . #.(logcount si::c-ulong-long-max))
+    (:cl-index . #.si::cl-fixnum-bits)
+    (:fixnum . #.(- si::cl-fixnum-bits))
+    (:uint8-t . 8)
+    (:int8-t . -8)
+    (:uint16-t . 16)
+    (:int16-t . -16)
+    (:uint32-t . 32)
+    (:int32-t . -32)
+    (:uint64-t . 64)
+    (:int64-t . -64)))
+
 (defconstant +all-integer-rep-types+
-  '(:byte :unsigned-byte :short :unsigned-short :int :unsigned-int
-	  :long :unsigned-long :fixnum :cl-index
-	  :long-long :unsigned-long-long
-	  :int8-t :uint8-t :int16-t :uint16-t :int32-t :uint32-t
-	  :int64-t :uint64-t))
+  (mapcar #'car +all-integer-rep-type-pairs+))
 
 (defconstant +all-number-rep-types+
   (append +all-integer-rep-types+ '(:float :double :long-double)))
@@ -31,11 +51,11 @@
   '(;; These types can be used by ECL to unbox data
     ;; They are sorted from the most specific, to the least specific one.
     :byte
-    #1=((signed-byte 8) "int8_t" "ecl_make_int8_t" "ecl_to_int8_t" "fix")
+    #1=((signed-byte 8) "int8_t" "ecl_make_int8_t" "ecl_to_int8_t" "ecl_fix")
     :unsigned-byte
-    #2=((unsigned-byte 8) "uint8_t" "ecl_make_uint8_t" "ecl_to_uint8_t" "fix")
+    #2=((unsigned-byte 8) "uint8_t" "ecl_make_uint8_t" "ecl_to_uint8_t" "ecl_fix")
     :fixnum
-    (fixnum "cl_fixnum" "MAKE_FIXNUM" "ecl_to_fixnum" "fix")
+    (fixnum "cl_fixnum" "MAKE_FIXNUM" "ecl_to_fixnum" "ecl_fix")
     :int
     ((integer #.si:c-int-min #.si:c-int-max) "int"
      "ecl_make_int" "ecl_to_int" "ecl_to_int")
@@ -50,7 +70,7 @@
      "ecl_make_ulong" "ecl_to_ulong" "ecl_to_ulong")
     :cl-index
     ((integer 0 #.most-positive-fixnum) "cl_index"
-     "ecl_make_unsigned_integer" "fixnnint" "fix")
+     "ecl_make_unsigned_integer" "ecl_to_cl_index" "ecl_fix")
     #+long-long
     :long-long
     #+long-long
@@ -72,7 +92,7 @@
     (long-float "long double" "ecl_make_longfloat" "ecl_to_long_double"
                    "ecl_to_long_double")
     :unsigned-char
-    (base-char "char" "CODE_CHAR" "ecl_base_char_code" "CHAR_CODE")
+    (base-char "unsigned char" "CODE_CHAR" "ecl_base_char_code" "CHAR_CODE")
     :char
     (base-char "char" "CODE_CHAR" "ecl_base_char_code" "CHAR_CODE")
     :wchar
@@ -113,33 +133,33 @@
     #+:uint16-t
     :int16-t
     #+:uint16-t
-    ((signed-byte 16) "ecl_int16_t" "ecl_make_int16_t" "ecl_to_int16_t" "fix")
+    ((signed-byte 16) "ecl_int16_t" "ecl_make_int16_t" "ecl_to_int16_t" "ecl_fix")
     #+:uint16-t
     :uint16-t
     #+:uint16-t
-    ((signed-byte 16) "ecl_uint16_t" "ecl_make_uint16_t" "ecl_to_uint16_t" "fix")
+    ((signed-byte 16) "ecl_uint16_t" "ecl_make_uint16_t" "ecl_to_uint16_t" "ecl_fix")
     #+:uint32-t
     :int32-t
     #+:uint32-t
-    ((signed-byte 32) "ecl_int32_t" "ecl_make_int32_t" "ecl_to_int32_t" "fix")
+    ((signed-byte 32) "ecl_int32_t" "ecl_make_int32_t" "ecl_to_int32_t" "ecl_fix")
     #+:uint32-t
     :uint32-t
     #+:uint32-t
-    ((signed-byte 32) "ecl_uint32_t" "ecl_make_uint32_t" "ecl_to_uint32_t" "fix")
+    ((signed-byte 32) "ecl_uint32_t" "ecl_make_uint32_t" "ecl_to_uint32_t" "ecl_fix")
     #+:uint64-t
     :int64-t
     #+:uint64-t
-    ((signed-byte 64) "ecl_int64_t" "ecl_make_int64_t" "ecl_to_int64_t" "fix")
+    ((signed-byte 64) "ecl_int64_t" "ecl_make_int64_t" "ecl_to_int64_t" "ecl_fix")
     #+:uint64-t
     :uint64-t
     #+:uint64-t
-    ((signed-byte 64) "ecl_uint64_t" "ecl_make_uint64_t" "ecl_to_uint64_t" "fix")
+    ((signed-byte 64) "ecl_uint64_t" "ecl_make_uint64_t" "ecl_to_uint64_t" "ecl_fix")
     :short
     ((integer #.si:c-short-min #.si:c-short-max) "short"
-     "ecl_make_short" "ecl_to_short" "fix")
+     "ecl_make_short" "ecl_to_short" "ecl_fix")
     :unsigned-short
     ((integer 0 #.si:c-ushort-max) "unsigned short"
-     "ecl_make_ushort" "ecl_to_ushort" "fix")
+     "ecl_make_ushort" "ecl_to_ushort" "ecl_fix")
     ))
 
 (defparameter +representation-type-hash+
@@ -157,8 +177,20 @@
 (defun c-number-rep-type-p (rep-type)
   (member rep-type +all-number-rep-types+))
 
+(defun c-integer-rep-type-p (rep-type)
+  (member rep-type +all-integer-rep-types+))
+
+(defun c-integer-rep-type-bits (rep-type)
+  (abs (cdr (assoc rep-type +all-integer-rep-type-pairs+))))
+
 (defun c-number-type-p (type)
   (c-number-rep-type-p (lisp-type->rep-type type)))
+
+(defun c-integer-type-p (type)
+  (c-integer-rep-type-p (lisp-type->rep-type type)))
+
+(defun c-integer-type-bits (type)
+  (c-number-rep-type-bits (lisp-type->rep-type type)))
 
 (defun rep-type-record (rep-type)
   (gethash rep-type +representation-type-hash+))
@@ -249,6 +281,7 @@
                              (t (rep-type->lisp-type type)))))
 	   (BIND (var-type (second loc)))
 	   (LCL (or (third loc) T))
+	   (THE (second loc))
 	   (otherwise T)))))
 
 (defun loc-representation-type (loc)
@@ -272,6 +305,7 @@
 	   (BIND (var-rep-type (second loc)))
 	   (LCL (lisp-type->rep-type (or (third loc) T)))
            ((JUMP-TRUE JUMP-FALSE) :bool)
+	   (THE (loc-representation-type (third loc)))
 	   (otherwise :object)))))
 
 (defun wt-coerce-loc (dest-rep-type loc)
@@ -391,7 +425,7 @@
   (unless (every #'stringp args)
     (cmperr "The argument to CLINES, ~s, is not a list of strings." args))
   (setf *clines-string-list* (nconc *clines-string-list* (copy-list args)))
-  (c1expr '(progn)))
+  '(progn))
 
 (defun output-clines (output-stream)
   (flet ((parse-one-string (s output-stream)
@@ -551,7 +585,8 @@
 	       (wt "cl_env_copy->nvalues=" (length output-vars) ";")
 	       'VALUES))))))
 
-(defun c2c-inline (arguments &rest rest)
+(defun c2c-inline (c1form arguments &rest rest)
+  (declare (ignore c1form))
   (let ((*inline-blocks* 0)
         (*temp* *temp*))
     (unwind-exit (apply #'produce-inline-loc (inline-args arguments) rest))
@@ -616,8 +651,6 @@
 		 ((< index (length coerced-arguments))
 		  (wt (nth index coerced-arguments)))
 		 (t
-                  (print k)
-                  (print index)
 		  (cmperr "C-INLINE: Variable code exceeds number of arguments")))))
 	(otherwise
 	 (write-char c *compiler-output1*))))))

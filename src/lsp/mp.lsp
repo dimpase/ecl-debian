@@ -91,7 +91,7 @@ As interrupts are normally allowed WITH-INTERRUPTS only makes sense if there
 is an outer WITHOUT-INTERRUPTS with a corresponding ALLOW-WITH-INTERRUPTS:
 interrupts are not enabled if any outer WITHOUT-INTERRUPTS is not accompanied
 by ALLOW-WITH-INTERRUPTS."
-  (with-unique-names (allowp enablep)
+  (ext:with-unique-names (allowp enablep)
     ;; We could manage without ENABLEP here, but that would require
     ;; taking extra care not to ever have *ALLOW-WITH-INTERRUPTS* NIL
     ;; and *INTERRUPTS-ENABLED* T -- instead of risking future breakage
@@ -117,7 +117,7 @@ by ALLOW-WITH-INTERRUPTS."
   ;; the get-lock statement, to ensure that the unlocking is done with
   ;; interrupts disabled.
   #+threads
-  (ext:with-unique-names (lock count interrupts)
+  (ext:with-unique-names (lock count)
     `(let* ((,lock ,lock-form)
             (,count (mp:lock-count-mine ,lock)))
        (without-interrupts

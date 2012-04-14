@@ -23,13 +23,19 @@
   (cmperr "The declaration ~s was found in a bad place." (cons 'DECLARE args)))
 
 (defun c1the (args)
-  (check-args-number 'THE args 2 2)
+  (if (policy-the-is-checked)
+      (c1checked-value args)
+      (c1truly-the args)))
+
+(defun c1truly-the (args)
+  (check-args-number 'TRULY-THE args 2 2)
   (let* ((form (c1expr (second args)))
 	 (the-type (first args))
 	 type)
-    (if (setf type (values-type-and the-type (c1form-primary-type form)))
+    (setf type (values-type-and the-type (c1form-type form)))
+    (if (values-type-primary-type type)
         (setf (c1form-type form) type)
-      (cmpwarn "Type mismatch was found in ~s." (cons 'THE args)))
+	(cmpwarn "Type mismatch was found in ~s." (cons 'THE args)))
     form))
 
 (defun c1compiler-let (args &aux (symbols nil) (values nil))
@@ -51,7 +57,8 @@
   (setq args (progv symbols values (c1progn (cdr args))))
   (make-c1form 'COMPILER-LET args symbols values args))
 
-(defun c2compiler-let (symbols values body)
+(defun c2compiler-let (c1form symbols values body)
+  (declare (ignore c1form))
   (progv symbols values (c2expr body)))
 
 (defun c1function (args &aux fd)
@@ -81,7 +88,8 @@
 	       (make-c1form 'FUNCTION lambda-form 'CLOSURE lambda-form funob))))
 	  (t (cmperr "The function ~s is illegal." fun)))))
 
-(defun c2function (kind funob fun)
+(defun c2function (c1form kind funob fun)
+  (declare (ignore c1form))
   (case kind
     (GLOBAL
      (unwind-exit (list 'FDEFINITION fun)))
@@ -122,13 +130,40 @@
 	(push fun *local-funs*))))
 
 (defun wt-fdefinition (fun-name)
-  (let ((vv (add-object fun-name)))
-    (if (and (symbolp fun-name)
-	     (or (not (safe-compile))
-		 (and (eql (symbol-package fun-name) (find-package "CL"))
-		      (fboundp fun-name) (functionp (fdefinition fun-name)))))
-	(wt "(" vv "->symbol.gfdef)")
-	(wt "ecl_fdefinition(" vv ")"))))
+  (let* ((name (si::function-block-name fun-name))
+	 (package (symbol-package name))
+	 (safe (or (not (safe-compile))
+		   (and (or (eq package (find-package "CL"))
+			    (eq package (find-package "CLOS"))
+			    (eq package (find-package "SI")))
+			(fboundp fun-name)
+			(functionp (fdefinition fun-name))))))
+    (if (eq name fun-name)
+	;; #'symbol
+	(let ((vv (add-symbol name)))
+	  (if safe
+	      (wt "(" vv "->symbol.gfdef)")
+	      (wt "ecl_fdefinition(" vv ")")))
+	;; #'(SETF symbol)
+	(if safe
+	    #+(or)
+	    (let ((set-loc (assoc name *setf-definitions*)))
+	      (unless set-loc
+		(let* ((setf-vv (data-empty-loc))
+		       (name-vv (add-symbol name))
+		       (setf-form-vv (add-object fun-name)))
+		  (setf set-loc (list name setf-vv name-vv setf-form-vv))
+		  (push set-loc *setf-definitions*)))
+	      (wt "ECL_SETF_DEFINITION(" (second set-loc) "," (fourth set-loc) ")"))
+	    (let ((set-loc (assoc name *setf-definitions*)))
+	      (unless set-loc
+		(let* ((setf-vv (data-empty-loc))
+		       (name-vv (add-symbol name)))
+		  (setf set-loc (list name setf-vv name-vv))
+		  (push set-loc *setf-definitions*)))
+	      (wt "ECL_CONS_CAR(" (second set-loc) ")"))
+	    (let ((vv (add-symbol fun-name)))
+	      (wt "ecl_fdefinition(" vv ")"))))))
 
 (defun environment-accessor (fun)
   (let* ((env-var (env-var-name *env-lvl*))

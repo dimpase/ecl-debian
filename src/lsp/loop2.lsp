@@ -145,7 +145,7 @@
   #-Genera `(copy-list ,l)
   )
 
-(defvar *loop-real-data-type* 'real)
+(defparameter *loop-real-data-type* 'real)
 
 (defun loop-optimization-quantities (env)
   (declare (si::c-local))
@@ -321,7 +321,7 @@ constructed.
   infinity-data)
 
 
-(defvar *loop-minimax-type-infinities-alist*
+(defparameter *loop-minimax-type-infinities-alist*
 	;; This is the sort of value this should take on for a Lisp that has
 	;; "eminently usable" infinities.  n.b. there are neither constants nor
 	;; printed representations for infinities defined by CL.
@@ -371,7 +371,7 @@ constructed.
 
 (defun loop-note-minimax-operation (operation minimax)
   (declare (si::c-local))
-  (pushnew (the symbol operation) (loop-minimax-operations minimax))
+  (pushnew (truly-the symbol operation) (loop-minimax-operations minimax))
   (when (and (cdr (loop-minimax-operations minimax))
 	     (not (loop-minimax-flag-variable minimax)))
     (setf (loop-minimax-flag-variable minimax) (gensym "LOOP-MAXMIN-FLAG-")))
@@ -528,7 +528,7 @@ code to be loaded.
 ;;;; Setq Hackery
 
 
-(defvar *loop-destructuring-hooks*
+(defparameter *loop-destructuring-hooks*
 	nil
   "If not NIL, this must be a list of two things:
 a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.")
@@ -554,7 +554,7 @@ a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.
 	    var-val-pairs)))
 
 
-(defvar *loop-desetq-temporary*
+(defparameter *loop-desetq-temporary*
 	(make-symbol "LOOP-DESETQ-TEMP"))
 
 
@@ -565,6 +565,14 @@ a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.
 	     (do ((tail var)) ((not (consp tail)) tail)
 	       (when (find-non-null (pop tail)) (return t))))
 	   (loop-desetq-internal (var val &optional temp)
+	     ;; if the value is declared 'unsafe', then the assignemnt
+	     ;; is also unsafe.
+	     (when (and (consp val)
+			(eq (first val) 'LOOP-UNSAFE))
+	       (let ((forms (rest val)))
+		 (setf forms (if (rest forms) `(progn ,@forms) (first forms)))
+		 (return-from loop-desetq-internal
+		   `((LOOP-UNSAFE ,@(loop-desetq-internal var forms))))))
 	     ;; returns a list of actions to be performed
 	     (typecase var
 	       (null
@@ -764,11 +772,11 @@ a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.
 
 ;;;; LOOP Iteration Optimization
 
-(defvar *loop-duplicate-code*
+(defparameter *loop-duplicate-code*
 	nil)
 
 
-(defvar *loop-iteration-flag-variable*
+(defparameter *loop-iteration-flag-variable*
 	(make-symbol "LOOP-NOT-FIRST-TIME"))
 
 
@@ -868,7 +876,7 @@ a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.
 	ans)))
 
 
-(defvar *special-code-sizes*
+(defparameter *special-code-sizes*
 	'((return 0) (progn 0)
 	  (null 1) (not 1) (eq 1) (car 1) (cdr 1)
 	  (when 1) (unless 1) (if 1)
@@ -880,7 +888,7 @@ a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.
 	  (cddaar 4) (cddadr 4) (cdddar 4) (cddddr 4)))
 
 
-(defvar *estimate-code-size-punt*
+(defparameter *estimate-code-size-punt*
 	'(block
 	   do do* dolist
 	   flet
@@ -920,8 +928,8 @@ a LET-like macro, and a SETQ-like macro, which perform LOOP-style destructuring.
 	   (let ((fn (car x)) (tem nil) (n 0))
 	     (declare (symbol fn) (fixnum n))
 	     (macrolet ((f (overhead &optional (args nil args-p))
-			  `(the fixnum (+ (the fixnum ,overhead)
-					  (the fixnum (list-size ,(if args-p args '(cdr x))))))))
+			  `(truly-the fixnum (+ (truly-the fixnum ,overhead)
+					  (truly-the fixnum (list-size ,(if args-p args '(cdr x))))))))
 	       (cond ((setq tem (get-sysprop fn 'estimate-code-size))
 		      (typecase tem
 			(fixnum (f tem))
@@ -1303,7 +1311,7 @@ collected result will be returned as the value of the LOOP."
   (declare (si::c-local))
   (cond ((or (null name) (null dtype) (eq dtype t)) nil)
 	((symbolp name)
-	 (unless (or (eq dtype t) (member (the symbol name) *loop-nodeclare*))
+	 (unless (or (eq dtype t) (member (truly-the symbol name) *loop-nodeclare*))
            ;; Allow redeclaration of a variable. This can be used by
            ;; the loop constructors to make the type more and more
            ;; precise as we add keywords
@@ -1431,7 +1439,7 @@ collected result will be returned as the value of the LOOP."
       (loop-disallow-aggregate-booleans))
     (unless dtype
       (setq dtype (or (loop-optional-type) default-type)))
-    (let ((cruft (find (the symbol name) *loop-collection-cruft*
+    (let ((cruft (find (truly-the symbol name) *loop-collection-cruft*
 		       :key #'loop-collector-name)))
       (cond ((not cruft)
 	     (when (and name (loop-variable-p name))
@@ -2078,7 +2086,7 @@ collected result will be returned as the value of the LOOP."
 			  (symbolp sequencev)
 			  sequence-type
 			  (subtypep sequence-type 'vector)
-			  (not (member (the symbol sequencev) *loop-nodeclare*)))
+			  (not (member (truly-the symbol sequencev) *loop-nodeclare*)))
 		 (push `(sys:array-register ,sequencev) *loop-declarations*))
       (list* nil nil				; dummy bindings and prologue
 	     (loop-sequencer

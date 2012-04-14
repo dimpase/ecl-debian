@@ -507,6 +507,11 @@ ecl_interpret(cl_object frame, cl_object env, cl_object bytecodes)
 			case ECL_USER_DISPATCH:
 				reg0 = reg0->instance.slots[reg0->instance.length - 1];
 				goto AGAIN;
+			case ECL_READER_DISPATCH:
+			case ECL_WRITER_DISPATCH:
+				the_env->function = reg0;
+				reg0 = APPLY(narg, reg0->instance.entry, frame_aux.base);
+				break;
 			default:
 				FEinvalid_function(reg0);
 			}
@@ -541,7 +546,7 @@ ecl_interpret(cl_object frame, cl_object env, cl_object bytecodes)
 		Pops a singe value pushed by a OP_PUSH* operator, ignoring it.
 	*/
 	CASE(OP_POP1); {
-		ECL_STACK_POP_UNSAFE(the_env);
+		(void)ECL_STACK_POP_UNSAFE(the_env);
 		THREAD_NEXT;
 	}
 	/* OP_POPREQ
@@ -1155,7 +1160,7 @@ ecl_interpret(cl_object frame, cl_object env, cl_object bytecodes)
 	CASE(OP_PROTECT_NORMAL); {
 		ecl_bds_unwind(the_env, the_env->frs_top->frs_bds_top_index);
 		ecl_frs_pop(the_env);
-		ECL_STACK_POP_UNSAFE(the_env);
+		(void)ECL_STACK_POP_UNSAFE(the_env);
 		lex_env = ECL_STACK_POP_UNSAFE(the_env);
 		ECL_STACK_PUSH(the_env, MAKE_FIXNUM(1));
 		goto PUSH_VALUES;
@@ -1187,6 +1192,12 @@ ecl_interpret(cl_object frame, cl_object env, cl_object bytecodes)
 	CASE(OP_EXIT_PROGV); {
 		cl_index n = fix(ECL_STACK_POP_UNSAFE(the_env));
 		ecl_bds_unwind(the_env, n);
+		THREAD_NEXT;
+	}
+	CASE(OP_CSET); {
+                cl_object *p;
+                GET_DATA_PTR(p, vector, data);
+                *p = reg0;
 		THREAD_NEXT;
 	}
 

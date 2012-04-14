@@ -24,6 +24,9 @@
   "src:clos;inspect.lsp" ; Depends on describe.lsp
   "src:lsp;top.lsp" ; Depends on conditions.lsp
   "src:lsp;process.lsp" ; Depends on defclass
+  #+unicode
+  "src:lsp;unicode.lsp" ; Depends on conditions.lsp
+  "ext:bytecmp;bytecmp.lsp"
   ))
 
 (mapc #'(lambda (x)

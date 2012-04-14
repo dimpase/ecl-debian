@@ -123,6 +123,7 @@
 			      method-combination
 			      (method-class (find-class 'method))
 			      )
+  (declare (ignore initargs slot-names))
   ;;
   ;; Check the validity of several fields.
   ;;
@@ -140,7 +141,7 @@
 	   :format-control "Not a valid documentation object ~"
 	   :format-arguments (list documentation)
 	   :datum documentation
-	   :expected-type (or nil string)))
+	   :expected-type '(or null string)))
   (unless (or (null method-combination)
 	      (and (listp method-combination)
 		   (member (first method-combination) *method-combinations*)))
@@ -173,6 +174,7 @@
 
 (defmethod shared-initialize ((gfun standard-generic-function) slot-names
 			      &rest initargs)
+  (declare (ignore initargs slot-names))
   (call-next-method)
   (compute-g-f-spec-list gfun)
   gfun)
@@ -216,6 +218,7 @@
      (method-class 'STANDARD-METHOD method-class-p)
      (generic-function-class 'STANDARD-GENERIC-FUNCTION)
      (delete-methods nil))
+  (declare (ignore delete-methods gfun))
   ;; else create a new generic function object
   (setf args (copy-list args))
   (remf args :generic-function-class)
@@ -229,14 +232,11 @@
    t))
 
 (defun ensure-generic-function (name &rest args &key &allow-other-keys)
-  (let ((gfun nil)
-	(traced nil))
-    (when (setf traced (get-sysprop name 'SI::TRACED))
-      (setf gfun (fdefinition traced)))
+  (let ((gfun (si::traced-old-definition name)))
     (cond ((not (legal-generic-function-name-p name))
 	   (simple-program-error "~A is not a valid generic function name" name))
           ((not (fboundp name))
-	   (setf (fdefinition (or traced name))
+	   (setf (fdefinition name)
 		 (apply #'ensure-generic-function-using-class gfun name args)))
           ((si::instancep (or gfun (setf gfun (fdefinition name))))
 	   (apply #'ensure-generic-function-using-class gfun name args))
@@ -245,7 +245,7 @@
 	  ((macro-function name)
 	   (simple-program-error "The symbol ~A is bound to a macro and is not a valid name for a generic function" name))
           ((not *clos-booted*)
-           (setf (fdefinition (or traced name))
+           (setf (fdefinition name)
 		 (apply #'ensure-generic-function-using-class nil name args))
            (fdefinition name))
 	  (t

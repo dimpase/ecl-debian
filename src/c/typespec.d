@@ -18,6 +18,18 @@
 #include <ecl/ecl.h>
 
 void
+FEtype_error_fixnum(cl_object x) {
+	FEwrong_type_argument(@[fixnum], x);
+}
+
+void
+FEtype_error_size(cl_object x) {
+	FEwrong_type_argument(cl_list(3, @'integer', MAKE_FIXNUM(0),
+				      MAKE_FIXNUM(MOST_POSITIVE_FIXNUM)),
+			      x);
+}
+
+void
 FEtype_error_cons(cl_object x) {
 	FEwrong_type_argument(@[cons], x);
 }
@@ -49,13 +61,15 @@ FEcircular_list(cl_object x)
 }
 
 void
-FEtype_error_index(cl_object seq, cl_object ndx)
+FEtype_error_index(cl_object seq, cl_fixnum ndx)
 {
+        cl_object n = MAKE_FIXNUM(ndx);
+	cl_index l = ECL_INSTANCEP(seq)? seq->instance.length : ecl_length(seq);
 	cl_error(9, @'simple-type-error', @':format-control',
 		    make_constant_base_string("~S is not a valid index into the object ~S"),
-		    @':format-arguments', cl_list(2, ndx, seq),
-		    @':expected-type', cl_list(3, @'integer', MAKE_FIXNUM(0), MAKE_FIXNUM(ecl_length(seq)-1)),
-		    @':datum', ndx);
+		    @':format-arguments', cl_list(2, n, seq),
+		    @':expected-type', cl_list(3, @'integer', MAKE_FIXNUM(0), MAKE_FIXNUM(l-1)),
+		    @':datum', n);
 }
 
 void
@@ -317,6 +331,8 @@ cl_type_of(cl_object x)
 		case smm_string_input:
 		case smm_string_output:	t = @'string-stream'; break;
 		case smm_echo:		t = @'echo-stream'; break;
+                case smm_sequence_input:
+                case smm_sequence_output: t = @'ext::sequence-stream'; break;
 		default:		t = @'file-stream'; break;
 		}
 		break;

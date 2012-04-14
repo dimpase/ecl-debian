@@ -40,7 +40,7 @@
   (error "The built-in class (~A) cannot be instantiated" class))
 
 (eval-when (:compile-toplevel :execute)
-  (defconstant +builtin-classes+
+  (defconstant +builtin-classes-list+
 	 '(;(t object)
 	    (sequence)
 	      (list sequence)
@@ -60,6 +60,7 @@
 		(synonym-stream ext:ansi-stream)
 		(broadcast-stream ext:ansi-stream)
 		(concatenated-stream ext:ansi-stream)
+		(ext:sequence-stream ext:ansi-stream)
 	    (character)
 	    (number)
 	      (real number)
@@ -90,22 +91,25 @@
 	    #+semaphores (mp::semaphore)
 	    #+sse2 (ext::sse-pack))))
 
-(loop for (name . rest) in '#.+builtin-classes+
+(loop for (name . rest) in '#.+builtin-classes-list+
    with index = 1
    with built-in-class = (find-class 'built-in-class)
-   with array = (setf *builtin-classes* (make-array #.(1+ (length +builtin-classes+))
-						    :initial-element (find-class 't)))
+   with array = (make-array #.(1+ (length +builtin-classes-list+))
+			    :initial-element (find-class 't))
    do (let* ((direct-superclasses (mapcar #'find-class (or rest '(t))))
 	     (class (make-instance built-in-class :name name
 				   :direct-superclasses direct-superclasses
 				   :direct-slots nil)))
 	(setf (find-class name) class
 	      (aref array index) class
-	      index (1+ index))))
+	      index (1+ index)))
+   finally (si::*make-constant '+builtin-classes+ array))
 
 (defmethod ensure-class-using-class ((class null) name &rest rest)
+  (declare (ignore class))
   (multiple-value-bind (metaclass direct-superclasses options)
       (apply #'help-ensure-class rest)
+    (declare (ignore direct-superclasses))
     (apply #'make-instance metaclass :name name options)))
 
 (defmethod change-class ((instance t) (new-class symbol) &rest initargs)
@@ -119,18 +123,23 @@
   (apply #'make-instance (find-class class-name) initargs))
 
 (defmethod slot-makunbound-using-class ((class built-in-class) self slotd)
+  (declare (ignore class self slotd))
   (error "SLOT-MAKUNBOUND-USING-CLASS cannot be applied on built-in objects"))
 
 (defmethod slot-boundp-using-class ((class built-in-class) self slotd)
+  (declare (ignore class self slotd))
   (error "SLOT-BOUNDP-USING-CLASS cannot be applied on built-in objects"))
 
 (defmethod slot-value-using-class ((class built-in-class) self slotd)
+  (declare (ignore class self slotd))
   (error "SLOT-VALUE-USING-CLASS cannot be applied on built-in objects"))
 
 (defmethod (setf slot-value-using-class) (val (class built-in-class) self slotd)
+  (declare (ignore class self slotd val))
   (error "SLOT-VALUE-USING-CLASS cannot be applied on built-in objects"))
 
 (defmethod slot-exists-p-using-class ((class built-in-class) self slotd)
+  (declare (ignore class self slotd))
   nil)
 
 ;;; ======================================================================
@@ -167,7 +176,7 @@
   (:metaclass structure-class))
 
 (defmethod make-load-form ((object structure-object) &optional environment)
-  (make-load-form-saving-slots object))
+  (make-load-form-saving-slots object :key environment))
 
 (defmethod print-object ((obj structure-object) stream)
   (let* ((class (si:instance-class obj))

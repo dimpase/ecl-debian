@@ -50,6 +50,8 @@ static const cl_object ecl_aet_name[] = {
 
 static void check_displaced (cl_object dlist, cl_object orig, cl_index newdim);
 
+static void FEbad_aet() ecl_attr_noreturn;
+
 static void
 FEbad_aet()
 {
@@ -82,10 +84,10 @@ checked_index(cl_object function, cl_object a, int which, cl_object index,
               cl_index nonincl_limit)
 {
         cl_index output;
-        if (ecl_unlikely(!ECL_FIXNUMP(index) || ecl_fixnum_minusp(index)))
+        unlikely_if (!ECL_FIXNUMP(index) || ecl_fixnum_minusp(index))
                 FEwrong_index(function, a, which, index, nonincl_limit);
         output = fix(index);
-        if (ecl_unlikely(output >= nonincl_limit))
+        unlikely_if (output >= nonincl_limit)
                 FEwrong_index(function, a, which, index, nonincl_limit);
         return output;
 }
@@ -110,14 +112,14 @@ ecl_to_index(cl_object n)
 cl_object
 cl_row_major_aref(cl_object x, cl_object indx)
 {
-	cl_index j = fixnnint(indx);
+	cl_index j = ecl_to_size(indx);
 	@(return ecl_aref(x, j))
 }
 
 cl_object
 si_row_major_aset(cl_object x, cl_object indx, cl_object val)
 {
-	cl_index j = fixnnint(indx);
+	cl_index j = ecl_to_size(indx);
 	@(return ecl_aset(x, j, val))
 }
 
@@ -323,10 +325,10 @@ ecl_aset_unsafe(cl_object x, cl_index index, cl_object value)
 		break;
 	}
 	case aet_fix:
-		x->array.self.fix[index] = fixint(value);
+		x->array.self.fix[index] = ecl_to_fix(value);
 		break;
 	case aet_index:
-		x->array.self.index[index] = fixnnint(value);
+		x->array.self.index[index] = ecl_to_size(value);
 		break;
 	case aet_sf:
 		x->array.self.sf[index] = ecl_to_float(value);
@@ -814,18 +816,29 @@ si_array_raw_data(cl_object x)
         data = x->vector.self.b8;
         to_array = x->array.displaced;
         if (to_array == Cnil || ((to_array = ECL_CONS_CAR(to_array)) == Cnil)) {
+		cl_index used_size = total_size;
+		int flags = 0;
+		if (ECL_ARRAY_HAS_FILL_POINTER_P(x)) {
+			used_size = x->vector.fillp * ecl_aet_size[et];
+			flags = ECL_FLAG_HAS_FILL_POINTER;
+		}
                 output = ecl_alloc_object(t_vector);
                 output->vector.elttype = aet_b8;
                 output->vector.self.b8 = data;
-                output->vector.dim = output->vector.fillp = total_size;
-                output->vector.flags = 0; /* no fill pointer, not adjustable */
+                output->vector.dim = total_size;
+		output->vector.fillp = used_size;
+                output->vector.flags = flags;
                 output->vector.displaced = Cnil;
         } else {
                 cl_index displ = data - to_array->vector.self.b8;
+		cl_object fillp = Cnil;
+		if (ECL_ARRAY_HAS_FILL_POINTER_P(x)) {
+			fillp = MAKE_FIXNUM(x->vector.fillp * ecl_aet_size[et]);
+		}
                 output = si_make_vector(@'ext::byte8',
                                         MAKE_FIXNUM(total_size),
                                         Cnil,
-                                        Cnil,
+                                        fillp,
                                         si_array_raw_data(to_array),
                                         MAKE_FIXNUM(displ));
         }
@@ -852,7 +865,7 @@ cl_array_rank(cl_object a)
 cl_object
 cl_array_dimension(cl_object a, cl_object index)
 {
-	@(return MAKE_FIXNUM(ecl_array_dimension(a, fixnnint(index))))
+	@(return MAKE_FIXNUM(ecl_array_dimension(a, ecl_to_size(index))))
 }
 
 cl_index
@@ -1121,29 +1134,27 @@ ecl_copy_subarray(cl_object dest, cl_index i0, cl_object orig,
 	if (i1 + l > orig->array.dim) {
 		l = orig->array.dim - i1;
 	}
-        if (dest == orig && i0 > i1) {
-                if (t != ecl_array_elttype(orig) || t == aet_bit) {
+        if (t != ecl_array_elttype(orig) || t == aet_bit) {
+                if (dest == orig && i0 > i1) {
                         for (i0 += l, i1 += l; l--; ) {
                                 ecl_aset_unsafe(dest, --i0,
                                                 ecl_aref_unsafe(orig, --i1));
                         }
                 } else {
-                        cl_index elt_size = ecl_aet_size[t];
-                        memmove(dest->array.self.bc + i0 * elt_size,
-                                orig->array.self.bc + i1 * elt_size,
-                                l * elt_size);
-                }
-        } else if (t != ecl_array_elttype(orig) || t == aet_bit) {
-                while (l--) {
-                        ecl_aset_unsafe(dest, i0++,
-                                        ecl_aref_unsafe(orig, i1++));
+                        while (l--) {
+                                ecl_aset_unsafe(dest, i0++,
+                                                ecl_aref_unsafe(orig, i1++));
+                        }
                 }
         } else {
-		cl_index elt_size = ecl_aet_size[t];
-		memcpy(dest->array.self.bc + i0 * elt_size,
-                       orig->array.self.bc + i1 * elt_size,
-                       l * elt_size);
-	}
+                /* We could have singled out also dest == orig and used memcpy
+                 * but gcc-4.6 breaks this code even when i0 < i1 if the regions
+                 * overlap sufficiently. */
+                cl_index elt_size = ecl_aet_size[t];
+                memmove(dest->array.self.bc + i0 * elt_size,
+                        orig->array.self.bc + i1 * elt_size,
+                        l * elt_size);
+        }
 }
 
 void
@@ -1264,9 +1275,9 @@ cl_object
 si_copy_subarray(cl_object dest, cl_object start0,
                  cl_object orig, cl_object start1, cl_object length)
 {
-        ecl_copy_subarray(dest, fixnnint(start0),
-                          orig, fixnnint(start1),
-                          fixnnint(length));
+        ecl_copy_subarray(dest, ecl_to_size(start0),
+                          orig, ecl_to_size(start1),
+                          ecl_to_size(length));
         @(return dest)
 }
 
@@ -1274,8 +1285,8 @@ cl_object
 si_fill_array_with_elt(cl_object x, cl_object elt, cl_object start, cl_object end)
 {
 	cl_elttype t = ecl_array_elttype(x);
-        cl_index first = fixnnint(start);
-        cl_index last = Null(end)? x->array.dim : fixnnint(end);
+        cl_index first = ecl_to_size(start);
+        cl_index last = Null(end)? x->array.dim : ecl_to_size(end);
         if (first >= last) {
                 goto END;
         }
@@ -1300,13 +1311,13 @@ si_fill_array_with_elt(cl_object x, cl_object elt, cl_object start, cl_object en
         }
 #endif
 	case aet_fix: {
-                cl_fixnum e = fixint(elt);
+                cl_fixnum e = ecl_to_fix(elt);
                 cl_fixnum *p = x->vector.self.fix + first;
 		for (first = last - first; first; --first, ++p) { *p = e; }
 		break;
         }
 	case aet_index: {
-                cl_index e = fixnnint(elt);
+                cl_index e = ecl_to_size(elt);
                 cl_index *p = x->vector.self.index + first;
 		for (first = last - first; first; --first, ++p) { *p = e; }
 		break;

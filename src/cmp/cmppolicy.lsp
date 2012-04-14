@@ -93,10 +93,11 @@
 
 (defun maybe-add-policy (decl &optional (env *cmp-env*))
   (when (and (consp decl)
-             (eql (list-length decl) 1)
+             (<= (list-length decl) 2)
              (gethash (first decl) *optimization-quality-switches*))
     (let* ((old (cmp-env-policy env))
-           (new (compute-policy (list (first decl)) old)))
+	   (flag (if (or (endp (rest decl)) (second decl)) 3 0))
+           (new (compute-policy (list (list (first decl) flag)) old)))
       (cmp-env-add-declaration 'optimization (list new) env))))
 
 (defun add-default-optimizations (env)
@@ -156,12 +157,14 @@
     (intern (concatenate 'string "POLICY-" (symbol-name base))
             (find-package "C")))
   (defmacro define-policy (&whole whole name &rest conditions)
+    (unintern name)
+    (import name (find-package "EXT")) 
+    (export name (find-package "EXT"))
     (let* ((test (ash 1 +last-optimization-bit+))
            (declaration-name (policy-declaration-name name))
            (function-name (policy-function-name name))
            (doc (find-if #'stringp conditions))
            (emit-function t))
-      (export declaration-name (find-package "EXT"))
       ;; If it is an alias, just copy the bits
       ;; Register as an optimization quality with its own flags
       (let* ((circular-list (list (cons test 0)))
@@ -248,23 +251,23 @@
 (define-policy check-stack-overflow :on safety 2
   "Add a stack check to every function")
 
-(define-policy ext:check-arguments-type :on safety 1
+(define-policy check-arguments-type :on safety 1
   "Generate CHECK-TYPE forms for function arguments with type declarations")
-
-(define-policy ext:no-check-arguments-type :anti-alias ext:check-arguments-type
-  "Deactivate check with the same name")
 
 (define-policy array-bounds-check :on safety 1
   "Check out of bounds access to arrays")
 
-(define-policy global-var-checking :alias assume-no-errors
+(define-policy global-var-checking :on safety 3
   "Read the value of a global variable even if it is discarded, ensuring it is bound")
 
-(define-policy global-function-checking :alias assume-no-errors
+(define-policy global-function-checking :on safety 3
   "Read the binding of a global function even if it is discarded")
 
-(define-policy check-nargs :on safety 1 :only-on ext:check-arguments-type 1
+(define-policy check-nargs :on safety 1 :only-on check-arguments-type 1
   "Check that the number of arguments a function receives is within bounds")
+
+(define-policy the-is-checked :on safety 1
+  "THE is equivalent to EXT:CHECKED-VALUE. Otherwise THE is equivalent to EXT:TRULY-THE.")
 
 ;;
 ;; INLINING POLICY
@@ -276,7 +279,7 @@
 (define-policy inline-slot-access :on speed 1 :off debug 2 :off safety 2
   "Inline access to structures and sealed classes")
 
-(define-policy inline-accessors :off debug 2
+(define-policy inline-accessors :off debug 2 :off space 2
   "Inline access to object slots, including conses and arrays")
 
 (define-policy open-code-aref/aset :alias inline-accessors
@@ -299,7 +302,7 @@ INTGERP, STRINGP.")
 ;; DEBUG POLICY
 ;;
 
-(define-policy debug-variable-bindings :on safety 3
+(define-policy debug-variable-bindings :on debug 3
   :requires (policy-debug-ihs-frame env)
   ;; We can only create variable bindings when the function has an IHS frame!!!
   "Create a debug vector with the bindings of each LET/LET*/LAMBDA form?")

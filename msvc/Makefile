@@ -10,8 +10,8 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 11.1.1
-ECL_VERSION_NUMBER= 110101
+ECL_VERSION       = 12.2.1
+ECL_VERSION_NUMBER= 120201
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
@@ -34,8 +34,8 @@ GMP_TYPE      = gc
 # Without them, ECL would be an even more fragile piece of software.
 ECL_THREADS   = 1
 
-# Set it to non-empty to include support for Unicode characters
-ECL_UNICODE   =
+# Set it to empty to remove support for Unicode characters
+ECL_UNICODE = 1
 
 # Set it to non-empty to enable Win32 debug support
 #ECL_DEBUG = 1
@@ -128,12 +128,6 @@ CFLAGS     = $(CFLAGS)
 DEF        = ecl-threads.def
 !endif
 
-# Additional configuration for Unicode support
-#
-!if "$(ECL_UNICODE)" != ""
-UCDDAT     = ucd.dat
-!endif
-
 !MESSAGE C++ compiler flags: $(CFLAGS)
 !MESSAGE C++ linker flags: $(LDFLAGS)
 
@@ -200,6 +194,10 @@ ECL_FEATURES = (cons :wants-profile $(ECL_FEATURES))
 !endif
 ECL_MODULES  = $(ECL_MODULES) bytecmp
 ECL_FEATURES = (list* :builtin-bytecmp :wants-bytecmp $(ECL_FEATURES))
+ECL_MODULES  = $(ECL_MODULES) ecl-curl
+ECL_FEATURES = (cons :wants-ecl-curl $(ECL_FEATURES))
+ECL_MODULES  = $(ECL_MODULES) deflate
+ECL_FEATURES = (cons :wants-deflate $(ECL_FEATURES))
 
 !MESSAGE ECL Modules: $(ECL_MODULES)
 !MESSAGE ECL Features: $(ECL_FEATURES)
@@ -226,10 +224,7 @@ BUILD-STAMP: Makefile
 ecl-static.lib: $(TARGETS)
 	link /lib /out:$@ eclmin.lib c\all_symbols2.obj lsp.lib eclgmp.lib eclgc.lib
 
-ucd.dat: $(top_srcdir)\..\contrib\unicode\ucd.dat
-	copy $(top_srcdir)\..\contrib\unicode\ucd.dat .
-
-ecl_min$(EXE): $(LIBRARIES) eclmin.lib $(UCDDAT)
+ecl_min$(EXE): $(LIBRARIES) eclmin.lib
 	$(CC) /Fe$@ cinit.obj c\all_symbols.obj eclmin.lib $(LDFLAGS) $(LIBS)
 	if exist ecl_min$(EXE).manifest \
 	 mt -manifest ecl_min.exe.manifest -outputresource:ecl_min.exe;1
@@ -279,9 +274,12 @@ compile.lsp: bare.lsp $(srcdir)/compile.lsp.in Makefile
             "@RANLIB@" "ranlib" \
 	    "@LSP_FEATURES@" "$(ECL_FEATURES)" \
 	    "@ECL_CMPDIR@" "cmp" \
+	    "@ECL_EXTRA_LISP_FILES@" "" \
+	    "@ECL_INIT_FORM@" "(si::top-level t)" \
 	    < $(srcdir)\compile.lsp.in > compile.lsp
 bare.lsp: $(srcdir)/bare.lsp.in lsp/load.lsp clos/load.lsp cmp/load.lsp cmp/cmpdefs.lsp
 	c\cut "@true_srcdir@" "$(srcdir:\=/)" \
+	    "@top_srcdir@" "$(srcdir:\=/)" \
 	    "@true_builddir@" "$(MAKEDIR:\=/)"\
 	    "@ECL_CMPDIR@" "cmp" < $(srcdir)\bare.lsp.in > bare.lsp
 lsp/load.lsp: $(srcdir)/lsp/load.lsp.in
@@ -367,7 +365,7 @@ rt.lisp:
 install:
 	IF NOT EXIST "$(prefix)" $(MKDIR) "$(prefix)"
 	IF NOT EXIST "$(bindir)" $(MKDIR) "$(bindir)"
-	for %i in ($(TARGETS) ecl.dll $(UCDDAT)) do $(CP) %i "$(bindir)\%i"
+	for %i in ($(TARGETS) ecl.dll) do $(CP) %i "$(bindir)\%i"
 	IF EXIST "$(bindir)\ecl2$(EXE)" $(MV) "$(bindir)\ecl2$(EXE)" "$(bindir)\ecl$(EXE)"
 	IF EXIST ecl2$(EXE).manifest $(CP) ecl2$(EXE).manifest "$(bindir)\ecl$(EXE).manifest"
 	IF EXIST ecl.dll.manifest $(CP) ecl.dll.manifest "$(bindir)"
@@ -389,10 +387,19 @@ install:
 	IF NOT EXIST "$(docdir)" $(MKDIR) "$(docdir)"
 	for %i in (..\Copyright ..\ANNOUNCEMENT ..\LGPL ..\README.1st ..\src\CHANGELOG) do $(CP) %i "$(docdir)"
 !if "$(ECL_UNICODE)" != ""
-	$(CP) $(UCDDAT) "$(libdir)"
 	IF NOT EXIST "$(libdir)\encodings" $(MKDIR) "$(libdir)\encodings"
 	$(CP) encodings\*.* "$(libdir)\encodings"
 !endif
+
+check: package\ecl.exe
+	cd tests
+	$(MAKE)
+recheck: package\ecl.exe
+	cd tests
+	$(MAKE) clean
+	$(MAKE)
+package\ecl.exe: ecl2$(EXE)
+	$(MAKE) install ECL_THREADS=$(ECL_THREADS) ECL_UNICODE=$(ECL_UNICODE) 
 
 windows-nsi:
 	IF EXIST "$(TAR_DIR)" $(RMDIR) "$(TAR_DIR)"
@@ -425,7 +432,7 @@ clean_ecl:
 	            lsp\load.lsp clos\load.lsp cmp\load.lsp cmp\cmpdefs.lsp \
 		    ecl.lib ecl.dll ecl_min$(EXE) eclmin.lib help.doc sysfun.lsp \
 		    BUILD-STAMP $(TARGETS) *.exp *.ilk *.manifest *.pdb *.c *.obj \
-		    ecl-config.bat ecl-static.lib $(UCDDAT)) \
+		    ecl-config.bat ecl-static.lib) \
 	     do $(RM) %i
 	cd c
 	-$(MAKE) ECL_THREADS=$(ECL_THREADS) clean

@@ -72,7 +72,10 @@
     (error (c) (values nil nil))))
 
 (defun known-type-p (type)
-  (subtypep type 'T))
+  (subtypep type T))
+
+(defun trivial-type-p (type)
+  (subtypep T type))
 
 (defun-equal-cached type-and (t1 t2)
   ;; FIXME! Should we allow "*" as type name???
@@ -104,13 +107,11 @@
 	   (cmpwarn "Unsupported CONS type ~S. Replacing it with T." t2)
 	   t1)
 	  ((null tag1)
-           (setf c::*compiler-break-enable* t)
-           ;(break)
+           ;(setf c::*compiler-break-enable* t) (break)
 	   (cmpnote "Unknown type ~S. Assuming it is T." t1)
 	   t2)
 	  (t
-           (setf c::*compiler-break-enable* t)
-	   ;(break)
+           ;(setf c::*compiler-break-enable* t) (break)
 	   (cmpnote "Unknown type ~S. Assuming it is T." t2)
 	   t1))))
 
@@ -126,18 +127,22 @@
            (values l l)))))
 
 (defun-equal-cached values-type-primary-type (type)
+  ;; Extract the type of the first value returned by this form. We are
+  ;; pragmatic and thus (VALUES) => NULL  [CHECKME!]
   (when (and (consp type) (eq (first type) 'VALUES))
-    (let ((subtype (second type)))
-      (when (or (eq subtype '&optional) (eq subtype '&rest))
-        (setf type (cddr type))
-        (when (or (null type)
-                  (eq (setf subtype (first type)) '&optional)
-                  (eq subtype '&rest))
-          (cmperr "Syntax error in type expression ~S" type))
-        ;; An &optional or &rest output value might be missing
-        ;; If this is the case, the the value will be NIL.
-        (setf subtype (type-or 'null subtype)))
-      (setf type subtype)))
+    (if (null (rest type))
+	(setf type 'null)
+	(let ((subtype (second type)))
+	  (when (or (eq subtype '&optional) (eq subtype '&rest))
+	    (setf type (cddr type))
+	    (when (or (null type)
+		      (eq (setf subtype (first type)) '&optional)
+		      (eq subtype '&rest))
+	      (cmperr "Syntax error in type expression ~S" type))
+	    ;; An &optional or &rest output value might be missing
+	    ;; If this is the case, the the value will be NIL.
+	    (setf subtype (type-or 'null subtype)))
+	  (setf type subtype))))
   type)
 
 (defun-equal-cached values-type-to-n-types (type length)

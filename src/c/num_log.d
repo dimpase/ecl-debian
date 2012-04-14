@@ -359,7 +359,7 @@ static int
 coerce_to_logical_operator(cl_object o)
 {
 	cl_fixnum op;
-	op = fixint(o);
+	op = ecl_to_fix(o);
 	if (op < 0 || op > ECL_BOOLSET)
 		FEerror("~S is an invalid logical operator.", 1, o);
 	return op;
@@ -379,7 +379,7 @@ cl_logbitp(cl_object p, cl_object x)
 
 	assert_type_integer(x);
 	if (FIXNUMP(p)) {
-		cl_index n = fixnnint(p);
+		cl_index n = ecl_to_size(p);
 		if (FIXNUMP(x)) {
 			cl_fixnum y = fix(x);
 			if (n >= FIXNUM_BITS) {

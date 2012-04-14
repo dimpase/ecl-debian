@@ -123,8 +123,9 @@
   (make-c1form* 'TAGBODY :local-vars (list tag-var)
 		:args tag-var body))
 
-(defun c2tagbody (tag-loc body)
-  (declare (type var tag-loc))
+(defun c2tagbody (c1form tag-loc body)
+  (declare (type var tag-loc)
+	   (ignore c1form))
   (if (null (var-kind tag-loc))
       ;; only local goto's
       (let ((label (next-label)))
@@ -197,19 +198,20 @@
 	(cmp-env-search-tag name)
       (unless tag
 	(cmperr "Undefined tag ~A" name))
-      (setq var (tag-var tag))
-      (cond (ccb (setf (tag-ref-ccb tag) t
-		       (var-ref-ccb var) T
-		       (var-kind var) 'CLOSURE))
-	    (clb (setf (tag-ref-clb tag) t
-		       (var-ref-clb var) t
-		       (var-kind var) 'LEXICAL))
-	    (unw (unless (var-kind var)
-		   (setf (var-kind var) :OBJECT))))
-      (incf (tag-ref tag))
-      (add-to-read-nodes var (make-c1form* 'GO :args tag (or ccb clb unw))))))
+      (let ((var (tag-var tag)))
+	(cond (ccb (setf (tag-ref-ccb tag) t
+			 (var-ref-ccb var) T
+			 (var-kind var) 'CLOSURE))
+	      (clb (setf (tag-ref-clb tag) t
+			 (var-ref-clb var) t
+			 (var-kind var) 'LEXICAL))
+	      (unw (unless (var-kind var)
+		     (setf (var-kind var) :OBJECT))))
+	(incf (tag-ref tag))
+	(add-to-read-nodes var (make-c1form* 'GO :args tag (or ccb clb unw)))))))
 
-(defun c2go (tag nonlocal)
+(defun c2go (c1form tag nonlocal)
+  (declare (ignore c1form))
   (if nonlocal
       (let ((var (tag-var tag)))
 	(wt-nl "cl_go(" var ",MAKE_FIXNUM(" (tag-index tag) "));"))

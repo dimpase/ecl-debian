@@ -29,18 +29,17 @@
 ;;; temporaries for intermediate results of the evaluation of inlined
 ;;; function calls.
 
+(defvar *inline-max-depth* 3
+  "Depth at which inlining of functions stops.")
+
 ;;; --cmputil.lsp--
 ;;;
 ;;; Variables and constants for error handling
 ;;;
 (defvar *current-form* '|compiler preprocess|)
 (defvar *current-toplevel-form* '|compiler preprocess|)
-(defvar *current-c2form* nil)
 (defvar *compile-file-position* -1)
 (defvar *first-error* t)
-(defconstant *cmperr-tag* (cons nil nil))
-
-(defvar *active-handlers* nil)
 (defvar *active-protection* nil)
 (defvar *pending-actions* nil)
 
@@ -55,7 +54,12 @@ each form it processes. The default value is NIL.")
   "This variable controls whether the compiler should display messages about its
 progress. The default value is T.")
 
-(defvar *suppress-compiler-messages* 'compiler-debug-note
+(defvar *compiler-features* #+ecl-min nil #-ecl-min '#.*compiler-features*
+  "This alternative list of features contains keywords that were gathered from
+running the compiler. It may be updated by running ")
+
+(defvar *suppress-compiler-messages*
+  #+ecl-min 'compiler-debug-note #-ecl-min 'compiler-note
   "A type denoting which compiler messages and conditions are _not_ displayed.")
 
 (defvar *suppress-compiler-notes* nil) ; Deprecated
@@ -244,6 +248,7 @@ lines are inserted, but the order is preserved")
 (defvar *load-time-values* nil)		; holds { ( vv-index form ) }*,
 ;;;  where each vv-index should be given an object before
 ;;;  defining the current function during loading process.
+(defvar *setf-definitions* nil)         ; C forms to find out (SETF fname) locations
 
 (defvar *use-static-constants-p* nil)   ; T/NIL flag to determine whether one may
                                         ; generate lisp constant values as C structs
@@ -252,6 +257,12 @@ lines are inserted, but the order is preserved")
 
 (defvar *compiler-constants* nil)	; a vector with all constants
 					; only used in COMPILE
+
+(defvar *compile-in-constants*          ; we either include constants as a C literal
+  #+ecl-min t                           ; or as an bound-in binary segment in the
+                                        ; compiled file (si::{get,add}-cdata)
+  #+(and windows (not ecl-min)) nil
+  #+(and (not windows) (not ecl-min)) t)
 
 (defvar *proclaim-fixed-args* nil)	; proclaim automatically functions
 					; with fixed number of arguments.
@@ -316,6 +327,7 @@ be deleted if they have been opened with LoadLibrary.")
     (*next-cfun* 0)
     (*last-label* 0)
     (*load-objects* (make-hash-table :size 128 :test #'equal))
+    (*setf-definitions* nil)
     (*make-forms* nil)
     (*static-constants* nil)
     (*permanent-objects* nil)
@@ -346,5 +358,6 @@ be deleted if they have been opened with LoadLibrary.")
     (*values-type-primary-type-cache* (values-type-primary-type-empty-cache))
     #+new-cmp
     (*values-type-to-n-types-cache* (values-type-to-n-types-empty-cache))
+    (si::*defun-inline-hook* 'maybe-install-inline-function)
     ))
 

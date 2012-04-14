@@ -24,7 +24,7 @@ MA 02110-1301, USA. */
 #include "gmp-impl.h"
 
 void
-mpz_set_si (mpz_ptr dest, signed long int val)
+mpz_set_si (mpz_ptr dest, long int val)
 {
   mp_size_t size;
   mp_limb_t vl;

@@ -85,13 +85,6 @@
 
 #include <ecl/ecl.h>
 
-#if defined(HAVE_FENV_H) && !defined(ECL_AVOID_FENV_H)
-# ifndef _GNU_SOURCE
-#  define _GNU_SOURCE
-# endif
-# include <fenv.h>
-#endif
-
 #ifdef ECL_USE_MPROTECT
 # ifndef SA_SIGINFO
 #  error "We cannot use the mmap code without siginfo"
@@ -206,6 +199,7 @@ static struct {
 };
 
 #ifdef HAVE_SIGPROCMASK
+static sigset_t main_thread_sigmask;
 # define handler_fn_protype(name, sig, info, aux) name(sig, info, aux)
 # define call_handler(name, sig, info, aux) name(sig, info, aux)
 # define reinstall_signal(x,y) mysignal(x,y)
@@ -213,21 +207,26 @@ static struct {
 static void
 mysignal(int code, void (*handler)(int, siginfo_t *, void*))
 {
-	struct sigaction new_action, old_action;
+	struct sigaction action;
+	sigaction(code, NULL, &action);
+        if (handler == SIG_IGN || handler == SIG_DFL) {
+                action.sa_handler = handler;
+        } else {
 #ifdef SA_SIGINFO
-	new_action.sa_sigaction = handler;
-	new_action.sa_flags = SA_SIGINFO;
+                action.sa_sigaction = handler;
+                action.sa_flags = SA_SIGINFO;
 # if 0 && defined(SA_ONSTACK)
-	if (code == SIGSEGV) {
-		new_action.sa_flags |= SA_ONSTACK;
-	}
+                if (code == SIGSEGV) {
+                        action.sa_flags |= SA_ONSTACK;
+                }
 # endif
 #else
-	new_action.sa_handler = handler;
-	new_action.sa_flags = 0;
+                action.sa_handler = handler;
+                action.sa_flags = 0;
 #endif
-	sigfillset(&new_action.sa_mask);
-	sigaction(code, &new_action, &old_action);
+                sigfillset(&action.sa_mask);
+        }
+	sigaction(code, &action, NULL);
 }
 #else /* HAVE_SIGPROCMASK */
 # define handler_fn_protype(name, sig, info, aux) name(sig)
@@ -247,7 +246,7 @@ static bool
 interrupts_disabled_by_lisp(cl_env_ptr the_env)
 {
 	return (ecl_get_option(ECL_OPT_BOOTED) &&
-		ecl_symbol_value(@'si::*interrupts-enabled*') == Cnil);
+		ecl_symbol_value(@'ext::*interrupts-enabled*') == Cnil);
 }
 
 static cl_object pop_signal(cl_env_ptr env);
@@ -258,7 +257,7 @@ handler_fn_protype(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
 	cl_env_ptr the_env = ecl_process_env();
         /* The lisp environment might not be installed. */
         if (the_env == NULL)
-                return;
+                return Cnil;
 #if defined(ECL_THREADS) && !defined(ECL_MS_WINDOWS_HOST)
         if (sig == ecl_get_option(ECL_OPT_THREAD_INTERRUPT_SIGNAL)) {
 		return pop_signal(the_env);
@@ -346,6 +345,10 @@ handler_fn_protype(lisp_signal_handler, int sig, siginfo_t *info, void *aux)
 	case SIGBUS:
                 return @'ext::segmentation-violation';
 #endif
+#ifdef SIGCHLD
+        case SIGCHLD:
+                return SYM_FUN(@'si::wait-for-all-processes');
+#endif
 	default:
 		return MAKE_FIXNUM(sig);
 	}
@@ -362,9 +365,9 @@ unblock_signal(int signal)
 	 * ECL's default sigmask.
 	 */
 # ifdef ECL_THREADS
-	pthread_sigmask(SIG_SETMASK, cl_core.default_sigmask, NULL);
+	pthread_sigmask(SIG_SETMASK, ecl_process_env()->default_sigmask, NULL);
 # else
-	sigprocmask(SIG_SETMASK, cl_core.default_sigmask, NULL);
+	sigprocmask(SIG_SETMASK, ecl_process_env()->default_sigmask, NULL);
 # endif
 }
 #endif
@@ -542,12 +545,14 @@ handler_fn_protype(sigsegv_handler, int sig, siginfo_t *info, void *aux)
                 "\n;;;\n;;; Stack overflow.\n"
                 ";;; Jumping to the outermost toplevel prompt\n"
                 ";;;\n\n";
+#ifndef HAVE_SIGPROCMASK
         static const char *segv_msg =
                 "\n;;;\n"
                 ";;; Detected access to protected memory, "
                 "also kwown as 'segmentation fault'.\n"
                 ";;; Jumping to the outermost toplevel prompt\n"
                 ";;;\n\n";
+#endif
 	cl_env_ptr the_env;
 	reinstall_signal(sig, sigsegv_handler);
 	if (!ecl_get_option(ECL_OPT_BOOTED)) {
@@ -662,10 +667,78 @@ ecl_check_pending_interrupts(void)
 	}
 }
 
-cl_object
-si_catch_signal(cl_object code, cl_object boolean)
+static cl_object
+do_catch_signal(int code, cl_object action, cl_object process)
 {
-	int code_int = fixnnint(code);
+        if (action == Cnil || action == @':ignore') {
+                mysignal(code, SIG_IGN);
+                return Ct;
+        } else if (action == @':default') {
+                mysignal(code, SIG_DFL);
+                return Ct;
+        } else if (action == Ct || action == @':catch') {
+                if (code == SIGSEGV) {
+                        mysignal(code, sigsegv_handler);
+                }
+#ifdef SIGBUS
+                else if (code == SIGBUS) {
+                        mysignal(code, sigbus_handler);
+                }
+#endif
+#ifdef SIGCHLD
+                else if (code == SIGCHLD) {
+# ifndef ECL_THREADS
+                        mysignal(SIGCHLD, non_evil_signal_handler);
+# endif
+                }
+#endif
+                else {
+                        mysignal(code, non_evil_signal_handler);
+                }
+        }
+#ifdef HAVE_SIGPROCMASK
+# ifdef ECL_THREADS
+        if (type_of(process) == t_process) {
+                cl_env_ptr env = process->process.env;
+                sigset_t *handled_set = (sigset_t *)env->default_sigmask;
+                if (action == @':mask') {
+                        sigaddset(handled_set, code);
+                } else if (action == @':unmask') {
+                        sigdelset(handled_set, code);
+                } else {
+                        return do_catch_signal(code, Ct, process);
+                }
+                if (env == ecl_process_env()) {
+                        pthread_sigmask(SIG_SETMASK, handled_set, NULL);
+                }
+                return Ct;
+        }
+# endif
+        {
+                sigset_t handled_set;
+                sigprocmask(SIG_SETMASK, NULL, &handled_set);
+                if (action == @':mask') {
+                        sigaddset(&handled_set, code);
+                        printf(";;; %d masked\n", code);
+                } else if (action == @':unmask') {
+                        sigdelset(&handled_set, code);
+                        printf(";;; %d unmasked\n", code);
+                } else {
+                        return do_catch_signal(code, Ct, process);
+                }
+                sigprocmask(SIG_SETMASK, &handled_set, NULL);
+                return Ct;
+        }
+#else
+        return Cnil;
+#endif
+}
+
+@(defun ext::catch-signal (code flag &key process)
+@
+{
+        cl_object output = Cnil;
+	int code_int = ecl_to_int(code);
 	int i;
 #ifdef GBC_BOEHM
 # ifdef SIGSEGV
@@ -687,21 +760,13 @@ si_catch_signal(cl_object code, cl_object boolean)
 #endif
 	for (i = 0; known_signals[i].code >= 0; i++) {
 		if (known_signals[i].code == code_int) {
-			if (Null(boolean))
-				mysignal(code_int, SIG_DFL);
-			else if (code_int == SIGSEGV)
-				mysignal(code_int, sigsegv_handler);
-#ifdef SIGBUS
-			else if (code_int == SIGBUS)
-				mysignal(code_int, sigbus_handler);
-#endif
-			else
-				mysignal(code_int, non_evil_signal_handler);
-			@(return Ct)
+                        output = do_catch_signal(code_int, flag, process);
+                        break;
 		}
 	}
-	@(return Cnil)
+	@(return output)
 }
+@)
 
 #ifdef ECL_THREADS
 # ifdef ECL_WINDOWS_THREADS
@@ -906,6 +971,9 @@ asynchronous_signal_servicing_thread()
 	 * use to communicate process interrupts. For some unknown
 	 * reason those signals may get lost.
 	 */
+#ifdef SIGCHLD
+        sigaddset(&handled_set, SIGCHLD);
+#endif
 	if (interrupt_signal) {
 		sigaddset(&handled_set, interrupt_signal);
 		pthread_sigmask(SIG_SETMASK, &handled_set, NULL);
@@ -915,8 +983,14 @@ asynchronous_signal_servicing_thread()
 		/* Waiting may fail! */
 		int status = sigwait(&handled_set, &signo);
 		if (status == 0) {
-			if (interrupt_signal == signo)
+			if (signo == interrupt_signal)
 				goto RETURN;
+#ifdef SIGCHLD
+                        if (signo == SIGCHLD) {
+                                si_wait_for_all_processes(0);
+                                continue;
+                        }
+#endif
 			signal_code = call_handler(lisp_signal_handler, signo,
 						   NULL, NULL);
 			if (!Null(signal_code)) {
@@ -1005,26 +1079,33 @@ install_asynchronous_signal_handlers()
 # endif
 #endif
 #ifdef HAVE_SIGPROCMASK
-	static sigset_t sigmask;
+	sigset_t *sigmask = cl_core.default_sigmask = &main_thread_sigmask;
+        cl_core.default_sigmask_bytes = sizeof(sigset_t);
 # ifdef ECL_THREADS
-	pthread_sigmask(SIG_SETMASK, NULL, &sigmask);
+	pthread_sigmask(SIG_SETMASK, NULL, sigmask);
 # else
-        sigprocmask(SIG_SETMASK, NULL, &sigmask);
+        sigprocmask(SIG_SETMASK, NULL, sigmask);
 # endif
 #endif
-	cl_core.default_sigmask = NULL;
 #ifdef SIGINT
 	if (ecl_get_option(ECL_OPT_TRAP_SIGINT)) {
-		async_handler(SIGINT, non_evil_signal_handler, &sigmask);
+		async_handler(SIGINT, non_evil_signal_handler, sigmask);
+	}
+#endif
+#ifdef SIGCHLD
+	if (ecl_get_option(ECL_OPT_TRAP_SIGCHLD)) {
+                /* We have to set the process signal handler explicitly,
+                 * because on many platforms the default is SIG_IGN. */
+		mysignal(SIGCHLD, lisp_signal_handler);
+		async_handler(SIGCHLD, lisp_signal_handler, sigmask);
 	}
 #endif
 #ifdef HAVE_SIGPROCMASK
 # if defined(ECL_THREADS)
-	pthread_sigmask(SIG_SETMASK, &sigmask, NULL);
+	pthread_sigmask(SIG_SETMASK, sigmask, NULL);
 # else
-	sigprocmask(SIG_SETMASK, &sigmask, NULL);
+	sigprocmask(SIG_SETMASK, sigmask, NULL);
 # endif
-	cl_core.default_sigmask = &sigmask;
 #endif
 #ifdef ECL_WINDOWS_THREADS
 	old_W32_exception_filter =
@@ -1044,6 +1125,7 @@ static void
 install_signal_handling_thread()
 {
 #if defined(ECL_THREADS) && defined(HAVE_SIGPROCMASK)
+        ecl_process_env()->default_sigmask = &main_thread_sigmask;
 	if (ecl_get_option(ECL_OPT_SIGNAL_HANDLING_THREAD)) {
 		cl_object fun =
 			ecl_make_cfun((cl_objectfn_fixed)
@@ -1086,8 +1168,8 @@ install_process_interrupt_handler()
 		}
 		mysignal(signal, non_evil_signal_handler);
 #ifdef HAVE_SIGROCMASK
-                sigdelset(cl_core.default_sigmask, signal);
-                pthread_sigmask(SIG_SETMASK, cl_core.default_sigmask, NULL);
+                sigdelset(ecl_process_env()->default_sigmask, signal);
+                pthread_sigmask(SIG_SETMASK, ecl_process_env()->default_sigmask, NULL);
 #endif
 	}
 #endif
@@ -1152,7 +1234,8 @@ create_signal_code_constants()
 	for (i = 0; known_signals[i].code >= 0; i++) {
 		cl_object name =
 			_ecl_intern(known_signals[i].text,
-				    cl_core.system_package);
+				    cl_core.ext_package);
+                cl_export2(name, cl_core.ext_package);
 		si_Xmake_constant(name, MAKE_FIXNUM(known_signals[i].code));
 	}
 }
@@ -1173,7 +1256,7 @@ init_unixint(int pass)
 		create_signal_code_constants();
 		install_fpe_signal_handlers();
 		install_signal_handling_thread();
-		ECL_SET(@'si::*interrupts-enabled*', Ct);
+		ECL_SET(@'ext::*interrupts-enabled*', Ct);
 		ecl_process_env()->disable_interrupts = 0;
 	}
 }

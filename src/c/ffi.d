@@ -139,12 +139,13 @@ static struct {
 #ifdef X86_WIN32
 	{@':cdecl', FFI_SYSV},
 	{@':sysv', FFI_SYSV},
-        {@':stdcall', FFI_STDCALL}
-#endif
-#if !defined(X86_WIN32) && (defined(__i386__) || defined(__x86_64__))
+	{@':stdcall', FFI_STDCALL},
+#elif defined(X86_WIN64)
+	{@':win64', FFI_WIN64},
+#elsif defined(X86_ANY) || defined(X86) || defined(X86_64)
 	{@':cdecl', FFI_SYSV},
 	{@':sysv', FFI_SYSV},
-	{@':unix64', FFI_UNIX64}
+	{@':unix64', FFI_UNIX64},
 #endif
 };
 
@@ -249,7 +250,7 @@ cl_object
 si_allocate_foreign_data(cl_object tag, cl_object size)
 {
 	cl_object output = ecl_alloc_object(t_foreign);
-	cl_index bytes = fixnnint(size);
+	cl_index bytes = ecl_to_size(size);
 	output->foreign.tag = tag;
 	output->foreign.size = bytes;
 	/* FIXME! Should be atomic uncollectable or malloc, but we do not export
@@ -272,6 +273,7 @@ si_free_foreign_data(cl_object f)
 	}
 	f->foreign.size = 0;
 	f->foreign.data = NULL;
+        @(return)
 }
 
 cl_object
@@ -335,8 +337,8 @@ cl_object
 si_foreign_data_pointer(cl_object f, cl_object andx, cl_object asize,
 			cl_object tag)
 {
-	cl_index ndx = fixnnint(andx);
-	cl_index size = fixnnint(asize);
+	cl_index ndx = ecl_to_size(andx);
+	cl_index size = ecl_to_size(asize);
 	cl_object output;
 
 	if (ecl_unlikely(type_of(f) != t_foreign)) {
@@ -356,8 +358,8 @@ si_foreign_data_pointer(cl_object f, cl_object andx, cl_object asize,
 cl_object
 si_foreign_data_ref(cl_object f, cl_object andx, cl_object asize, cl_object tag)
 {
-	cl_index ndx = fixnnint(andx);
-	cl_index size = fixnnint(asize);
+	cl_index ndx = ecl_to_size(andx);
+	cl_index size = ecl_to_size(asize);
 	cl_object output;
 
 	if (ecl_unlikely(type_of(f) != t_foreign)) {
@@ -375,7 +377,7 @@ si_foreign_data_ref(cl_object f, cl_object andx, cl_object asize, cl_object tag)
 cl_object
 si_foreign_data_set(cl_object f, cl_object andx, cl_object value)
 {
-	cl_index ndx = fixnnint(andx);
+	cl_index ndx = ecl_to_size(andx);
 	cl_index size, limit;
 
 	if (ecl_unlikely(type_of(f) != t_foreign)) {
@@ -444,6 +446,14 @@ ecl_foreign_cc_code(cl_object cc)
 }
 #endif
 
+static void wrong_ffi_tag(enum ecl_ffi_tag tag) ecl_attr_noreturn;
+
+static void
+wrong_ffi_tag(enum ecl_ffi_tag tag)
+{
+	FEerror("Invalid ecl_ffi_tag code ~D", 1, ecl_make_integer(tag));
+}
+
 cl_object
 ecl_foreign_data_ref_elt(void *p, enum ecl_ffi_tag tag)
 {
@@ -511,6 +521,8 @@ ecl_foreign_data_ref_elt(void *p, enum ecl_ffi_tag tag)
 		return ecl_make_doublefloat(*(double *)p);
 	case ECL_FFI_VOID:
 		return Cnil;
+        default:
+                wrong_ffi_tag(tag);
 	}
 }
 
@@ -525,37 +537,35 @@ ecl_foreign_data_set_elt(void *p, enum ecl_ffi_tag tag, cl_object value)
 		*(unsigned char*)p = (unsigned char)ecl_base_char_code(value);
 		break;
 	case ECL_FFI_BYTE:
-		*(int8_t *)p = fixint(value);
+		*(int8_t *)p = ecl_to_int8_t(value);
 		break;
 	case ECL_FFI_UNSIGNED_BYTE:
-		*(uint8_t *)p = fixnnint(value);
+		*(uint8_t *)p = ecl_to_uint8_t(value);
 		break;
 	case ECL_FFI_SHORT:
-		*(short *)p = fixint(value);
+		*(short *)p = ecl_to_short(value);
 		break;
 	case ECL_FFI_UNSIGNED_SHORT:
-		*(unsigned short *)p = fixnnint(value);
+		*(unsigned short *)p = ecl_to_ushort(value);
 		break;
 	case ECL_FFI_INT:
-		*(int *)p = fixint(value);
+		*(int *)p = ecl_to_int(value);
 		break;
 	case ECL_FFI_UNSIGNED_INT:
-		*(unsigned int *)p = fixnnint(value);
+		*(unsigned int *)p = ecl_to_uint(value);
 		break;
 	case ECL_FFI_LONG:
-		*(long *)p = fixint(value);
+		*(long *)p = ecl_to_long(value);
 		break;
 	case ECL_FFI_UNSIGNED_LONG:
-		*(unsigned long *)p = fixnnint(value);
+		*(unsigned long *)p = ecl_to_ulong(value);
 		break;
-#ifdef ecl_uint8_t
         case ECL_FFI_INT8_T:
-                *(ecl_int8_t *)p = fixint(value);
+                *(ecl_int8_t *)p = ecl_to_int8_t(value);
                 break;
         case ECL_FFI_UINT8_T:
-                *(ecl_uint8_t *)p = fixnnint(value);
+                *(ecl_uint8_t *)p = ecl_to_uint8_t(value);
                 break;
-#endif
 #ifdef ecl_uint16_t
         case ECL_FFI_INT16_T:
                 *(ecl_int16_t *)p = ecl_to_int16_t(value);
@@ -605,13 +615,15 @@ ecl_foreign_data_set_elt(void *p, enum ecl_ffi_tag tag, cl_object value)
 		break;
 	case ECL_FFI_VOID:
 		break;
+        default:
+                wrong_ffi_tag(tag);
 	}
 }
 
 cl_object
 si_foreign_data_ref_elt(cl_object f, cl_object andx, cl_object type)
 {
-	cl_index ndx = fixnnint(andx);
+	cl_index ndx = ecl_to_size(andx);
 	cl_index limit = f->foreign.size;
 	enum ecl_ffi_tag tag = ecl_foreign_type_code(type);
 	if (ecl_unlikely(ndx >= limit ||
@@ -628,7 +640,7 @@ si_foreign_data_ref_elt(cl_object f, cl_object andx, cl_object type)
 cl_object
 si_foreign_data_set_elt(cl_object f, cl_object andx, cl_object type, cl_object value)
 {
-	cl_index ndx = fixnnint(andx);
+	cl_index ndx = ecl_to_size(andx);
 	cl_index limit = f->foreign.size;
 	enum ecl_ffi_tag tag = ecl_foreign_type_code(type);
 	if (ecl_unlikely(ndx >= limit ||
@@ -678,7 +690,7 @@ si_foreign_data_recast(cl_object f, cl_object size, cl_object tag)
 	if (ecl_unlikely(type_of(f) != t_foreign))
                 FEwrong_type_nth_arg(@[si::foreign-data-recast], 1, f,
                                      @[si::foreign-data]);
-	f->foreign.size = fixnnint(size);
+	f->foreign.size = ecl_to_size(size);
 	f->foreign.tag = tag;
 	@(return f)
 }
@@ -965,6 +977,12 @@ callback_executor(ffi_cif *cif, void *result, void **args, void *userdata)
         ecl_foreign_data_set_elt(result, ecl_foreign_type_code(ret_type), x);
 }
 
+cl_object
+si_free_ffi_closure(cl_object closure)
+{
+        ffi_closure_free(ecl_foreign_data_pointer_safe(closure));
+}
+
 @(defun si::make-dynamic-callback (fun sym return_type arg_types
                                    &optional (cc_type @':default'))
 @
@@ -973,10 +991,19 @@ callback_executor(ffi_cif *cif, void *result, void **args, void *userdata)
         ffi_type **types;
         int n = prepare_cif(the_env, cif, return_type, arg_types, Cnil, cc_type,
                             &types);
-        ffi_closure *closure = ecl_alloc_atomic(sizeof(ffi_closure));
+
+	/* libffi allocates executable memory for us. ffi_closure_alloc()
+	 * returns a pointer to memory and a pointer to the beginning of
+	 * the actual executable region (executable_closure) which is
+	 * where the code resides. */
+        void *executable_region;
+        ffi_closure *closure = ffi_closure_alloc(sizeof(ffi_closure), &executable_region);
+
         cl_object closure_object = ecl_make_foreign_data(@':pointer-void',
                                                          sizeof(ffi_closure),
                                                          closure);
+        si_set_finalizer(closure_object, @'si::free-ffi-closure');
+
         cl_object data = cl_list(6, closure_object,
                                  fun, return_type, arg_types, cc_type,
                                  ecl_make_foreign_data(@':pointer-void',
@@ -984,8 +1011,9 @@ callback_executor(ffi_cif *cif, void *result, void **args, void *userdata)
                                  ecl_make_foreign_data(@':pointer-void',
                                                        (n + 1) * sizeof(ffi_type*),
                                                        types));
-        int status = ffi_prep_closure(closure, cif, callback_executor,
-                                      ECL_CONS_CDR(data));
+        int status = ffi_prep_closure_loc(closure, cif, callback_executor,
+                                          ECL_CONS_CDR(data), executable_region);
+
         if (status != FFI_OK) {
                 FEerror("Unable to build callback. libffi returns ~D", 1,
                         MAKE_FIXNUM(status));

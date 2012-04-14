@@ -35,6 +35,8 @@ successfully, T is returned, else error."
         (setf (logical-pathname-translations host) (read in-str)))
       t)))
 
+(defparameter *do-time-level* -1)
+
 (defun do-time (closure)
   #-boehm-gc
   (let* ((real-start (get-internal-real-time))
@@ -60,7 +62,8 @@ successfully, T is returned, else error."
 	     (/ (- run-end run-start) internal-time-units-per-second)
 	     (/ (- gc-end gc-start) internal-time-units-per-second))))
   #+boehm-gc
-  (let* (real-start
+  (let* ((*do-time-level* (1+ *do-time-level*))
+         real-start
 	 run-start
 	 consed-start
 	 gc-no-start
@@ -70,6 +73,9 @@ successfully, T is returned, else error."
 	 gc-no-end)
     ;; Garbage collection forces the value of counters to be updated
     (si::gc t)
+    ;; If there are no nested calls, we just reset the counters
+    (when (zerop *do-time-level*) (si::gc-stats 0))
+    ;; but in general we copy the previous values.
     (multiple-value-setq (consed-start gc-no-start) (gc-stats t))
     (setq real-start (get-internal-real-time)
 	  run-start (get-internal-run-time))
@@ -261,6 +267,8 @@ where CREATED is true only if we succeeded on creating all directories."
   (let* ((created nil)
 	 (full-pathname (merge-pathnames pathname))
 	 d)
+    (when (typep full-pathname 'logical-pathname)
+      (setf full-pathname (translate-logical-pathname full-pathname)))
     (when (or (wild-pathname-p full-pathname :directory)
 	      (wild-pathname-p full-pathname :host)
 	      (wild-pathname-p full-pathname :device))
@@ -288,6 +296,7 @@ hash table; otherwise it signals that we have reached the end of the hash table.
       ,@body)))
 
 (defun sharp-!-reader (stream subchar arg)
+  (declare (ignore arg subchar))
   (read-line stream)
   (values))
 
