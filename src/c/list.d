@@ -44,7 +44,7 @@ test_compare(struct cl_test *t, cl_object x)
 {
 	x = KEY(t,x);
 	t->env->function = t->test_function;
-	return t->test_fn(2, t->item_compared, x) != Cnil;
+	return t->test_fn(2, t->item_compared, x) != ECL_NIL;
 }
 
 static bool
@@ -52,7 +52,7 @@ test_compare_not(struct cl_test *t, cl_object x)
 {
 	x = KEY(t,x);
 	t->env->function = t->test_function;
-	return t->test_fn(2, t->item_compared, x) == Cnil;
+	return t->test_fn(2, t->item_compared, x) == ECL_NIL;
 }
 
 static bool
@@ -98,24 +98,24 @@ setup_test(struct cl_test *t, cl_object item, cl_object test,
 {
 	cl_env_ptr env = t->env = ecl_process_env();
 	t->item_compared = item;
-	if (test != Cnil) {
-		if (test_not != Cnil)
+	if (test != ECL_NIL) {
+		if (test_not != ECL_NIL)
 		    FEerror("Both :TEST and :TEST-NOT are specified.", 0);
 		t->test_function = test = si_coerce_to_function(test);
-		if (test == SYM_FUN(@'eq')) {
+		if (test == ECL_SYM_FUN(@'eq')) {
 			t->test_c_function = test_eq;
-		} else if (test == SYM_FUN(@'eql')) {
+		} else if (test == ECL_SYM_FUN(@'eql')) {
 			t->test_c_function = test_eql;
-		} else if (test == SYM_FUN(@'equal')) {
+		} else if (test == ECL_SYM_FUN(@'equal')) {
 			t->test_c_function = test_equal;
-		} else if (test == SYM_FUN(@'equalp')) {
+		} else if (test == ECL_SYM_FUN(@'equalp')) {
 			t->test_c_function = test_equalp;
 		} else {
 			t->test_c_function = test_compare;
 			t->test_fn = ecl_function_dispatch(env, test);
 			t->test_function = env->function;
 		}
-	} else if (test_not != Cnil) {
+	} else if (test_not != ECL_NIL) {
 		t->test_c_function = test_compare_not;
 		test_not = si_coerce_to_function(test_not);
 		t->test_fn = ecl_function_dispatch(env, test_not);
@@ -123,7 +123,7 @@ setup_test(struct cl_test *t, cl_object item, cl_object test,
 	} else {
 		t->test_c_function = test_eql;
 	}
-	if (key != Cnil) {
+	if (key != ECL_NIL) {
 		key = si_coerce_to_function(key);
 		t->key_fn = ecl_function_dispatch(env, key);
 		t->key_function = env->function;
@@ -134,12 +134,12 @@ setup_test(struct cl_test *t, cl_object item, cl_object test,
 }
 
 @(defun list (&rest args)
-	cl_object head = Cnil;
+	cl_object head = ECL_NIL;
 @
 	if (narg--) {
-		cl_object tail = head = ecl_list1(cl_va_arg(args));
+		cl_object tail = head = ecl_list1(ecl_va_arg(args));
 		while (narg--) {
-			cl_object cons = ecl_list1(cl_va_arg(args));
+			cl_object cons = ecl_list1(ecl_va_arg(args));
 			ECL_RPLACD(tail, cons);
 			tail = cons;
 		}
@@ -152,15 +152,15 @@ setup_test(struct cl_test *t, cl_object item, cl_object test,
 @
 	if (narg == 0)
 		FEwrong_num_arguments(@[list*]);
-	head = cl_va_arg(args);
+	head = ecl_va_arg(args);
 	if (--narg) {
 		cl_object tail = head = ecl_list1(head);
 		while (--narg) {
-			cl_object cons = ecl_list1(cl_va_arg(args));
+			cl_object cons = ecl_list1(ecl_va_arg(args));
 			ECL_RPLACD(tail, cons);
 			tail = cons;
 		}
-		ECL_RPLACD(tail, cl_va_arg(args));
+		ECL_RPLACD(tail, ecl_va_arg(args));
 	}
 	@(return head)
 @)
@@ -183,10 +183,10 @@ append_into(cl_object head, cl_object *tail, cl_object l)
 }
 
 @(defun append (&rest rest)
-	cl_object head = Cnil, *tail = &head;
+	cl_object head = ECL_NIL, *tail = &head;
 @
 	for (; narg > 1; narg--) {
-		cl_object other = cl_va_arg(rest);
+		cl_object other = ecl_va_arg(rest);
                 tail = append_into(head, tail, other);
 	}
         if (narg) {
@@ -194,7 +194,7 @@ append_into(cl_object head, cl_object *tail, cl_object l)
                         /* (APPEND '(1 . 2) 3) */
                         FEtype_error_proper_list(head);
                 }
-                *tail = cl_va_arg(rest);
+                *tail = ecl_va_arg(rest);
         }
 	@(return head)
 @)
@@ -202,7 +202,7 @@ append_into(cl_object head, cl_object *tail, cl_object l)
 cl_object
 ecl_append(cl_object x, cl_object y)
 {
-	cl_object head = Cnil;
+	cl_object head = ECL_NIL;
         cl_object *tail = &head;
 	if (!Null(x)) {
                 tail = append_into(head, tail, x);
@@ -215,9 +215,10 @@ ecl_append(cl_object x, cl_object y)
 	return head;
 }
 
-#define LENTH(n) (cl_object x) {\
-	return1(ecl_nth(n, x));\
-}
+#define LENTH(n) (cl_object x) {				\
+		const cl_env_ptr the_env = ecl_process_env();	\
+		ecl_return1(the_env, ecl_nth(n, x));		\
+	}
 cl_object @fifth	LENTH(4)
 cl_object @sixth	LENTH(5)
 cl_object @seventh	LENTH(6)
@@ -255,8 +256,8 @@ BEGIN:
 	struct cl_test t;
 	cl_object output;
 @
-	setup_test(&t, Cnil, test, test_not, Cnil);
-	output = tree_equal(&t, x, y)? Ct : Cnil;
+	setup_test(&t, ECL_NIL, test, test_not, ECL_NIL);
+	output = tree_equal(&t, x, y)? ECL_T : ECL_NIL;
 	close_test(&t);
 	@(return output)
 @)
@@ -264,9 +265,9 @@ BEGIN:
 cl_object
 cl_endp(cl_object x)
 {
-        cl_object output = Cnil;
+        cl_object output = ECL_NIL;
 	if (Null(x)) {
-                output = Ct;
+                output = ECL_T;
         } else if (ecl_unlikely(!LISTP(x))) {
                 FEwrong_type_only_arg(@[endp], x, @[list]);
         }
@@ -297,29 +298,29 @@ cl_list_length(cl_object x)
 		}
 		if (n & 1) {
 			/* Circular list? */
-			if (slow == fast) @(return Cnil);
+			if (slow == fast) @(return ECL_NIL);
 			slow = ECL_CONS_CDR(slow);
 		}
 	}
-	@(return MAKE_FIXNUM(n));
+	@(return ecl_make_fixnum(n));
 }
 
 cl_object
 si_proper_list_p(cl_object x)
 {
 	cl_fixnum n;
-	cl_object fast, slow, test = Ct;
+	cl_object fast, slow, test = ECL_T;
 	/* INV: A list's length always fits in a fixnum */
 	fast = slow = x;
 	for (n = 0; !Null(fast); n++, fast = ECL_CONS_CDR(fast)) {
 		if (!LISTP(fast)) {
-                        test = Cnil;
+                        test = ECL_NIL;
                         break;
 		}
 		if (n & 1) {
 			/* Circular list? */
 			if (slow == fast) {
-                                test = Cnil;
+                                test = ECL_NIL;
                                 break;
                         }
 			slow = ECL_CONS_CDR(slow);
@@ -344,7 +345,7 @@ ecl_nth(cl_fixnum n, cl_object x)
 	for (; n > 0 && CONSP(x); n--)
 		x = ECL_CONS_CDR(x);
 	if (Null(x))
-		return Cnil;
+		return ECL_NIL;
 	if (!LISTP(x))
 		FEtype_error_list(x);
 	return ECL_CONS_CAR(x);
@@ -399,9 +400,9 @@ ecl_last(cl_object l, cl_index n)
 	}
 }
 
-@(defun last (l &optional (k MAKE_FIXNUM(1)))
+@(defun last (l &optional (k ecl_make_fixnum(1)))
 @
-	if (type_of(k) == t_bignum)
+	if (ecl_t_of(k) == t_bignum)
 		@(return l)
 	@(return ecl_last(l, ecl_to_size(k)))
 @)
@@ -423,7 +424,7 @@ cl_copy_list(cl_object x)
 	if (ecl_unlikely(!LISTP(x))) {
                 FEwrong_type_only_arg(@[copy-list], x, @[list]);
 	}
-	copy = Cnil;
+	copy = ECL_NIL;
 	if (!Null(x)) {
 		cl_object tail = copy = ecl_list1(CAR(x));
 		while (x = ECL_CONS_CDR(x), CONSP(x)) {
@@ -452,7 +453,7 @@ cl_copy_alist(cl_object x)
 	if (ecl_unlikely(!LISTP(x))) {
                 FEwrong_type_only_arg(@[copy-alist], x, @[list]);
 	}
-	copy = Cnil;
+	copy = ECL_NIL;
 	if (!Null(x)) {
 		cl_object tail = copy = duplicate_pairs(x);
 		while (x = ECL_CONS_CDR(x), !Null(x)) {
@@ -494,10 +495,10 @@ cl_revappend(cl_object x, cl_object y)
 }
 
 @(defun nconc (&rest lists)
-	cl_object head = Cnil, tail = Cnil;
+	cl_object head = ECL_NIL, tail = ECL_NIL;
 @	
 	while (narg--) {
-		cl_object new_tail, other = cl_va_arg(lists);
+		cl_object new_tail, other = ecl_va_arg(lists);
 		if (Null(other)) {
 			new_tail = tail;
 		} else if (CONSP(other)) {
@@ -553,12 +554,12 @@ ecl_butlast(cl_object l, cl_index n)
 	for (r = l; n && CONSP(r); n--, r = ECL_CONS_CDR(r))
 		;
 	if (Null(r)) {
-		return Cnil;
+		return ECL_NIL;
 	} else if (!LISTP(r)) {
 		/* We reach here either because l is shorter than n conses,
 		 * or because it is not a list */
 		if (r == l) FEtype_error_list(r);
-		return Cnil;
+		return ECL_NIL;
 	} else {
 		/* We reach here because l has at least n conses and
 		 * thus we can take CAR(l) */
@@ -573,11 +574,11 @@ ecl_butlast(cl_object l, cl_index n)
 	}
 }
 
-@(defun butlast (lis &optional (nn MAKE_FIXNUM(1)))
+@(defun butlast (lis &optional (nn ecl_make_fixnum(1)))
 @
 	/* INV: No list has more than MOST_POSITIVE_FIXNUM elements */
-	if (type_of(nn) == t_bignum)
-		@(return Cnil);
+	if (ecl_t_of(nn) == t_bignum)
+		@(return ECL_NIL);
 	/* INV: ecl_to_size() signals a type-error if NN is not an integer >=0 */
 	@(return ecl_butlast(lis, ecl_to_size(nn)))
 @)
@@ -596,17 +597,17 @@ ecl_nbutlast(cl_object l, cl_index n)
 			tail = ECL_CONS_CDR(tail);
 			r = ECL_CONS_CDR(r);
 		}
-		ECL_RPLACD(tail, Cnil);
+		ECL_RPLACD(tail, ECL_NIL);
 		return l;
 	}
-	return Cnil;
+	return ECL_NIL;
 }
 
-@(defun nbutlast (lis &optional (nn MAKE_FIXNUM(1)))
+@(defun nbutlast (lis &optional (nn ecl_make_fixnum(1)))
 @
 	/* INV: No list has more than MOST_POSITIVE_FIXNUM elements */
-	if (type_of(nn) == t_bignum)
-		@(return Cnil)
+	if (ecl_t_of(nn) == t_bignum)
+		@(return ECL_NIL)
 	/* INV: ecl_to_size() signas a type-error if NN is not an integer >=0 */
 	@(return ecl_nbutlast(lis, ecl_to_size(nn)))
 @)
@@ -614,7 +615,7 @@ ecl_nbutlast(cl_object l, cl_index n)
 cl_object
 cl_ldiff(cl_object x, cl_object y)
 {
-	cl_object head = Cnil;
+	cl_object head = ECL_NIL;
 	if (ecl_unlikely(!LISTP(x))) {
                 FEwrong_type_only_arg(@[ldiff], x, @[list]);
 	}
@@ -675,10 +676,10 @@ subst(struct cl_test *t, cl_object new_obj, cl_object tree)
 {
 	if (TEST(t, tree)) {
 		return new_obj;
-	} else if (ATOM(tree)) {
+	} else if (ECL_ATOM(tree)) {
 		return tree;
 	} else {
-		cl_object head, tail = Cnil;
+		cl_object head, tail = ECL_NIL;
 		do {
 			cl_object cons = subst(t, new_obj, ECL_CONS_CAR(tree));
 			cons = ecl_cons(cons, tree = ECL_CONS_CDR(tree));
@@ -744,8 +745,8 @@ nsubst(struct cl_test *t, cl_object new_obj, cl_object tree)
 	 */
 	struct cl_test t[2];
 @
-	setup_test(t, Cnil, Cnil, Cnil, key);
-	setup_test(t+1, Cnil, test, test_not, Cnil);
+	setup_test(t, ECL_NIL, ECL_NIL, ECL_NIL, key);
+	setup_test(t+1, ECL_NIL, test, test_not, ECL_NIL);
 	tree = sublis(t, alist, tree);
 	close_test(t+1);
 	close_test(t);
@@ -779,8 +780,8 @@ sublis(struct cl_test *t, cl_object alist, cl_object tree)
 	 */
 	struct cl_test t[2];
 @
-	setup_test(t, Cnil, Cnil, Cnil, key);
-	setup_test(t+1, Cnil, test, test_not, Cnil);
+	setup_test(t, ECL_NIL, ECL_NIL, ECL_NIL, key);
+	setup_test(t+1, ECL_NIL, test, test_not, ECL_NIL);
 	tree = nsublis(t, alist, tree);
 	close_test(t+1);
 	close_test(t);
@@ -837,7 +838,7 @@ si_memq(cl_object x, cl_object l)
 		if (x == ECL_CONS_CAR(l))
 			@(return l)
 	} end_loop_for_in;
-	@(return Cnil)
+	@(return ECL_NIL)
 }
 
 /* Added for use by the compiler, instead of open coding them. Beppe */
@@ -848,7 +849,7 @@ ecl_memql(cl_object x, cl_object l)
 		if (ecl_eql(x, ECL_CONS_CAR(l)))
 			return(l);
 	} end_loop_for_in;
-	return(Cnil);
+	return(ECL_NIL);
 }
 
 cl_object
@@ -858,7 +859,7 @@ ecl_member(cl_object x, cl_object l)
 		if (ecl_equal(x, ECL_CONS_CAR(l)))
 			return(l);
 	} end_loop_for_in;
-	return(Cnil);
+	return(ECL_NIL);
 }
 /* End of addition. Beppe */
 
@@ -867,7 +868,7 @@ si_member1(cl_object item, cl_object list, cl_object test, cl_object test_not, c
 {
 	struct cl_test t;
 
-	if (key != Cnil)
+	if (key != ECL_NIL)
 		item = funcall(2, key, item);
 	setup_test(&t, item, test, test_not, key);
 	loop_for_in(list) {
@@ -882,7 +883,7 @@ cl_object
 cl_tailp(cl_object y, cl_object x)
 {
 	loop_for_on(x) {
-		if (ecl_eql(x, y)) @(return Ct);
+		if (ecl_eql(x, y)) @(return ECL_T);
 	} end_loop_for_on(x);
 	return cl_eql(x, y);
 }
@@ -951,7 +952,7 @@ do_assoc(struct cl_test *t, cl_object a_list)
 				return pair;
 		}
 	} end_loop_for_in;
-	return Cnil;
+	return ECL_NIL;
 }
 
 @(defun rassoc (item a_list &key test test_not key)
@@ -976,7 +977,7 @@ do_assoc(struct cl_test *t, cl_object a_list)
 cl_object
 ecl_remove_eq(cl_object x, cl_object l)
 {
-	cl_object head = Cnil, tail = Cnil;
+	cl_object head = ECL_NIL, tail = ECL_NIL;
 	loop_for_on_unsafe(l) {
 		if (ECL_CONS_CAR(l) != x) {
 			cl_object cons = ecl_list1(ECL_CONS_CAR(l));
@@ -1016,7 +1017,7 @@ ecl_assq(cl_object x, cl_object l)
 		if (x == CAR(pair))
 			return pair;
 	} end_loop_for_in;
-	return(Cnil);
+	return(ECL_NIL);
 }
 
 cl_object
@@ -1027,7 +1028,7 @@ ecl_assql(cl_object x, cl_object l)
 		if (ecl_eql(x, CAR(pair)))
 			return pair;
 	} end_loop_for_in;
-	return(Cnil);
+	return(ECL_NIL);
 }
 
 cl_object
@@ -1038,7 +1039,7 @@ ecl_assoc(cl_object x, cl_object l)
 		if (ecl_equal(x, CAR(pair)))
 			return pair;
 	} end_loop_for_in;
-	return(Cnil);
+	return(ECL_NIL);
 }
 
 cl_object
@@ -1049,6 +1050,6 @@ ecl_assqlp(cl_object x, cl_object l)
 		if (ecl_equalp(x, CAR(pair)))
 			return pair;
 	} end_loop_for_in;
-	return(Cnil);
+	return(ECL_NIL);
 }
 /* End of addition. Beppe */

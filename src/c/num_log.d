@@ -141,16 +141,16 @@ static bit_operator fixnum_operations[16] = {
 
 
 static cl_object
-log_op(cl_narg narg, int op, cl_va_list ARGS)
+log_op(cl_narg narg, int op, ecl_va_list ARGS)
 {
 	cl_object x, y;
 	/* FIXME! This can be optimized */
-	x = cl_va_arg(ARGS);
+	x = ecl_va_arg(ARGS);
 	if (narg-- == 1) {
 		assert_type_integer(x);
 	} else {
 		do {
-			y = cl_va_arg(ARGS);
+			y = ecl_va_arg(ARGS);
 			x = ecl_boole(op, x, y);
 		} while (--narg);
 	}
@@ -160,16 +160,16 @@ log_op(cl_narg narg, int op, cl_va_list ARGS)
 cl_object
 ecl_boole(int op, cl_object x, cl_object y)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
-		switch (type_of(y)) {
+		switch (ecl_t_of(y)) {
 		case t_fixnum: {
-			cl_fixnum z = fixnum_operations[op](fix(x), fix(y));
-			return MAKE_FIXNUM(z);
+			cl_fixnum z = fixnum_operations[op](ecl_fixnum(x), ecl_fixnum(y));
+			return ecl_make_fixnum(z);
 		}
 		case t_bignum: {
                         cl_object x_copy = _ecl_big_register0();
-                        _ecl_big_set_fixnum(x_copy, fix(x));
+                        _ecl_big_set_fixnum(x_copy, ecl_fixnum(x));
                         (_ecl_big_boole_operator(op))(x_copy, x_copy, y);
                         return _ecl_big_register_normalize(x_copy);
 		}
@@ -179,10 +179,10 @@ ecl_boole(int op, cl_object x, cl_object y)
 		break;
 	case t_bignum: {
                 cl_object x_copy = _ecl_big_register0();
-		switch (type_of(y)) {
+		switch (ecl_t_of(y)) {
 		case t_fixnum: {
 			cl_object z = _ecl_big_register1();
-                        _ecl_big_set_fixnum(z,fix(y));
+                        _ecl_big_set_fixnum(z,ecl_fixnum(y));
                         (_ecl_big_boole_operator(op))(x_copy, x, z);
 			_ecl_big_register_free(z);
 			break;
@@ -204,7 +204,7 @@ ecl_boole(int op, cl_object x, cl_object y)
 cl_object
 cl_lognot(cl_object x)
 {
-	return @logxor(2,x,MAKE_FIXNUM(-1));
+	return @logxor(2,x,ecl_make_fixnum(-1));
 }
 
 static cl_fixnum
@@ -212,9 +212,9 @@ count_bits(cl_object x)
 {
 	cl_fixnum count;
 
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum: {
-		cl_fixnum i = fix(x);
+		cl_fixnum i = ecl_fixnum(x);
 		cl_fixnum j = (i < 0) ? ~i : i;
 		for (count=0 ; j ; j >>= 1)
 			if (j & 1) count++;
@@ -249,7 +249,7 @@ ecl_ash(cl_object x, cl_fixnum w)
 	y = _ecl_big_register0();
 	if (w < 0) {
 		cl_index bits = -w;
-		if (FIXNUMP(x)) {
+		if (ECL_FIXNUMP(x)) {
 			/* The result of shifting a number further than the number
 			 * of digits it has is unpredictable in C. For instance, GCC
 			 * on intel masks out all bits of "bits" beyond the 5 and
@@ -257,18 +257,18 @@ ecl_ash(cl_object x, cl_fixnum w)
 			 * Furthermore, in general, shifting negative numbers leads
 			 * to implementation-specific results :-/
 			 */
-			cl_fixnum y = fix(x);
+			cl_fixnum y = ecl_fixnum(x);
 			if (bits >= FIXNUM_BITS) {
 				y = (y < 0)? -1 : 0;
 			} else {
 				y >>= bits;
 			}
-			return MAKE_FIXNUM(y);
+			return ecl_make_fixnum(y);
 		}
 		mpz_div_2exp(y->big.big_num, x->big.big_num, bits);
 	} else {
-		if (FIXNUMP(x)) {
-			_ecl_big_set_fixnum(y, fix(x));
+		if (ECL_FIXNUMP(x)) {
+			_ecl_big_set_fixnum(y, ecl_fixnum(x));
 			x = y;
 		}
 		mpz_mul_2exp(y->big.big_num, x->big.big_num, (unsigned long)w);
@@ -290,7 +290,7 @@ ecl_fixnum_bit_length(cl_fixnum i)
 @(defun logior (&rest nums)
 @
 	if (narg == 0)
-		@(return MAKE_FIXNUM(0))
+		@(return ecl_make_fixnum(0))
 	/* INV: log_op() checks types and outputs first argument as default. */
 	@(return log_op(narg, ECL_BOOLIOR, nums))
 @)
@@ -298,7 +298,7 @@ ecl_fixnum_bit_length(cl_fixnum i)
 @(defun logxor (&rest nums)
 @
 	if (narg == 0)
-		@(return MAKE_FIXNUM(0))
+		@(return ecl_make_fixnum(0))
 	/* INV: log_op() checks types and outputs first argument as default. */
 	@(return log_op(narg, ECL_BOOLXOR, nums))
 @)
@@ -306,7 +306,7 @@ ecl_fixnum_bit_length(cl_fixnum i)
 @(defun logand (&rest nums)
 @
 	if (narg == 0)
-		@(return MAKE_FIXNUM(-1))
+		@(return ecl_make_fixnum(-1))
 	/* INV: log_op() checks types and outputs first argument as default. */
 	@(return log_op(narg, ECL_BOOLAND, nums))
 @)
@@ -314,7 +314,7 @@ ecl_fixnum_bit_length(cl_fixnum i)
 @(defun logeqv (&rest nums)
 @
 	if (narg == 0)
-		@(return MAKE_FIXNUM(-1))
+		@(return ecl_make_fixnum(-1))
 	/* INV: log_op() checks types and outputs first argument as default. */
 	@(return log_op(narg, ECL_BOOLEQV, nums))
 @)
@@ -378,10 +378,10 @@ cl_logbitp(cl_object p, cl_object x)
 	bool i;
 
 	assert_type_integer(x);
-	if (FIXNUMP(p)) {
+	if (ECL_FIXNUMP(p)) {
 		cl_index n = ecl_to_size(p);
-		if (FIXNUMP(x)) {
-			cl_fixnum y = fix(x);
+		if (ECL_FIXNUMP(x)) {
+			cl_fixnum y = ecl_fixnum(x);
 			if (n >= FIXNUM_BITS) {
 				i = (y < 0);
 			} else {
@@ -392,12 +392,12 @@ cl_logbitp(cl_object p, cl_object x)
 		}
 	} else {
 		assert_type_non_negative_integer(p);
-		if (FIXNUMP(x))
-			i = (fix(x) < 0);
+		if (ECL_FIXNUMP(x))
+			i = (ecl_fixnum(x) < 0);
 		else
 			i = (_ecl_big_sign(x) < 0);
 	}
-	@(return (i ? Ct : Cnil))
+	@(return (i ? ECL_T : ECL_NIL))
 }
 
 cl_object
@@ -408,18 +408,18 @@ cl_ash(cl_object x, cl_object y)
 
         assert_type_integer(x);
 	assert_type_integer(y);
-	if (FIXNUMP(y))
-	  r = ecl_ash(x, fix(y));
+	if (ECL_FIXNUMP(y))
+	  r = ecl_ash(x, ecl_fixnum(y));
 	else {
 	  /*
 	    bit position represented by bignum is probably
 	    out of our address space. So, result is returned
 	    according to sign of integer.
 	    */
-	  if (FIXNUMP(x))
-	    if (FIXNUM_MINUSP(x))
+	  if (ECL_FIXNUMP(x))
+	    if (ecl_fixnum_minusp(x))
 	      sign_x = -1;
-	    else if (x == MAKE_FIXNUM(0))
+	    else if (x == ecl_make_fixnum(0))
 	      sign_x = 0;
 	    else
 	      sign_x = 1;
@@ -427,9 +427,9 @@ cl_ash(cl_object x, cl_object y)
 	    sign_x = _ecl_big_sign(x);
 	  if (_ecl_big_sign(y) < 0)
 	    if (sign_x < 0)
-	      r = MAKE_FIXNUM(-1);
+	      r = ecl_make_fixnum(-1);
 	    else
-	      r = MAKE_FIXNUM(0);
+	      r = ecl_make_fixnum(0);
 	  else if (sign_x == 0)
 	    r = x;
 	  else
@@ -441,7 +441,7 @@ cl_ash(cl_object x, cl_object y)
 cl_object
 cl_logcount(cl_object x)
 {
-	@(return MAKE_FIXNUM(count_bits(x)))
+	@(return ecl_make_fixnum(count_bits(x)))
 }
 
 cl_index
@@ -450,9 +450,9 @@ ecl_integer_length(cl_object x)
 	int count;
 	cl_fixnum i;
 
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
-		i = fix(x);
+		i = ecl_fixnum(x);
 		count = ecl_fixnum_bit_length(i);
 		break;
 	case t_bignum:
@@ -469,7 +469,7 @@ ecl_integer_length(cl_object x)
 cl_object
 cl_integer_length(cl_object x)
 {
-	@(return MAKE_FIXNUM(ecl_integer_length(x)))
+	@(return ecl_make_fixnum(ecl_integer_length(x)))
 }
 
 cl_object
@@ -483,52 +483,52 @@ si_bit_array_op(cl_object o, cl_object x, cl_object y, cl_object r)
 	byte *xp, *yp, *rp;
 	int xo, yo, ro;
 
-	if (type_of(x) == t_bitvector) {
+	if (ecl_t_of(x) == t_bitvector) {
 		d = x->vector.dim;
 		xp = x->vector.self.bit;
 		xo = x->vector.offset;
-		if (type_of(y) != t_bitvector)
+		if (ecl_t_of(y) != t_bitvector)
 			goto ERROR;
 		if (d != y->vector.dim)
 			goto ERROR;
 		yp = y->vector.self.bit;
 		yo = y->vector.offset;
-		if (r == Ct)
+		if (r == ECL_T)
 			r = x;
-		if (r != Cnil) {
-			if (type_of(r) != t_bitvector)
+		if (r != ECL_NIL) {
+			if (ecl_t_of(r) != t_bitvector)
 				goto ERROR;
 			if (r->vector.dim != d)
 				goto ERROR;
 			i = (r->vector.self.bit - xp)*8 + (r->vector.offset - xo);
 			if ((i > 0 && i < d) || (i < 0 && -i < d)) {
 				r0 = r;
-				r = Cnil;
+				r = ECL_NIL;
 				replace = TRUE;
 				goto L1;
 			}
 			i = (r->vector.self.bit - yp)*8 + (r->vector.offset - yo);
 			if ((i > 0 && i < d) || (i < 0 && -i < d)) {
 				r0 = r;
-				r = Cnil;
+				r = ECL_NIL;
 				replace = TRUE;
 			}
 		}
 	L1:
 		if (Null(r)) {
-			r = ecl_alloc_simple_vector(d, aet_bit);
+			r = ecl_alloc_simple_vector(d, ecl_aet_bit);
 		}
 	} else {
-		if (type_of(x) != t_array)
+		if (ecl_t_of(x) != t_array)
 			goto ERROR;
-		if ((cl_elttype)x->array.elttype != aet_bit)
+		if ((cl_elttype)x->array.elttype != ecl_aet_bit)
 			goto ERROR;
 		d = x->array.dim;
 		xp = x->vector.self.bit;
 		xo = x->vector.offset;
-		if (type_of(y) != t_array)
+		if (ecl_t_of(y) != t_array)
 			goto ERROR;
-		if ((cl_elttype)y->array.elttype != aet_bit)
+		if ((cl_elttype)y->array.elttype != ecl_aet_bit)
 			goto ERROR;
 		if (x->array.rank != y->array.rank)
 			goto ERROR;
@@ -537,12 +537,12 @@ si_bit_array_op(cl_object o, cl_object x, cl_object y, cl_object r)
 		for (i = 0;  i < x->array.rank;  i++)
 			if (x->array.dims[i] != y->array.dims[i])
 				goto ERROR;
-		if (r == Ct)
+		if (r == ECL_T)
 			r = x;
-		if (r != Cnil) {
-			if (type_of(r) != t_array)
+		if (r != ECL_NIL) {
+			if (ecl_t_of(r) != t_array)
 				goto ERROR;
-			if ((cl_elttype)r->array.elttype != aet_bit)
+			if ((cl_elttype)r->array.elttype != ecl_aet_bit)
 				goto ERROR;
 			if (r->array.rank != x->array.rank)
 				goto ERROR;
@@ -552,14 +552,14 @@ si_bit_array_op(cl_object o, cl_object x, cl_object y, cl_object r)
 			i = (r->vector.self.bit - xp)*8 + (r->vector.offset - xo);
 			if ((i > 0 && i < d) || (i < 0 && -i < d)) {
 				r0 = r;
-				r = Cnil;
+				r = ECL_NIL;
 				replace = TRUE;
 				goto L2;
 			} 
 			i = (r->vector.self.bit - yp)*8 + (r->vector.offset - yo);
 			if ((i > 0 && i < d) || (i < 0 && -i < d)) {
 				r0 = r;
-				r = Cnil;
+				r = ECL_NIL;
 				replace = TRUE;
 			}
 		}
@@ -567,10 +567,10 @@ si_bit_array_op(cl_object o, cl_object x, cl_object y, cl_object r)
 		if (Null(r)) {
 		  r = ecl_alloc_object(t_array);
 		  r->array.self.t = NULL;
-		  r->array.displaced = Cnil;
+		  r->array.displaced = ECL_NIL;
 		  r->array.rank = x->array.rank;
 		  r->array.dims = x->array.dims;
-		  r->array.elttype = aet_bit;
+		  r->array.elttype = ecl_aet_bit;
 		  r->array.dim = x->array.dim;
 		  r->array.flags = 0; /* no fill pointer, not adjustable */
 		  ecl_array_allocself(r);

@@ -30,7 +30,7 @@ static void
 cs_set_size(cl_env_ptr env, cl_index new_size)
 {
 	volatile char foo = 0;
-	cl_index safety_area = ecl_get_option(ECL_OPT_C_STACK_SAFETY_AREA);
+	cl_index safety_area = ecl_option_values[ECL_OPT_C_STACK_SAFETY_AREA];
 	new_size += 2*safety_area;
 #ifdef ECL_DOWN_STACK
 	if (&foo > env->cs_org - new_size + 16) {
@@ -58,7 +58,7 @@ ecl_cs_overflow(void)
                 ";;; Jumping to the outermost toplevel prompt\n"
                 ";;;\n\n";
 	cl_env_ptr env = ecl_process_env();
-	cl_index safety_area = ecl_get_option(ECL_OPT_C_STACK_SAFETY_AREA);
+	cl_index safety_area = ecl_option_values[ECL_OPT_C_STACK_SAFETY_AREA];
 	cl_index size = env->cs_size;
 #ifdef ECL_DOWN_STACK
 	if (env->cs_limit > env->cs_org - size)
@@ -70,7 +70,7 @@ ecl_cs_overflow(void)
 	else
                 ecl_unrecoverable_error(env, stack_overflow_msg);
 	cl_cerror(6, make_constant_base_string("Extend stack size"),
-		  @'ext::stack-overflow', @':size', MAKE_FIXNUM(size),
+		  @'ext::stack-overflow', @':size', ecl_make_fixnum(size),
 		  @':type', @'ext::c-stack');
 	size += size / 2;
 	cs_set_size(env, size);
@@ -91,7 +91,7 @@ ecl_cs_set_org(cl_env_ptr env)
 		getrlimit(RLIMIT_STACK, &rl);
 		if (rl.rlim_cur != RLIM_INFINITY) {
 			size = rl.rlim_cur / 2;
-			if (size > (cl_index)ecl_get_option(ECL_OPT_C_STACK_SIZE))
+			if (size > (cl_index)ecl_option_values[ECL_OPT_C_STACK_SIZE])
 				ecl_set_option(ECL_OPT_C_STACK_SIZE, size);
 #ifdef ECL_DOWN_STACK
 			env->cs_barrier = env->cs_org - rl.rlim_cur - 1024;
@@ -101,7 +101,7 @@ ecl_cs_set_org(cl_env_ptr env)
 		}
 	}
 #endif
-	cs_set_size(env, ecl_get_option(ECL_OPT_C_STACK_SIZE));
+	cs_set_size(env, ecl_option_values[ECL_OPT_C_STACK_SIZE]);
 }
 
 
@@ -116,14 +116,14 @@ ecl_bds_unwind_n(cl_env_ptr env, int n)
 static void
 ecl_bds_set_size(cl_env_ptr env, cl_index size)
 {
-	bds_ptr old_org = env->bds_org;
+	ecl_bds_ptr old_org = env->bds_org;
 	cl_index limit = env->bds_top - old_org;
 	if (size <= limit) {
 		FEerror("Cannot shrink the binding stack below ~D.", 1,
 			ecl_make_unsigned_integer(limit));
 	} else {
-		cl_index margin = ecl_get_option(ECL_OPT_BIND_STACK_SAFETY_AREA);
-		bds_ptr org;
+		cl_index margin = ecl_option_values[ECL_OPT_BIND_STACK_SAFETY_AREA];
+		ecl_bds_ptr org;
 		org = ecl_alloc_atomic(size * sizeof(*org));
 
 		ecl_disable_interrupts_env(env);
@@ -138,7 +138,7 @@ ecl_bds_set_size(cl_env_ptr env, cl_index size)
 	}
 }
 
-struct bds_bd *
+ecl_bds_ptr 
 ecl_bds_overflow(void)
 {
         static const char *stack_overflow_msg =
@@ -146,16 +146,16 @@ ecl_bds_overflow(void)
                 ";;; Jumping to the outermost toplevel prompt\n"
                 ";;;\n\n";
 	cl_env_ptr env = ecl_process_env();
-	cl_index margin = ecl_get_option(ECL_OPT_BIND_STACK_SAFETY_AREA);
+	cl_index margin = ecl_option_values[ECL_OPT_BIND_STACK_SAFETY_AREA];
 	cl_index size = env->bds_size;
-	bds_ptr org = env->bds_org;
-	bds_ptr last = org + size;
+	ecl_bds_ptr org = env->bds_org;
+	ecl_bds_ptr last = org + size;
 	if (env->bds_limit >= last) {
                 ecl_unrecoverable_error(env, stack_overflow_msg);
 	}
 	env->bds_limit += margin;
 	cl_cerror(6, make_constant_base_string("Extend stack size"),
-		  @'ext::stack-overflow', @':size', MAKE_FIXNUM(size),
+		  @'ext::stack-overflow', @':size', ecl_make_fixnum(size),
 		  @':type', @'ext::binding-stack');
 	ecl_bds_set_size(env, size + (size / 2));
         return env->bds_top;
@@ -164,8 +164,8 @@ ecl_bds_overflow(void)
 void
 ecl_bds_unwind(cl_env_ptr env, cl_index new_bds_top_index)
 {
-	bds_ptr new_bds_top = new_bds_top_index + env->bds_org;
-	bds_ptr bds = env->bds_top;
+	ecl_bds_ptr new_bds_top = new_bds_top_index + env->bds_org;
+	ecl_bds_ptr bds = env->bds_top;
 	for (;  bds > new_bds_top;  bds--)
 #ifdef ECL_THREADS
 		ecl_bds_unwind1(env);
@@ -198,12 +198,12 @@ ecl_progv(cl_env_ptr env, cl_object vars0, cl_object values0)
                 2, vars0, values0);
 }
 
-static bds_ptr
+static ecl_bds_ptr
 get_bds_ptr(cl_object x)
 {
-	if (FIXNUMP(x)) {
+	if (ECL_FIXNUMP(x)) {
 		cl_env_ptr env = ecl_process_env();
-		bds_ptr p = env->bds_org + fix(x);
+		ecl_bds_ptr p = env->bds_org + ecl_fixnum(x);
 		if (env->bds_org <= p && p <= env->bds_top)
 			return(p);
 	}
@@ -214,7 +214,7 @@ cl_object
 si_bds_top()
 {
 	cl_env_ptr env = ecl_process_env();
-	@(return MAKE_FIXNUM(env->bds_top - env->bds_org))
+	@(return ecl_make_fixnum(env->bds_top - env->bds_org))
 }
 
 cl_object
@@ -245,22 +245,18 @@ static cl_index
 ecl_new_binding_index(cl_env_ptr env, cl_object symbol)
 {
         cl_object pool;
-        cl_index new_index;
-        ECL_WITH_GLOBAL_LOCK_BEGIN(env) {
-                new_index = symbol->symbol.binding;
-                if (new_index == ECL_MISSING_SPECIAL_BINDING) {
-                        pool = cl_core.reused_indices;
-                        if (!Null(pool)) {
-                                new_index = fix(ECL_CONS_CAR(pool));
-                                cl_core.reused_indices = ECL_CONS_CDR(pool);
-                        } else {
-                                new_index = ++cl_core.last_var_index;
-                        }
-                        symbol->symbol.binding = new_index;
-                        symbol->symbol.dynamic |= 1;
-                }
-        } ECL_WITH_GLOBAL_LOCK_END;
-        si_set_finalizer(symbol, Ct);
+        cl_index new_index = symbol->symbol.binding;
+	if (new_index == ECL_MISSING_SPECIAL_BINDING) {
+		pool = ecl_atomic_pop(&cl_core.reused_indices);
+		if (!Null(pool)) {
+			new_index = ecl_fixnum(ECL_CONS_CAR(pool));
+		} else {
+			new_index = ecl_atomic_index_incf(&cl_core.last_var_index);
+		}
+		symbol->symbol.binding = new_index;
+		symbol->symbol.dynamic |= 1;
+	}
+        si_set_finalizer(symbol, ECL_T);
         return new_index;
 }
 
@@ -268,9 +264,9 @@ static cl_object
 ecl_extend_bindings_array(cl_object vector)
 {
         cl_index new_size = cl_core.last_var_index * 1.25;
-        cl_object new_vector = si_make_vector(Ct, MAKE_FIXNUM(new_size), Cnil,
-                                              Cnil, Cnil, Cnil);
-        si_fill_array_with_elt(new_vector, OBJNULL, MAKE_FIXNUM(0), Cnil);
+        cl_object new_vector = si_make_vector(ECL_T, ecl_make_fixnum(new_size), ECL_NIL,
+                                              ECL_NIL, ECL_NIL, ECL_NIL);
+        si_fill_array_with_elt(new_vector, OBJNULL, ecl_make_fixnum(0), ECL_NIL);
         ecl_copy_subarray(new_vector, 0, vector, 0, vector->vector.dim);
         return new_vector;
 }
@@ -278,8 +274,6 @@ ecl_extend_bindings_array(cl_object vector)
 static cl_index
 invalid_or_too_large_binding_index(cl_env_ptr env, cl_object s)
 {
-        cl_object *location;
-        struct bds_bd *slot;
         cl_index index = s->symbol.binding;
         if (index == ECL_MISSING_SPECIAL_BINDING) {
                 index = ecl_new_binding_index(env, s);
@@ -302,7 +296,7 @@ ecl_bds_bind(cl_env_ptr env, cl_object s, cl_object v)
 {
 #ifdef ECL_THREADS
         cl_object *location;
-        struct bds_bd *slot;
+        ecl_bds_ptr slot;
         cl_index index = s->symbol.binding;
         if (index >= env->thread_local_bindings_size) {
                 index = invalid_or_too_large_binding_index(env,s);
@@ -326,7 +320,7 @@ ecl_bds_push(cl_env_ptr env, cl_object s)
 {
 #ifdef ECL_THREADS
         cl_object *location;
-        struct bds_bd *slot;
+        ecl_bds_ptr slot;
         cl_index index = s->symbol.binding;
         if (index >= env->thread_local_bindings_size) {
                 index = invalid_or_too_large_binding_index(env,s);
@@ -347,7 +341,7 @@ ecl_bds_push(cl_env_ptr env, cl_object s)
 void
 ecl_bds_unwind1(cl_env_ptr env)
 {
-	struct bds_bd *slot = env->bds_top--;
+	ecl_bds_ptr slot = env->bds_top--;
 	cl_object s = slot->symbol;
 #ifdef ECL_THREADS
         cl_object *location = env->thread_local_bindings + s->symbol.binding;
@@ -389,7 +383,7 @@ ihs_function_name(cl_object x)
 {
 	cl_object y;
 
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_symbol:
 		return(x);
 
@@ -408,34 +402,27 @@ ihs_function_name(cl_object x)
 		return(x->cfun.name);
 
 	default:
-		return(Cnil);
+		return(ECL_NIL);
 	}
 }
 
-static ihs_ptr
+static ecl_ihs_ptr
 get_ihs_ptr(cl_index n)
 {
 	cl_env_ptr env = ecl_process_env();
-	ihs_ptr p = env->ihs_top;
+	ecl_ihs_ptr p = env->ihs_top;
 	if (n > p->index)
-		FEerror("~D is an illegal IHS index.", 1, MAKE_FIXNUM(n));
+		FEerror("~D is an illegal IHS index.", 1, ecl_make_fixnum(n));
 	while (n < p->index)
 		p = p->next;
 	return p;
 }
 
 cl_object
-ihs_top_function_name(void)
-{
-	cl_env_ptr env = ecl_process_env();
-	return ihs_function_name(env->ihs_top->function);
-}
-
-cl_object
 si_ihs_top(void)
 {
 	cl_env_ptr env = ecl_process_env();
-	@(return MAKE_FIXNUM(env->ihs_top->index))
+	@(return ecl_make_fixnum(env->ihs_top->index))
 }
 
 cl_object
@@ -453,7 +440,7 @@ si_ihs_next(cl_object x)
 cl_object
 si_ihs_bds(cl_object arg)
 {
-	@(return MAKE_FIXNUM(get_ihs_ptr(ecl_to_size(arg))->bds))
+	@(return ecl_make_fixnum(get_ihs_ptr(ecl_to_size(arg))->bds))
 }
 
 cl_object
@@ -479,7 +466,7 @@ frs_set_size(cl_env_ptr env, cl_index size)
 		FEerror("Cannot shrink frame stack below ~D.", 1,
 			ecl_make_unsigned_integer(limit));
 	} else {
-		cl_index margin = ecl_get_option(ECL_OPT_FRAME_STACK_SAFETY_AREA);
+		cl_index margin = ecl_option_values[ECL_OPT_FRAME_STACK_SAFETY_AREA];
 		ecl_frame_ptr org;
 		size += 2*margin;
 		org = ecl_alloc_atomic(size * sizeof(*org));
@@ -504,7 +491,7 @@ frs_overflow(void)		/* used as condition in list.d */
                 ";;; Jumping to the outermost toplevel prompt\n"
                 ";;;\n\n";
 	cl_env_ptr env = ecl_process_env();
-	cl_index margin = ecl_get_option(ECL_OPT_FRAME_STACK_SAFETY_AREA);
+	cl_index margin = ecl_option_values[ECL_OPT_FRAME_STACK_SAFETY_AREA];
 	cl_index size = env->frs_size;
 	ecl_frame_ptr org = env->frs_org;
 	ecl_frame_ptr last = org + size;
@@ -513,7 +500,7 @@ frs_overflow(void)		/* used as condition in list.d */
 	}
 	env->frs_limit += margin;
 	cl_cerror(6, make_constant_base_string("Extend stack size"),
-		  @'ext::stack-overflow', @':size', MAKE_FIXNUM(size),
+		  @'ext::stack-overflow', @':size', ecl_make_fixnum(size),
 		  @':type', @'ext::frame-stack');
 	frs_set_size(env, size + size / 2);
 }
@@ -560,9 +547,9 @@ frs_sch (cl_object frame_id)
 static ecl_frame_ptr
 get_frame_ptr(cl_object x)
 {
-	if (FIXNUMP(x)) {
+	if (ECL_FIXNUMP(x)) {
 		cl_env_ptr env = ecl_process_env();
-		ecl_frame_ptr p = env->frs_org + fix(x);
+		ecl_frame_ptr p = env->frs_org + ecl_fixnum(x);
 		if (env->frs_org <= p && p <= env->frs_top)
 			return p;
 	}
@@ -573,13 +560,13 @@ cl_object
 si_frs_top()
 {
 	cl_env_ptr env = ecl_process_env();
-	@(return MAKE_FIXNUM(env->frs_top - env->frs_org))
+	@(return ecl_make_fixnum(env->frs_top - env->frs_org))
 }
 
 cl_object
 si_frs_bds(cl_object arg)
 {
-	@(return MAKE_FIXNUM(get_frame_ptr(arg)->frs_bds_top_index))
+	@(return ecl_make_fixnum(get_frame_ptr(arg)->frs_bds_top_index))
 }
 
 cl_object
@@ -591,7 +578,7 @@ si_frs_tag(cl_object arg)
 cl_object
 si_frs_ihs(cl_object arg)
 {
-	@(return MAKE_FIXNUM(get_frame_ptr(arg)->frs_ihs->index))
+	@(return ecl_make_fixnum(get_frame_ptr(arg)->frs_ihs->index))
 }
 
 cl_object
@@ -603,7 +590,7 @@ si_sch_frs_base(cl_object fr, cl_object ihs)
 	for (x = get_frame_ptr(fr); 
 	     x <= env->frs_top && x->frs_ihs->index < y;
 	     x++);
-	@(return ((x > env->frs_top) ? Cnil : MAKE_FIXNUM(x - env->frs_org)))
+	@(return ((x > env->frs_top) ? ECL_NIL : ecl_make_fixnum(x - env->frs_org)))
 }
 
 /********************* INITIALIZATION ***********************/
@@ -649,43 +636,25 @@ si_get_limit(cl_object type)
 void
 init_stacks(cl_env_ptr env)
 {
-	static struct ihs_frame ihs_org = { NULL, NULL, NULL, 0};
+	static struct ecl_ihs_frame ihs_org = { NULL, NULL, NULL, 0};
 	cl_index size, margin;
 
-	margin = ecl_get_option(ECL_OPT_FRAME_STACK_SAFETY_AREA);
-	size = ecl_get_option(ECL_OPT_FRAME_STACK_SIZE) + 2 * margin;
+	margin = ecl_option_values[ECL_OPT_FRAME_STACK_SAFETY_AREA];
+	size = ecl_option_values[ECL_OPT_FRAME_STACK_SIZE] + 2 * margin;
 	env->frs_size = size;
 	env->frs_org = (ecl_frame_ptr)ecl_alloc_atomic(size * sizeof(*env->frs_org));
 	env->frs_top = env->frs_org-1;
 	env->frs_limit = &env->frs_org[size - 2*margin];
 
-	margin = ecl_get_option(ECL_OPT_BIND_STACK_SAFETY_AREA);
-	size = ecl_get_option(ECL_OPT_BIND_STACK_SIZE) + 2 * margin;
+	margin = ecl_option_values[ECL_OPT_BIND_STACK_SAFETY_AREA];
+	size = ecl_option_values[ECL_OPT_BIND_STACK_SIZE] + 2 * margin;
 	env->bds_size = size;
-	env->bds_org = (bds_ptr)ecl_alloc_atomic(size * sizeof(*env->bds_org));
+	env->bds_org = (ecl_bds_ptr)ecl_alloc_atomic(size * sizeof(*env->bds_org));
 	env->bds_top = env->bds_org-1;
 	env->bds_limit = &env->bds_org[size - 2*margin];
 
 	env->ihs_top = &ihs_org;
-	ihs_org.function = Cnil;
-	ihs_org.lex_env = Cnil;
+	ihs_org.function = ECL_NIL;
+	ihs_org.lex_env = ECL_NIL;
 	ihs_org.index = 0;
-
-#if 0 /* defined(HAVE_SIGPROCMASK) && defined(SA_SIGINFO) && defined(SA_ONSTACK) */
-	if (ecl_get_option(ECL_OPT_SIGALTSTACK_SIZE)) {
-		stack_t new_stack;
-		cl_index size = ecl_get_option(ECL_OPT_SIGALTSTACK_SIZE);
-		if (size < SIGSTKSZ) {
-			size = SIGSTKSZ + (sizeof(double)*16) +
-				(sizeof(cl_object)*4);
-		}
-		env->altstack_size = size;
-		env->altstack = ecl_alloc_atomic(size);
-		memset(&new_stack, 0, sizeof(new_stack));
-		new_stack.ss_size = env->altstack_size;
-		new_stack.ss_sp = env->altstack;
-		new_stack.ss_flags = 0;
-		sigaltstack(&new_stack, NULL);
-	}
-#endif
 }

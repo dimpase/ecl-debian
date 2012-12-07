@@ -24,11 +24,15 @@
 	(parse-generic-options options lambda-list)
       (let* ((output `(ensure-generic-function ',function-specifier
 		       :delete-methods t ,@option-list)))
-	(when method-list
-	  (setf method-list (mapcar #'(lambda (m) `(defmethod ,function-specifier ,@m))
-				    method-list)
-		output `(associate-methods-to-gfun ,output ,@method-list)))
-	(ext:register-with-pde whole output)))))
+	(ext:register-with-pde
+	 whole
+	 (if method-list
+	     `(progn
+		,output
+		(associate-methods-to-gfun
+		 ',function-specifier
+		 ,@(loop for m in method-list collect `(defmethod ,function-specifier ,@m))))
+	    output))))))
 
 (defun parse-defgeneric (args)
   (declare (si::c-local))
@@ -99,14 +103,12 @@
 
 (defun valid-declaration-p (decl)
   ;(declare (si::c-local))
-  (unless (eq (first decl) 'OPTIMIZE)
-	  (simple-program-error "The only declaration allowed is optimize"))
-  (dolist (first (rest decl))
-    (when (atom first)
-      (setq first (cons first 3)))
-    (unless (member (car first) '(SPEED SPACE COMPILATION-SPEED DEBUG SAFETY))
-      (simple-program-error "The only qualities allowed are speed and space")))
-  decl)
+  (and (eq (first decl) 'OPTIMIZE)
+       (loop for item in decl
+	  always (or (atom item)
+		     (and (consp item)
+			  (member (first item)
+				  '(SPEED SPACE COMPILATION-SPEED DEBUG SAFETY)))))))
 
 ;;; ----------------------------------------------------------------------
 ;;; GENERIC FUNCTION (RE)INITIALIZATION PROTOCOL
@@ -116,12 +118,16 @@
   (rest (si::process-lambda-list lambda-list t)))
 
 (defmethod shared-initialize ((gfun generic-function) slot-names &rest initargs
-			      &key (lambda-list nil l-l-p)
+			      &key (name nil)
+			      (lambda-list nil l-l-p)
 			      (argument-precedence-order nil a-o-p)
 			      (documentation nil)
 			      (declarations nil)
-			      method-combination
 			      (method-class (find-class 'method))
+			      &aux
+			      (gfun-name (if (slot-boundp gfun 'name)
+					     (slot-value gfun 'name)
+					     (or name :anonymous)))
 			      )
   (declare (ignore initargs slot-names))
   ;;
@@ -129,31 +135,25 @@
   ;;
   (when a-o-p
     (unless l-l-p
-      (simple-program-error "Supplied :argument-precedence-order, but :lambda-list is missing"))
+      (simple-program-error "When defining generic function ~A~%Supplied :argument-precedence-order, but :lambda-list is missing"
+			    gfun-name))
     (dolist (l (lambda-list-required-arguments lambda-list))
       (unless (= (count l argument-precedence-order) 1)
-	(simple-program-error "The required argument ~A does not appear exactly once in the ARGUMENT-PRECEDENCE-ORDER list ~A"
-			      l argument-precedence-order))))
+	(simple-program-error "When defining generic function ~A~%The required argument ~A does not appear exactly once in the ARGUMENT-PRECEDENCE-ORDER list ~A"
+			      gfun-name l argument-precedence-order))))
   (unless (every #'valid-declaration-p declarations)
-    (simple-program-error "Not a valid declaration list: ~A" declarations))
+    (simple-program-error "When defining generic function ~A~%Not a valid declaration list: ~A"
+			  gfun-name declarations))
   (unless (or (null documentation) (stringp documentation))
     (error 'simple-type-error
-	   :format-control "Not a valid documentation object ~"
-	   :format-arguments (list documentation)
+	   :format-control "When defining generic function~A~%Not a valid documentation object ~"
+	   :format-arguments (list gfun-name documentation)
 	   :datum documentation
 	   :expected-type '(or null string)))
-  (unless (or (null method-combination)
-	      (and (listp method-combination)
-		   (member (first method-combination) *method-combinations*)))
-    (error 'simple-type-error
-	   :format-control "Not a valid method combination, ~A"
-	   :format-arguments (list method-combination)
-	   :datum method-combination
-	   :expected-type 'list))
   (unless (si::subclassp method-class (find-class 'method))
     (error 'simple-type-error
-	   :format-control "Not a valid method class, ~A"
-	   :format-arguments (list method-class)
+	   :format-control "When defining generic function~A~%Not a valid method class, ~A"
+	   :format-arguments (list gfun-name method-class)
 	   :datum method-class
 	   :expected-type 'method))
   ;;
@@ -167,22 +167,30 @@
       (simple-program-error "Cannot replace the lambda list of ~A with ~A because it is incongruent with some of the methods"
 			    gfun lambda-list)))
   (call-next-method)
+  (let ((combination (generic-function-method-combination gfun)))
+    (unless (typep combination 'method-combination)
+      (setf (generic-function-method-combination gfun)
+	    (find-method-combination gfun (first combination) (rest combination)))))
   (when (and l-l-p (not a-o-p))
     (setf (generic-function-argument-precedence-order gfun)
 	  (lambda-list-required-arguments lambda-list)))
+  (set-generic-function-dispatch gfun)
   gfun)
 
 (defmethod shared-initialize ((gfun standard-generic-function) slot-names
 			      &rest initargs)
   (declare (ignore initargs slot-names))
   (call-next-method)
-  (compute-g-f-spec-list gfun)
+  (when (generic-function-methods gfun)
+    (compute-g-f-spec-list gfun))
+  (update-dependents gfun initargs)
   gfun)
 
-(defun associate-methods-to-gfun (gfun &rest methods)
-  (dolist (method methods)
-    (setf (getf (method-plist method) :method-from-defgeneric-p) t))
-  gfun)
+(defun associate-methods-to-gfun (name &rest methods)
+  (let ((gfun (fdefinition name)))
+    (dolist (method methods)
+      (setf (getf (method-plist method) :method-from-defgeneric-p) t))
+    gfun))
 
 (defmethod ensure-generic-function-using-class
     ((gfun generic-function) name &rest args &key
@@ -227,9 +235,7 @@
   (remf args :delete-methods)
   (when (and method-class-p (symbolp generic-function-class))
     (setf args (list* :method-class (find-class method-class) args)))
-  (set-funcallable-instance-function
-   (apply #'make-instance generic-function-class :name name args)
-   t))
+  (apply #'make-instance generic-function-class :name name args))
 
 (defun ensure-generic-function (name &rest args &key &allow-other-keys)
   (let ((gfun (si::traced-old-definition name)))

@@ -19,13 +19,39 @@
 #include <ecl/ecl.h>
 #include <ecl/internal.h>
 
+static void FEconstant_assignment(cl_object var) ecl_attr_noreturn;
+
+static void
+FEconstant_assignment(cl_object var)
+{
+	FEinvalid_variable("Cannot assign to the constant ~S.", var);
+}
+
 cl_object
-cl_set(cl_object var, cl_object val)
+cl_set(cl_object var, cl_object value)
 {
 	const cl_env_ptr env = ecl_process_env();
-	if (ecl_symbol_type(var) & stp_constant)
-		FEinvalid_variable("Cannot assign to the constant ~S.", var);
-	return1(ECL_SETQ(env, var, val));
+	unlikely_if (Null(var)) {
+		FEconstant_assignment(var);
+	}
+	unlikely_if (ecl_t_of(var) != t_symbol) {
+		FEwrong_type_nth_arg(@[setq], 1, var, @[symbol]);
+	}
+	unlikely_if (var->symbol.stype & ecl_stp_constant)
+		FEconstant_assignment(var);
+	ecl_return1(env, ECL_SETQ(env, var, value));
+}
+
+cl_object
+ecl_setq(cl_env_ptr env, cl_object var, cl_object value)
+{
+	unlikely_if (Null(var)) {
+		FEconstant_assignment(var);
+	}
+	unlikely_if (ecl_t_of(var) != t_symbol) {
+		FEwrong_type_nth_arg(@[setq], 1, var, @[symbol]);
+	}
+	return ECL_SETQ(env, var, value);
 }
 
 static cl_object
@@ -40,7 +66,7 @@ static cl_object
 make_setf_function_error(cl_object name)
 {
 	return ecl_make_cclosure_va((cl_objectfn)unbound_setf_function_error,
-				    name, Cnil);
+				    name, ECL_NIL);
 }
 
 cl_object
@@ -49,10 +75,10 @@ ecl_setf_definition(cl_object sym, cl_object createp)
 	cl_env_ptr the_env = ecl_process_env();
 	cl_object pair;
         ECL_WITH_GLOBAL_ENV_RDLOCK_BEGIN(the_env) {
-                pair = ecl_gethash_safe(sym, cl_core.setf_definitions, Cnil);
+                pair = ecl_gethash_safe(sym, cl_core.setf_definitions, ECL_NIL);
 		if (Null(pair) && !Null(createp)) {
 			createp = make_setf_function_error(sym);
-			pair = ecl_cons(createp, Cnil);
+			pair = ecl_cons(createp, ECL_NIL);
 			ecl_sethash(sym, cl_core.setf_definitions, pair);
 		}
         } ECL_WITH_GLOBAL_ENV_RDLOCK_END;
@@ -70,10 +96,16 @@ ecl_rem_setf_definition(cl_object sym)
 {
 	cl_env_ptr the_env = ecl_process_env();
         ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(the_env) {
-                cl_object pair = ecl_gethash_safe(sym, cl_core.setf_definitions, Cnil);
+                cl_object pair = ecl_gethash_safe(sym, cl_core.setf_definitions, ECL_NIL);
 		if (!Null(pair)) {
-			ECL_RPLACA(pair, Cnil);
+			ECL_RPLACA(pair, make_setf_function_error(sym));
+			ECL_RPLACD(pair, ECL_NIL);
+			/*
+			  FIXME: This leaks resources
+			  We actually cannot remove it, because some compiled
+			  code might be using it!
 			ecl_remhash(sym, cl_core.setf_definitions);
+			*/
 		}
         } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
 }
@@ -87,27 +119,27 @@ ecl_rem_setf_definition(cl_object sym)
 	if (Null(cl_functionp(def)))
 		FEinvalid_function(def);
 	pack = ecl_symbol_package(sym);
-	if (pack != Cnil && pack->pack.locked) {
+	if (pack != ECL_NIL && pack->pack.locked) {
 		CEpackage_error("Attempt to redefine function ~S in locked package.",
 				"Ignore lock and proceed", pack, 1, fname);
 	}
 	mflag = !Null(macro);
 	type = ecl_symbol_type(sym);
-	if ((type & stp_special_form) && !mflag) {
+	if ((type & ecl_stp_special_form) && !mflag) {
 		FEerror("Given that ~S is a special form, ~S cannot be defined as a function.",
 			2, sym, fname);
 	}
-	if (SYMBOLP(fname)) {
+	if (ECL_SYMBOLP(fname)) {
 		if (mflag) {
-			type |= stp_macro;
+			type |= ecl_stp_macro;
 		} else {
-			type &= ~stp_macro;
+			type &= ~ecl_stp_macro;
 		}
 		ecl_symbol_type_set(sym, type);
-		SYM_FUN(sym) = def;
+		ECL_SYM_FUN(sym) = def;
 		ecl_clear_compiler_properties(sym);
 #ifndef ECL_CMU_FORMAT
-		if (pprint == Cnil)
+		if (pprint == ECL_NIL)
 			si_rem_sysprop(sym, @'si::pretty-print-format');
 		else
 			si_put_sysprop(sym, @'si::pretty-print-format', pprint);
@@ -125,7 +157,7 @@ ecl_rem_setf_definition(cl_object sym)
 cl_object
 cl_makunbound(cl_object sym)
 {
-	if (ecl_symbol_type(sym) & stp_constant)
+	if (ecl_symbol_type(sym) & ecl_stp_constant)
 		FEinvalid_variable("Cannot unbind the constant ~S.", sym);
 	/* FIXME! The semantics of MAKUNBOUND is not very clear with local
 	   bindings ... */
@@ -138,14 +170,14 @@ cl_fmakunbound(cl_object fname)
 {
 	cl_object sym = si_function_block_name(fname);
 	cl_object pack = ecl_symbol_package(sym);
-	if (pack != Cnil && pack->pack.locked) {
+	if (pack != ECL_NIL && pack->pack.locked) {
 		CEpackage_error("Attempt to redefine function ~S in locked package.",
 				"Ignore lock and proceed", pack, 1, fname);
 	}
-	if (SYMBOLP(fname)) {
+	if (ECL_SYMBOLP(fname)) {
 		ecl_clear_compiler_properties(sym);
-		SYM_FUN(sym) = Cnil;
-		ecl_symbol_type_set(sym, ecl_symbol_type(sym) & ~stp_macro);
+		ECL_SYM_FUN(sym) = ECL_NIL;
+		ecl_symbol_type_set(sym, ecl_symbol_type(sym) & ~ecl_stp_macro);
 	} else {
 		ecl_rem_setf_definition(sym);
 		si_rem_sysprop(sym, @'si::setf-method');
@@ -156,7 +188,7 @@ cl_fmakunbound(cl_object fname)
 void
 ecl_clear_compiler_properties(cl_object sym)
 {
-	if (ecl_get_option(ECL_OPT_BOOTED)) {
+	if (ecl_option_values[ECL_OPT_BOOTED]) {
 		funcall(2, @'si::clear-compiler-properties', sym);
 	}
 }
@@ -166,13 +198,13 @@ si_get_sysprop(cl_object sym, cl_object prop)
 {
 	cl_env_ptr the_env = ecl_process_env();
         ECL_WITH_GLOBAL_ENV_RDLOCK_BEGIN(the_env) {
-                cl_object plist = ecl_gethash_safe(sym, cl_core.system_properties, Cnil);
+                cl_object plist = ecl_gethash_safe(sym, cl_core.system_properties, ECL_NIL);
                 prop = ecl_getf(plist, prop, OBJNULL);
         } ECL_WITH_GLOBAL_ENV_RDLOCK_END;
         if (prop == OBJNULL) {
-                @(return Cnil Cnil);
+                @(return ECL_NIL ECL_NIL);
         } else {
-                @(return prop Ct);
+                @(return prop ECL_T);
         }
 }
 
@@ -181,7 +213,7 @@ si_put_sysprop(cl_object sym, cl_object prop, cl_object value)
 {
 	cl_env_ptr the_env = ecl_process_env();
         ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(the_env) {
-                cl_object plist = ecl_gethash_safe(sym, cl_core.system_properties, Cnil);
+                cl_object plist = ecl_gethash_safe(sym, cl_core.system_properties, ECL_NIL);
                 ecl_sethash(sym, cl_core.system_properties, si_put_f(plist, value, prop));
         } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
 	@(return value);
@@ -190,10 +222,11 @@ si_put_sysprop(cl_object sym, cl_object prop, cl_object value)
 cl_object
 si_rem_sysprop(cl_object sym, cl_object prop)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	cl_object plist, found;
-	plist = ecl_gethash_safe(sym, cl_core.system_properties, Cnil);
+	plist = ecl_gethash_safe(sym, cl_core.system_properties, ECL_NIL);
 	plist = si_rem_f(plist, prop);
-	found = VALUES(1);
+	found = ecl_nth_value(the_env, 1);
 	ecl_sethash(sym, cl_core.system_properties, plist);
-	@(return found);
+	ecl_return1(the_env, found);
 }

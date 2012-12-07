@@ -27,7 +27,7 @@
 
 (defun from-cdb-vector (vector)
   (let* ((stream (ext:make-sequence-input-stream
-		  vector :external-format :utf-8)))
+		  vector :external-format #+unicode :utf-8 #-unicode :default)))
     (read stream nil nil nil)))
 
 (defun search-help-file (string path)

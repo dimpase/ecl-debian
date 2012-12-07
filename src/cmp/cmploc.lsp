@@ -28,8 +28,7 @@
 ;;;	( LCL lcl [representation-type]) local variable, type unboxed
 ;;;	( TEMP temp )			local variable, type object
 ;;;	( FRAME ndx )			variable in local frame stack
-;;;	( CALL c-fun-name args fname )	locs are locations containing the arguments
-;;;	( CALL-NORMAL fun locs)		similar as CALL, but number of arguments is fixed
+;;;	( CALL-NORMAL fun locs 1st-type ) similar as CALL, but number of arguments is fixed
 ;;;	( CALL-INDIRECT fun narg args)	similar as CALL, but unknown function
 ;;;	( C-INLINE output-type fun/string locs side-effects output-var )
 ;;;	( COERCE-LOC representation-type location)
@@ -227,7 +226,7 @@
              (if fd
                  (apply fd loc (rest destination))
                  (progn
-                   (wt-nl) (wt-loc destination) (wt "= ")
+                   (wt-nl) (wt-loc destination) (wt " = ")
                    (wt-coerce-loc (loc-representation-type *destination*) loc)
                    (wt ";"))))))))
 
@@ -239,23 +238,24 @@
 (defun set-values-loc (loc)
   (cond ((eq loc 'VALUES))
         ((uses-values loc)
-         (wt-nl "cl_env_copy->values[0]=") (wt-coerce-loc :object loc) (wt ";"))
+         (wt-nl "cl_env_copy->values[0] = ") (wt-coerce-loc :object loc) (wt ";"))
         (t
-         (wt-nl "cl_env_copy->values[0]=") (wt-coerce-loc :object loc)
-         (wt "; cl_env_copy->nvalues=1;"))))
+         (wt-nl "cl_env_copy->values[0] = ") (wt-coerce-loc :object loc)
+	 (wt ";")
+	 (wt-nl "cl_env_copy->nvalues = 1;"))))
 
 (defun set-value0-loc (loc)
-  (wt-nl "value0=") (wt-coerce-loc :object loc) (wt ";"))
+  (wt-nl "value0 = ") (wt-coerce-loc :object loc) (wt ";"))
 
 (defun set-return-loc (loc)
   (cond ((or (eq loc 'VALUES) (uses-values loc))
-         (wt-nl "value0=") (wt-coerce-loc :object loc) (wt ";"))
+         (wt-nl "value0 = ") (wt-coerce-loc :object loc) (wt ";"))
         ((eq loc 'VALUE0)
-         (wt-nl "cl_env_copy->nvalues=1;"))
+         (wt-nl "cl_env_copy->nvalues = 1;"))
         ((eq loc 'RETURN))
         (t
-         (wt-nl "value0=") (wt-coerce-loc :object loc)
-         (wt "; cl_env_copy->nvalues=1;"))))
+         (wt-nl "value0 = ") (wt-coerce-loc :object loc) (wt ";")
+         (wt-nl "cl_env_copy->nvalues = 1;"))))
 
 (defun loc-with-side-effects-p (loc &aux name)
   (cond ((var-p loc)

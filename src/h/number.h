@@ -49,8 +49,8 @@ extern ECL_API _ecl_big_binary_op _ecl_big_boole_operator(int op);
 #define _ecl_big_set(x,y)	mpz_set((x)->big.big_num,(y)->big.big_num)
 #define _ecl_big_odd_p(x)	((mpz_get_ui(x->big.big_num) & 1) != 0)
 #define _ecl_big_even_p(x)	((mpz_get_ui(x->big.big_num) & 1) == 0)
-#define _ecl_big_zerop(x)	((x)->big.big_size == 0)
-#define _ecl_big_sign(x)	((x)->big.big_size)
+#define _ecl_big_zerop(x)	(ECL_BIGNUM_SIZE(x) == 0)
+#define _ecl_big_sign(x)	ECL_BIGNUM_SIZE(x)
 #define _ecl_big_compare(x, y)	mpz_cmp(x->big.big_num, y->big.big_num)
 #define _ecl_big_complement(z, x) mpz_neg((z)->big.big_num,(x)->big.big_num)
 #define _ecl_big_add(z, x, y)	mpz_add((z)->big.big_num,(x)->big.big_num,(y)->big.big_num)
@@ -59,6 +59,7 @@ extern ECL_API _ecl_big_binary_op _ecl_big_boole_operator(int op);
 #define _ecl_big_add_ui(z, x, i)	mpz_add_ui(z->big.big_num, x->big.big_num, i)
 #define _ecl_big_sub_ui(z, x, i)	mpz_sub_ui(z->big.big_num, x->big.big_num, i)
 #define _ecl_big_mul_ui(z, x, y)	mpz_mul_ui((z)->big.big_num,(x)->big.big_num,(y))
+#define _ecl_big_div_ui(z, x, y)	mpz_div_ui((z)->big.big_num,(x)->big.big_num,(y))
 #define _ecl_big_mul_si(z, x, y)	mpz_mul_si((z)->big.big_num,(x)->big.big_num,(y))
 #define _ecl_big_set_ui(x, i)	mpz_set_ui(x->big.big_num, (unsigned long int)i)
 #define _ecl_big_set_si(x, i)	mpz_set_si(x->big.big_num, (long int)i)
@@ -77,14 +78,14 @@ ecl_to_fix(cl_object f)
 {
 	if (ecl_unlikely(!ECL_FIXNUMP(f)))
 		FEtype_error_fixnum(f);
-	return ecl_fix(f);
+	return ecl_fixnum(f);
 }
 
 static ECL_INLINE cl_index
 ecl_to_size(cl_object f)
 {
 	cl_fixnum aux;
-	if (ecl_unlikely(!ECL_FIXNUMP(f) || ((aux = ecl_fix(f)) < 0)))
+	if (ecl_unlikely(!ECL_FIXNUMP(f) || ((aux = ecl_fixnum(f)) < 0)))
 		FEtype_error_size(f);
 	return aux;
 }

@@ -25,6 +25,7 @@
 #-new-cmp
 (defvar *info* (make-info))
 (defvar *inline-blocks* 0)
+(defvar *opened-c-braces* 0)
 ;;; *inline-blocks* holds the number of C blocks opened for declaring
 ;;; temporaries for intermediate results of the evaluation of inlined
 ;;; function calls.
@@ -200,7 +201,7 @@ value of *CMP-ENV*.")
 ;;; Do we debug the compiler? Then we need files not to be deleted.
 
 (defvar *debug-compiler* nil)
-(defvar *delete-files* #-ecl-min t #+ecl-min nil)
+(defvar *delete-files* t)
 (defvar *files-to-be-deleted* '())
 
 (defvar *user-ld-flags* '()
@@ -250,8 +251,8 @@ lines are inserted, but the order is preserved")
 ;;;  defining the current function during loading process.
 (defvar *setf-definitions* nil)         ; C forms to find out (SETF fname) locations
 
-(defvar *use-static-constants-p* nil)   ; T/NIL flag to determine whether one may
-                                        ; generate lisp constant values as C structs
+(defvar *use-static-constants-p*        ; T/NIL flag to determine whether one may
+  #+ecl-min t #-ecl-min nil)            ; generate lisp constant values as C structs
 (defvar *static-constants* nil)		; constants that can be built as C values
                                         ; holds { ( object c-variable constant ) }*
 
@@ -286,13 +287,6 @@ lines are inserted, but the order is preserved")
 ;;;	| ( 'DEFVAR'	var-name-vv expr doc-vv )
 ;;;	| ( 'CLINES'	string* )
 ;;;	| ( 'LOAD-TIME-VALUE' vv )
-
-#-new-cmp
-(defvar *reservations* nil)
-(defvar *reservation-cmacro* nil)
-
-;;; *reservations* holds (... ( cmacro . value ) ...).
-;;; *reservation-cmacro* holds the cmacro current used as vs reservation.
 
 ;;; *global-entries* holds (... ( fname cfun return-types arg-type ) ...).
 (defvar *global-entries* nil)
@@ -340,12 +334,11 @@ be deleted if they have been opened with LoadLibrary.")
     (*linking-calls* nil)
     (*global-entries* nil)
     (*undefined-vars* nil)
-    #-new-cmp
-    (*reservations* nil)
     (*top-level-forms* nil)
     (*compile-time-too* nil)
     (*clines-string-list* '())
     (*inline-blocks* 0)
+    (*open-c-braces* 0)
     #+new-cmp
     (*type-and-cache* (type-and-empty-cache))
     #+new-cmp

@@ -89,6 +89,7 @@
 #  undef _endthreadex
 # endif
 #endif
+#undef ECL_LIBATOMIC_OPS_H
 
 /* Network streams							*/
 #undef TCP
@@ -165,20 +166,20 @@ typedef unsigned @CL_FIXNUM_TYPE@ cl_hashkey;
 /*
  * The character type
  */
-#define	CHAR_CODE_LIMIT	@CHAR_CODE_LIMIT@ /* ASCII or unicode character code limit  */
+#define	ECL_CHAR_CODE_LIMIT	@CHAR_CODE_LIMIT@ /* ASCII or unicode character code limit  */
 typedef @ECL_CHARACTER@ ecl_character;
 typedef unsigned char ecl_base_char;
 
 /*
  * Array limits
  */
-#define	ARANKLIM	64		/*  array rank limit  		*/
+#define	ECL_ARRAY_RANK_LIMIT 64	/*  array rank limit  		*/
 #ifdef GBC_BOEHM
-#define	ADIMLIM		@CL_FIXNUM_MAX@	/*  array dimension limit	*/
-#define	ATOTLIM		@CL_FIXNUM_MAX@	/*  array total limit		*/
+#define	ECL_ARRAY_DIMENSION_LIMIT @CL_FIXNUM_MAX@
+#define	ECL_ARRAY_TOTAL_LIMIT @CL_FIXNUM_MAX@
 #else
-#define	ADIMLIM		16*1024*1024	/*  array dimension limit	*/
-#define	ATOTLIM		16*1024*1024	/*  array total limit		*/
+#define	ECL_ARRAY_DIMENSION_LIMIT 16*1024*1024
+#define	ECL_ARRAY_TOTAL_LIMIT 16*1024*1024
 #endif
 
 /*
@@ -187,16 +188,16 @@ typedef unsigned char ecl_base_char;
  * In general, any of these limits must fit in a "signed int".
  */
 /*	Maximum number of function arguments (arbitrary)		*/
-#define CALL_ARGUMENTS_LIMIT 65536
+#define ECL_CALL_ARGUMENTS_LIMIT 65536
 
 /*	Maximum number of required arguments				*/
-#define LAMBDA_PARAMETERS_LIMIT CALL_ARGUMENTS_LIMIT
+#define ECL_LAMBDA_PARAMETERS_LIMIT ECL_CALL_ARGUMENTS_LIMIT
 
 /*	Numb. of args. which will be passed using the C stack		*/
 /*	See cmplam.lsp if you change this value				*/
-#define C_ARGUMENTS_LIMIT 64
+#define ECL_C_ARGUMENTS_LIMIT 63
 
-/*	Maximum number of output arguments (>= C_ARGUMENTS_LIMIT)	*/
+/*	Maximum number of output arguments (>= ECL_C_ARGUMENTS_LIMIT)	*/
 #define ECL_MULTIPLE_VALUES_LIMIT 64
 
 /* A setjmp that does not save signals					*/
@@ -205,7 +206,7 @@ typedef unsigned char ecl_base_char;
 
 /*
  * Structure/Instance limits. The index to a slot must fit in the
- * "int" type. We also require ECL_SLOTS_LIMIT <= CALL_ARGUMENTS_LIMIT
+ * "int" type. We also require ECL_SLOTS_LIMIT <= ECL_CALL_ARGUMENTS_LIMIT
  * because constructors typically require as many arguments as slots,
  * or more.
  */
@@ -220,11 +221,16 @@ typedef unsigned char ecl_base_char;
 /* We can use small, two-words conses, without type information		*/
 #undef ECL_SMALL_CONS
 
+/* Use CMU Common-Lisp's FORMAT routine					*/
+#undef ECL_CMU_FORMAT
+
 /*
  * C macros for inlining, denoting probable code paths and other stuff
  * that makes better code. Most of it is GCC specific.
  */
-#if defined(__cplusplus) || (defined(__GNUC__) && !defined(__STRICT_ANSI__))
+#if defined(__cplusplus) || \
+    (defined(__GNUC__) &&   \
+    (defined(__GNUC_GNU_INLINE__) || defined(__GNUC_STDC_INLINE__)))
 #define ECL_INLINE inline
 #define ECL_CAN_INLINE 1
 #else
@@ -282,9 +288,6 @@ typedef unsigned char ecl_base_char;
 
 /* Undefine this if you do not want ECL to check for circular lists	*/
 #define ECL_SAFE
-
-/* Use CMU Common-Lisp's FORMAT routine					*/
-#undef ECL_CMU_FORMAT
 
 /* Bytecodes and arguments are 8 and 16 bits large, respectively	*/
 #undef ECL_SMALL_BYTECODES
@@ -394,8 +397,6 @@ typedef unsigned char ecl_base_char;
 #undef HAVE_COPYSIGNL
 /* whether we have sched_yield() that gives priority to other threads	*/
 #undef HAVE_SCHED_YIELD
-/* whether we semaphore.h                                               */
-#undef HAVE_SEMAPHORE_H
 /* whether we have a working sem_init()                                 */
 #undef HAVE_SEM_INIT
 /* whether we have read/write locks                                     */
@@ -414,6 +415,7 @@ typedef unsigned char ecl_base_char;
 #undef HAVE_BACKTRACE
 #undef HAVE_BACKTRACE_SYMBOLS
 #undef HAVE___BUILTIN_RETURN_ADDRESS
+#undef HAVE_SCHED_H
 
 /*
  * we do not manage to get proper signal handling of floating point

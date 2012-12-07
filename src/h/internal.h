@@ -52,7 +52,7 @@ extern void init_threads(cl_env_ptr);
 extern void ecl_init_env(cl_env_ptr);
 extern void init_lib_LSP(cl_object);
 
-extern cl_env_ptr _ecl_alloc_env(void);
+extern cl_env_ptr _ecl_alloc_env(cl_env_ptr parent);
 extern void _ecl_dealloc_env(cl_env_ptr);
 
 /* alloc.d/alloc_2.d */
@@ -69,14 +69,14 @@ extern cl_index ecl_object_byte_size(cl_type t);
 #ifdef ECL_DEFINE_AET_SIZE
 #undef ECL_DEFINE_AET_SIZE
 static const cl_index ecl_aet_size[] = {
-  sizeof(cl_object),          /* aet_object */
-  sizeof(float),              /* aet_sf */
-  sizeof(double),             /* aet_df */
-  0,                          /* aet_bit: cannot be handled with this code */
-  sizeof(cl_fixnum),          /* aet_fix */
-  sizeof(cl_index),           /* aet_index */
-  sizeof(uint8_t),            /* aet_b8 */
-  sizeof(int8_t),             /* aet_i8 */
+  sizeof(cl_object),          /* ecl_aet_object */
+  sizeof(float),              /* ecl_aet_sf */
+  sizeof(double),             /* ecl_aet_df */
+  0,                          /* ecl_aet_bit: cannot be handled with this code */
+  sizeof(cl_fixnum),          /* ecl_aet_fix */
+  sizeof(cl_index),           /* ecl_aet_index */
+  sizeof(uint8_t),            /* ecl_aet_b8 */
+  sizeof(int8_t),             /* ecl_aet_i8 */
 #ifdef ecl_uint16_t
   sizeof(ecl_uint16_t),
   sizeof(ecl_int16_t),
@@ -90,9 +90,9 @@ static const cl_index ecl_aet_size[] = {
   sizeof(ecl_int64_t),
 #endif
 #ifdef ECL_UNICODE
-  sizeof(ecl_character),      /* aet_ch */
+  sizeof(ecl_character),      /* ecl_aet_ch */
 #endif
-  sizeof(unsigned char)       /* aet_bc */
+  sizeof(unsigned char)       /* ecl_aet_bc */
 };
 #endif /* ECL_DEFINE_AET_SIZE */
 
@@ -105,9 +105,9 @@ struct cl_compiler_env {
 	cl_object macros;		/* Macros and function bindings */
 	cl_fixnum lexical_level;	/* =0 if toplevel form */
 	cl_object constants;		/* Constants for this form */
-	cl_index constants_size;	/* Number of constants registered */
         cl_object load_time_forms;	/* Constants that have to be rebuilt */
 	cl_object lex_env;		/* Lexical env. for eval-when */
+	cl_object code_walker;		/* Value of SI:*CODE-WALKER* */
 	cl_index env_depth;
 	cl_index env_size;
         int mode;
@@ -133,6 +133,7 @@ typedef struct cl_compiler_env *cl_compiler_env_ptr;
 /* error.d */
 
 extern void _ecl_unexpected_return() ecl_attr_noreturn;
+extern cl_object _ecl_strerror(int code);
 
 /* eval.d */
 
@@ -169,7 +170,7 @@ extern void _ecl_unexpected_return() ecl_attr_noreturn;
                 cl_index i, __nargs = va[0].narg;                       \
                 ecl_stack_frame_open((e), __frame, __nargs);            \
                 for (i = 0; i < __nargs; i++) {                         \
-                        __frame->frame.base[i] = cl_va_arg(va);         \
+                        __frame->frame.base[i] = ecl_va_arg(va);         \
                 }                                                       \
         } while (0)
 #endif
@@ -183,7 +184,7 @@ extern void _ecl_unexpected_return() ecl_attr_noreturn;
         frame->frame.stack = 0;                                         \
         frame->frame.env = env;                                         \
         frame->frame.size = narg;                                       \
-        if (narg < C_ARGUMENTS_LIMIT) {                                 \
+        if (narg < ECL_C_ARGUMENTS_LIMIT) {                                 \
                 va_list args;                                           \
                 va_start(args, lastarg);                                \
                 frame->frame.base = (void*)args;                        \
@@ -200,8 +201,7 @@ extern void _ecl_unexpected_return() ecl_attr_noreturn;
         frame->frame.t = t_frame;                                       \
         frame->frame.env = env;                                         \
         frame->frame.size = narg;                                       \
-        if (narg < C_ARGUMENTS_LIMIT) {                                 \
-                cl_index i;                                             \
+        if (narg < ECL_C_ARGUMENTS_LIMIT) {                                 \
                 cl_object *p = frame->frame.base = env->values;         \
                 va_list args;                                           \
                 va_start(args, lastarg);                                \
@@ -268,9 +268,8 @@ extern void* ecl_dynamic_callback_make(cl_object data, enum ecl_ffi_calling_conv
 #define OPEN_RA	"a+b"
 
 #define ECL_FILE_STREAM_P(strm) \
-        (ECL_ANSI_STREAM_P(strm) && (strm)->stream.mode < smm_synonym)
+        (ECL_ANSI_STREAM_P(strm) && (strm)->stream.mode < ecl_smm_synonym)
 #define STRING_OUTPUT_STRING(strm) (strm)->stream.object0
-#define STRING_OUTPUT_COLUMN(strm) (strm)->stream.int1
 #define STRING_INPUT_STRING(strm) (strm)->stream.object0
 #define STRING_INPUT_POSITION(strm) (strm)->stream.int0
 #define STRING_INPUT_LIMIT(strm) (strm)->stream.int1
@@ -283,11 +282,9 @@ extern void* ecl_dynamic_callback_make(cl_object data, enum ecl_ffi_calling_conv
 #define ECHO_STREAM_OUTPUT(strm) (strm)->stream.object1
 #define CONCATENATED_STREAM_LIST(strm) (strm)->stream.object0
 #define IO_STREAM_FILE(strm) ((strm)->stream.file.stream)
-#define IO_STREAM_COLUMN(strm) (strm)->stream.int1
 #define IO_STREAM_ELT_TYPE(strm) (strm)->stream.object0
 #define IO_STREAM_FILENAME(strm) (strm)->stream.object1
 #define IO_FILE_DESCRIPTOR(strm) (strm)->stream.file.descriptor
-#define IO_FILE_COLUMN(strm) (strm)->stream.int1
 #define IO_FILE_ELT_TYPE(strm) (strm)->stream.object0
 #define IO_FILE_FILENAME(strm) (strm)->stream.object1
 #define SEQ_OUTPUT_VECTOR(strm) (strm)->stream.object1
@@ -312,7 +309,7 @@ extern ecl_off_t ecl_integer_to_off_t(cl_object offset);
 /* format.d */
 
 #ifndef ECL_CMU_FORMAT
-extern cl_object si_formatter_aux _ARGS((cl_narg narg, cl_object strm, cl_object string, ...));
+extern cl_object si_formatter_aux _ECL_ARGS((cl_narg narg, cl_object strm, cl_object string, ...));
 #endif
 
 /* hash.d */
@@ -332,6 +329,18 @@ extern cl_object ecl_slot_writer_dispatch(cl_narg narg, cl_object value, cl_obje
 
 extern cl_object _ecl_library_init_prefix(void);
 extern cl_object _ecl_library_default_entry(void);
+
+/* number.d */
+
+extern cl_object _ecl_double_to_integer(double d);
+extern cl_object _ecl_float_to_integer(float d);
+#ifdef ECL_LONG_FLOAT
+extern cl_object _ecl_long_double_to_integer(long double d);
+#endif
+
+/* main.d */
+
+extern cl_fixnum ecl_option_values[ECL_OPT_LIMIT+1];
 
 /* print.d */
 
@@ -384,12 +393,18 @@ extern void cl_write_object(cl_object x, cl_object stream);
         const cl_object __ecl_the_lock = lock;          \
         ecl_disable_interrupts_env(the_env);            \
         mp_get_lock_wait(__ecl_the_lock);               \
-        CL_UNWIND_PROTECT_BEGIN(__ecl_the_env);	        \
+        ECL_UNWIND_PROTECT_BEGIN(__ecl_the_env);	        \
 	ecl_enable_interrupts_env(__ecl_the_env);
 # define ECL_WITH_LOCK_END                                    \
-        CL_UNWIND_PROTECT_EXIT {                              \
+        ECL_UNWIND_PROTECT_EXIT {                              \
                 mp_giveup_lock(__ecl_the_lock);               \
-        } CL_UNWIND_PROTECT_END; }
+        } ECL_UNWIND_PROTECT_END; }
+# define ECL_WITH_SPINLOCK_BEGIN(the_env,lock) {		\
+        const cl_env_ptr __ecl_the_env = (the_env);		\
+        cl_object *__ecl_the_lock = (lock);			\
+        ecl_get_spinlock(__ecl_the_env, __ecl_the_lock);
+# define ECL_WITH_SPINLOCK_END			\
+	ecl_giveup_spinlock(__ecl_the_lock); }
 #else
 # define ECL_WITH_GLOBAL_LOCK_BEGIN(the_env)
 # define ECL_WITH_GLOBAL_LOCK_END
@@ -399,10 +414,16 @@ extern void cl_write_object(cl_object x, cl_object stream);
 # define ECL_WITH_GLOBAL_ENV_WRLOCK_END
 # define ECL_WITH_LOCK_BEGIN(the_env,lock)
 # define ECL_WITH_LOCK_END
+# define ECL_WITH_SPINLOCK_BEGIN(the_env,lock)
+# define ECL_WITH_SPINLOCK_END
 #endif /* ECL_THREADS */
 
 #ifdef ECL_THREADS
-# include <ecl/atomic_ops.h>
+# ifdef ECL_LIBATOMIC_OPS_H
+#  include <ecl/atomic_ops.h>
+# else
+#  include <atomic_ops.h>
+# endif
 #else
 # define AO_load(x) (x)
 # define AO_store(x,y) ((x)=(y))
@@ -412,12 +433,16 @@ extern void cl_write_object(cl_object x, cl_object stream);
 #ifdef ECL_UNICODE
 #define	RTABSIZE	256		/*  read table size  */
 #else
-#define	RTABSIZE	CHAR_CODE_LIMIT	/*  read table size  */
+#define	RTABSIZE	ECL_CHAR_CODE_LIMIT	/*  read table size  */
 #endif
 
 /* package.d */
 
 extern cl_object _ecl_package_to_be_created(const cl_env_ptr env, cl_object name);
+
+/* pathname.d */
+
+extern bool ecl_wild_string_p(cl_object item);
 
 /* sequence.d */
 typedef struct { cl_index start, end, length; } cl_index_pair;
@@ -433,6 +458,13 @@ extern cl_object ecl_deserialize(uint8_t *data);
 #define ecl_vector_start_end ecl_sequence_start_end
 
 /* stacks.d */
+#define CL_NEWENV_BEGIN {\
+	const cl_env_ptr the_env = ecl_process_env(); \
+	cl_index __i = ecl_stack_push_values(the_env); \
+
+#define CL_NEWENV_END \
+	ecl_stack_pop_values(the_env,__i); }
+
 extern void ecl_cs_set_org(cl_env_ptr env);
 
 /* threads.d */
@@ -444,8 +476,31 @@ extern ECL_API cl_object mp_break_suspend_loop();
 
 /* time.d */
 
+struct ecl_timeval {
+	cl_index tv_usec;
+	cl_index tv_sec;
+};
+
+extern void ecl_get_internal_real_time(struct ecl_timeval *time);
+extern void ecl_get_internal_run_time(struct ecl_timeval *time);
+extern void ecl_musleep(double time, bool alertable);
+
 #define UTC_time_to_universal_time(x) ecl_plus(ecl_make_integer(x),cl_core.Jan1st1970UT)
 extern cl_fixnum ecl_runtime(void);
+
+/* threads/mutex.d */
+
+#ifdef ECL_THREADS
+extern void ecl_process_yield(void);
+extern void print_lock(char *s, cl_object lock, ...);
+#define print_lock(a,b,...) ((void)0)
+extern void ecl_get_spinlock(cl_env_ptr env, cl_object *lock);
+extern void ecl_giveup_spinlock(cl_object *lock);
+extern cl_object ecl_wait_on(cl_env_ptr env, cl_object (*condition)(cl_env_ptr, cl_object), cl_object o);
+extern void ecl_wakeup_waiters(cl_env_ptr the_env, cl_object o, int flags);
+extern void ecl_wakeup_process(cl_object process);
+extern cl_object ecl_waiter_pop(cl_env_ptr the_env, cl_object q);
+#endif
 
 /* threads/rwlock.d */
 
@@ -464,7 +519,7 @@ extern cl_object mp_get_rwlock_write_wait(cl_object lock);
 extern void ecl_interrupt_process(cl_object process, cl_object function);
 
 /* unixsys.d */
-extern cl_object si_wait_for_all_processes(cl_narg,...);
+extern cl_object si_wait_for_all_processes _ECL_ARGS((cl_narg narg, ...));
 
 /*
  * Fake several ISO C99 mathematical functions

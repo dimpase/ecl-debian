@@ -25,9 +25,9 @@
 	/* ANSI: Need not signal error for 1 argument */
 	/* INV: For >= 2 arguments, ecl_number_equalp() performs checks */
 	for (i = 1; i < narg; i++)
-		if (!ecl_number_equalp(num, cl_va_arg(nums)))
-			@(return Cnil)
-	@(return Ct)
+		if (!ecl_number_equalp(num, ecl_va_arg(nums)))
+			@(return ECL_NIL)
+	@(return ECL_T)
 @)
 
 /* Returns 1 if both numbers compare to equal */
@@ -39,21 +39,21 @@ ecl_number_equalp(cl_object x, cl_object y)
 	/* INV: (= fixnum ratio) => 0 */
 	/* INV: (= bignum ratio) => 0 */
  BEGIN:
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
-		switch (type_of(y)) {
+		switch (ecl_t_of(y)) {
 		case t_fixnum:
 		  	return x == y;
 		case t_bignum:
 		case t_ratio:
 			return 0;
 		case t_singlefloat:
-			return double_fix_compare(fix(x), ecl_single_float(y)) == 0;
+			return double_fix_compare(ecl_fixnum(x), ecl_single_float(y)) == 0;
 		case t_doublefloat:
-			return double_fix_compare(fix(x), ecl_double_float(y)) == 0;
+			return double_fix_compare(ecl_fixnum(x), ecl_double_float(y)) == 0;
 #ifdef ECL_LONG_FLOAT
 		case t_longfloat:
-			return long_double_fix_compare(fix(x), ecl_long_float(y)) == 0;
+			return long_double_fix_compare(ecl_fixnum(x), ecl_long_float(y)) == 0;
 #endif
 		case t_complex:
 			goto Y_COMPLEX;
@@ -61,7 +61,7 @@ ecl_number_equalp(cl_object x, cl_object y)
 			FEwrong_type_nth_arg(@[=], 2, y, @[number]);
 		}
 	case t_bignum:
-		switch (type_of(y)) {
+		switch (ecl_t_of(y)) {
 		case t_fixnum:
 			return 0;
 		case t_bignum:
@@ -81,7 +81,7 @@ ecl_number_equalp(cl_object x, cl_object y)
 			FEwrong_type_nth_arg(@[=], 2, y, @[number]);
 		}
 	case t_ratio:
-		switch (type_of(y)) {
+		switch (ecl_t_of(y)) {
 		case t_fixnum:
 		case t_bignum:
 			return 0;
@@ -106,9 +106,9 @@ ecl_number_equalp(cl_object x, cl_object y)
 	case t_doublefloat:
 		dx = ecl_double_float(x);
 	FLOAT:
-		switch (type_of(y)) {
+		switch (ecl_t_of(y)) {
 		case t_fixnum:
-			return double_fix_compare(fix(y), dx) == 0;
+			return double_fix_compare(ecl_fixnum(y), dx) == 0;
 		case t_bignum:
 		case t_ratio:
 			x = cl_rational(x);
@@ -129,9 +129,9 @@ ecl_number_equalp(cl_object x, cl_object y)
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
 		long double dx = ecl_long_float(x);
-		switch (type_of(y)) {
+		switch (ecl_t_of(y)) {
 		case t_fixnum:
-			return long_double_fix_compare(fix(y), dx) == 0;
+			return long_double_fix_compare(ecl_fixnum(y), dx) == 0;
 		case t_bignum:
 		case t_ratio:
 			x = cl_rational(x);
@@ -154,7 +154,7 @@ ecl_number_equalp(cl_object x, cl_object y)
 			return 0;
 		return ecl_number_equalp(x, y->complex.real);
 	case t_complex:
-                switch (type_of(y)) {
+                switch (ecl_t_of(y)) {
                 case t_complex:
 			return (ecl_number_equalp(x->complex.real, y->complex.real) &&
 				ecl_number_equalp(x->complex.imag, y->complex.imag));
@@ -180,14 +180,14 @@ ecl_number_equalp(cl_object x, cl_object y)
 @
 	if (narg == 0)
 		FEwrong_num_arguments_anonym();
-	numi = cl_va_arg(nums);
+	numi = ecl_va_arg(nums);
 	for (i = 2; i<=narg; i++) {
-		cl_va_list numb;
-		cl_va_start(numb, narg, narg, 0);
-		numi = cl_va_arg(nums);
+		ecl_va_list numb;
+		ecl_va_start(numb, narg, narg, 0);
+		numi = ecl_va_arg(nums);
 		for (j = 1; j<i; j++)
-			if (ecl_number_equalp(numi, cl_va_arg(numb)))
-				@(return Cnil)
+			if (ecl_number_equalp(numi, ecl_va_arg(numb)))
+				@(return ECL_NIL)
 	}
-	@(return Ct)
+	@(return ECL_T)
 @)

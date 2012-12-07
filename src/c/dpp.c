@@ -260,7 +260,7 @@ search_symbol(char *name, int *symbol_code, int code)
 		if (!strcasecmp(name, cl_symbols[i].name)) {
 			name = poolp;
                         if (code) {
-                                pushstr("MAKE_FIXNUM(/*");
+                                pushstr("ecl_make_fixnum(/*");
                                 pushstr(cl_symbols[i].name);
 				pushstr("*/");
 				if (i >= 1000)
@@ -273,7 +273,7 @@ search_symbol(char *name, int *symbol_code, int code)
 				pushstr(")");
 				pushc(0);
                         } else if (i == 0) {
-				pushstr("Cnil");
+				pushstr("ECL_NIL");
 				pushc(0);
 			} else {
 				pushstr("ECL_SYM(\"");
@@ -470,7 +470,7 @@ get_function(void)
 	function_symbol = search_symbol(function, &function_code, 0);
 	if (function_symbol == NULL) {
 		function_symbol = poolp;
-		pushstr("Cnil");
+		pushstr("ECL_NIL");
 		pushc('\0');
 	}
 	function_c_name = translate_function(function);
@@ -695,7 +695,7 @@ put_declaration(void)
   if (nopt == 0 && !rest_flag && !key_flag) {
     put_lineno();
     fprintf(out, "\tif (ecl_unlikely(narg!=%d))", nreq);
-    fprintf(out, "\t   FEwrong_num_arguments(MAKE_FIXNUM(%d));\n",
+    fprintf(out, "\t   FEwrong_num_arguments(ecl_make_fixnum(%d));\n",
             function_code);
   } else {
     simple_varargs = !rest_flag && !key_flag && ((nreq + nopt) < 32);
@@ -713,7 +713,7 @@ put_declaration(void)
 	fprintf(out,"\tva_list %s;\n\tva_start(%s, %s);\n",
 		rest_var, rest_var, ((nreq > 0) ? required[nreq-1] : "narg"));
     else
-	fprintf(out,"\tcl_va_list %s;\n\tcl_va_start(%s, %s, narg, %d);\n",
+	fprintf(out,"\tecl_va_list %s;\n\tecl_va_start(%s, %s, narg, %d);\n",
 		rest_var, rest_var, ((nreq > 0) ? required[nreq-1] : "narg"),
 		nreq);
     put_lineno();
@@ -721,14 +721,14 @@ put_declaration(void)
     if (nopt > 0 && !rest_flag && !key_flag) {
       fprintf(out, "|| narg > %d", nreq + nopt);
     }
-    fprintf(out, ")) FEwrong_num_arguments(MAKE_FIXNUM(%d));\n", function_code);
+    fprintf(out, ")) FEwrong_num_arguments(ecl_make_fixnum(%d));\n", function_code);
     for (i = 0;  i < nopt;  i++) {
       put_lineno();
       fprintf(out, "\tif (narg > %d) {\n", nreq+i);
       put_lineno();
       fprintf(out, simple_varargs?
 	      "\t\t%s = va_arg(%s,cl_object);\n":
-	      "\t\t%s = cl_va_arg(%s);\n",
+	      "\t\t%s = ecl_va_arg(%s);\n",
 	      optional[i].o_var, rest_var);
       if (optional[i].o_svar) {
 	put_lineno();
@@ -739,7 +739,7 @@ put_declaration(void)
       put_lineno();
       fprintf(out, "\t\t%s = %s;\n",
 	      optional[i].o_var,
-	      optional[i].o_init == NULL ? "Cnil" : optional[i].o_init);
+	      optional[i].o_init == NULL ? "ECL_NIL" : optional[i].o_init);
       if (optional[i].o_svar) {
 	put_lineno();
 	fprintf(out, "\t\t%s = FALSE;\n", optional[i].o_svar);
@@ -753,13 +753,13 @@ put_declaration(void)
 	      nkey, allow_other_keys_flag);
       for (i = 0;  i < nkey;  i++) {
 	put_lineno();
-	fprintf(out, "\tif (KEY_VARS[%d]==Cnil) {\n", nkey+i);
+	fprintf(out, "\tif (KEY_VARS[%d]==ECL_NIL) {\n", nkey+i);
 	if (keyword[i].k_init != NULL) {
 	  put_lineno();
 	  fprintf(out, "\t  %s = %s;\n", keyword[i].k_var, keyword[i].k_init);
 	} else {
 	  put_lineno();
-	  fprintf(out, "\t  %s = Cnil;\n", keyword[i].k_var);
+	  fprintf(out, "\t  %s = ECL_NIL;\n", keyword[i].k_var);
 	}
 	if (keyword[i].k_svar != NULL) {
 	  put_lineno();
@@ -778,7 +778,7 @@ put_declaration(void)
   for (i = 0;  i < naux;  i++) {
     put_lineno();
     fprintf(out, "\t%s = %s;\n", aux[i].a_var,
-	    aux[i].a_init == NULL ? "Cnil" : aux[i].a_init);
+	    aux[i].a_init == NULL ? "ECL_NIL" : aux[i].a_init);
   }
 }
 
@@ -795,7 +795,7 @@ put_return(void)
           fprintf(out, "const cl_env_ptr the_env = ecl_process_env();\n");
         }
 	if (nres == 0) {
-          fprintf(out, "the_env->nvalues = 0; return Cnil;\n");
+          fprintf(out, "the_env->nvalues = 0; return ECL_NIL;\n");
 	} else {
 	  put_tabs(t);
 	  for (i = 0;  i < nres;  i++) {

@@ -99,8 +99,7 @@
                       (vector ,(second args)))
                  (declare (:read-only value vector)
                           (optimize (safety 0)))
-                 ,@(unless (policy-assume-right-type)
-                     `((check-vectorp vector)))
+		 (optional-type-assertion vector vector)
                  (let ((index (fill-pointer vector))
                        (dimension (array-total-size vector)))
                    (declare (fixnum index dimension)
@@ -168,16 +167,16 @@
 
 (defun expand-zero-dim-index-check (a env)
   (if (policy-type-assertions env)
-      0
       `(progn
-         (check-arrayp ,a)
+         (optional-type-assertion ,a array)
          (check-expected-rank ,a 0)
-         0)))
+         0)
+      0))
 
 (defun expand-vector-index-check (a index env)
   (flet ((expansion (a index)
            `(progn
-              (check-vectorp ,a)
+              (optional-type-assertion ,a vector)
               (check-vector-in-bounds ,a ,index)
               ,index)))
     (if (policy-type-assertions env)
@@ -208,7 +207,7 @@
          (declare (type ext:array-index %output-var ,@dim-names)
 		  (ignorable ,@dim-names))
          ,@(when (policy-type-assertions env)
-                 `((check-arrayp ,a)
+                 `((optional-type-assertion ,a array)
                    (check-expected-rank ,a ,expected-rank)))
 	 ,@(loop for i from 0
 	      for l in indices
@@ -226,19 +225,6 @@
 
 ;(trace c::expand-row-major-index c::expand-aset c::expand-aref)
 
-(defmacro check-arrayp (a)
-  `(c-inline
-    (,a) (:object) :void
-    "if (ecl_unlikely(!ECL_ARRAYP(#0))) FEtype_error_array(#0);"
-    :one-liner nil))
-
-(defmacro check-vectorp (v)
-  `(c-inline
-    (,v) (:object) :void
-    "if (ecl_unlikely(!ECL_VECTORP(#0)))
-           FEtype_error_vector(#0);"
-    :one-liner nil))
-
 (defmacro check-expected-rank (a expected-rank)
   `(c-inline
     (,a ,expected-rank) (:object :fixnum) :void
@@ -250,14 +236,14 @@
   `(c-inline
     (,array ,index ,limit) (:object :fixnum :fixnum) :void
     "if (ecl_unlikely((#1)>=(#2)))
-           FEwrong_index(Cnil,#0,-1,MAKE_FIXNUM(#1),#2);"
+           FEwrong_index(ECL_NIL,#0,-1,ecl_make_fixnum(#1),#2);"
     :one-liner nil))
 
 (defmacro check-vector-in-bounds (vector index)
   `(c-inline
     (,vector ,index) (:object :fixnum) :void
     "if (ecl_unlikely((#1)>=(#0)->vector.dim))
-           FEwrong_index(Cnil,#0,-1,MAKE_FIXNUM(#1),(#0)->vector.dim);"
+           FEwrong_index(ECL_NIL,#0,-1,ecl_make_fixnum(#1),(#0)->vector.dim);"
     :one-liner nil))
 
 (defconstant +array-dimension-accessor+

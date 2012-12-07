@@ -87,7 +87,7 @@ _ecl_write_list(cl_object x, cl_object stream)
                 ecl_write_char('#', stream);
                 return;
         }
-        ecl_bds_bind(env, @'*print-level*', MAKE_FIXNUM(print_level-1));
+        ecl_bds_bind(env, @'*print-level*', ecl_make_fixnum(print_level-1));
         ecl_write_char('(', stream);
         for (i = 0;  ;  i++) {
                 if (i >= print_length) {
@@ -98,17 +98,17 @@ _ecl_write_list(cl_object x, cl_object stream)
                 x = CDR(x);
                 si_write_object(y, stream);
                 /* FIXME! */
-                if (x == OBJNULL || ATOM(x) ||
+                if (x == OBJNULL || ECL_ATOM(x) ||
                     (circle && _ecl_will_print_as_hash(x)))
 			{
-				if (x != Cnil) {
+				if (x != ECL_NIL) {
 					ecl_write_char(' ', stream);
 					writestr_stream(". ", stream);
 					si_write_object(x, stream);
 				}
 				break;
 			}
-                if (i == 0 && y != OBJNULL && type_of(y) == t_symbol)
+                if (i == 0 && y != OBJNULL && ecl_t_of(y) == t_symbol)
                         ecl_write_char(' ', stream);
                 else
                         ecl_write_char(' ', stream);

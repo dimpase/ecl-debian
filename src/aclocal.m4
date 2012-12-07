@@ -237,7 +237,7 @@ AC_SUBST(EXEEXT)
 AC_SUBST(INSTALL_TARGET)dnl Which type of installation: flat directory or unix like.
 AC_SUBST(thehost)
 AC_SUBST(ECL_GC_DIR)dnl Which version of the Boehm-Weiser library to use
-ECL_GC_DIR=gc
+ECL_GC_DIR=gc-unstable
 ECL_LDRPATH=''
 SHAREDEXT='so'
 SHAREDPREFIX='lib'
@@ -248,7 +248,7 @@ THREAD_CFLAGS=''
 THREAD_LIBS=''
 THREAD_GC_FLAGS='--enable-threads=posix'
 INSTALL_TARGET='install'
-THREAD_OBJ="$THREAD_OBJ threads/process threads/mutex threads/condition_variable"
+THREAD_OBJ="$THREAD_OBJ threads/process threads/queue threads/mutex threads/condition_variable threads/semaphore threads/barrier threads/mailbox"
 clibs=''
 SONAME=''
 SONAME_LDFLAGS=''
@@ -288,6 +288,16 @@ case "${host_os}" in
 		ECL_LDRPATH='-Wl,--rpath,~A'
 		clibs="-ldl"
 		CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
+		;;
+	dragonfly*)
+		thehost='dragonfly'
+		THREAD_LIBS='-lpthread'
+		SHARED_LDFLAGS="-shared ${LDFLAGS}"
+		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
+		ECL_LDRPATH="-Wl,--rpath,~A"
+		clibs=""
 		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
 		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
@@ -339,6 +349,7 @@ case "${host_os}" in
                 fi
 		;;
 	cygwin*)
+		enable_threads='no'
 		thehost='cygwin'
 		shared='yes'
 		THREAD_CFLAGS='-D_THREAD_SAFE'
@@ -612,12 +623,12 @@ int main() {
     for (bits=1; ((t << 1) >> 1) == t; bits++, t <<= 1);
     l = (~l) << (bits - 3);
 #if 1
-    fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
-    fprintf(f,"CL_FIXNUM_MAX='%ld';",-(l+1));
+    fprintf(f,"CL_FIXNUM_MIN='%ldL';",l);
+    fprintf(f,"CL_FIXNUM_MAX='%ldL';",-(l+1));
 #else
     l++;
-    fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
-    fprintf(f,"CL_FIXNUM_MAX='%ld';",-l);
+    fprintf(f,"CL_FIXNUM_MIN='%ldL';",l);
+    fprintf(f,"CL_FIXNUM_MAX='%ldL';",-l);
 #endif
 #ifdef ECL_LONG_LONG_BITS
   } else if (sizeof(long long) >= sizeof(void*)) {
@@ -627,12 +638,12 @@ int main() {
     for (bits=1; ((t << 1) >> 1) == t; bits++, t <<= 1);
     l = (~l) << (bits - 3);
 # if 1
-    fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
-    fprintf(f,"CL_FIXNUM_MAX='%ld';",-(l+1));
+    fprintf(f,"CL_FIXNUM_MIN='%lldLL';",l);
+    fprintf(f,"CL_FIXNUM_MAX='%lldLL';",-(l+1));
 # else
     l++;
-    fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
-    fprintf(f,"CL_FIXNUM_MAX='%ld';",-l);
+    fprintf(f,"CL_FIXNUM_MIN='%lldLL';",l);
+    fprintf(f,"CL_FIXNUM_MAX='%lldLL';",-l);
 # endif
 #endif
   } else {
@@ -828,29 +839,6 @@ fi
 ])
 
 dnl ----------------------------------------------------------------------
-dnl Check whether we have unnamed POSIX semaphores available
-AC_DEFUN([ECL_POSIX_SEMAPHORES],[
-AC_MSG_CHECKING(working sem_init())
-if test -z "$ECL_WORKING_SEM_INIT"; then
-  AC_RUN_IFELSE([AC_LANG_SOURCE([[
-#include <semaphore.h>
-int main() {
-  sem_t aux;
-  if (sem_init(&aux, 0, 0))
-    exit(1);
-  exit(0);
-}]])],[ECL_WORKING_SEM_INIT=yes],[ECL_WORKING_SEM_INIT=no],[])
-fi
-AC_MSG_RESULT([$ECL_WORKING_SEM_INIT])
-if test $ECL_WORKING_SEM_INIT = yes ; then
-  AC_DEFINE(ECL_SEMAPHORES)
-  AC_DEFINE(HAVE_SEM_INIT)
-  THREAD_OBJ="$THREAD_OBJ threads/semaphore"
-  echo $THREAD_OBJ
-fi
-])
-
-dnl ----------------------------------------------------------------------
 dnl Check whether we have POSIX read/write locks are available
 AC_DEFUN([ECL_POSIX_RWLOCK],[
 AC_CHECK_FUNC( [pthread_rwlock_init], [
@@ -885,18 +873,43 @@ dnl ----------------------------------------------------------------------
 dnl Configure libatomic-ops
 dnl
 AC_DEFUN([ECL_LIBATOMIC_OPS],[
+case "${enable_libatomic}" in
+  auto|system|included) ;;
+  *) AC_MSG_ERROR( [Invalid value of --enable-libatomic: ${enable_libatomic}] );;
+esac
 if test "x${enable_threads}" != "xno"; then
-  test -d atomic || mkdir atomic
-  (destdir=`${PWDCMD}`; cd atomic && CC="${CC} ${PICFLAG}" \
-   $srcdir/${ECL_GC_DIR}/libatomic*/configure --disable-shared --prefix=${destdir} \
+  AC_CHECK_HEADER([atomic_ops.h],[system_libatomic=yes],[system_libatomic=no],[])
+  AC_MSG_CHECKING( [libatomic-ops version] )
+  if test "${enable_libatomic}" = auto; then
+    if test "${system_libatomic}" = yes; then
+      enable_libatomic=system
+    else
+      enable_libatomic=included
+    fi
+  fi
+  if test "${enable_libatomic}" = system; then
+    if test "${system_libatomic}" = no; then
+      AC_MSG_ERROR( [Cannot find libatomic-ops in the system] )
+      enable_libatomic=included
+    fi
+  fi
+  AC_MSG_RESULT( [${enable_libatomic}] )
+  if test "${enable_libatomic}" = included; then
+    test -d atomic || mkdir atomic
+    (destdir=`${PWDCMD}`; cd atomic && CC="${CC} ${PICFLAG}" \
+     $srcdir/${ECL_GC_DIR}/libatomic*/configure --disable-shared --prefix=${destdir} \
 	--infodir=${destdir}/doc --includedir=${destdir}/ecl --with-pic \
         --libdir=${destdir} --build=${build_alias} --host=${host_alias} \
         CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" CC="${CC} \
         ${PICFLAG}")
-  SUBDIRS="${SUBDIRS} atomic"
-  CORE_LIBS="-leclatomic ${CORE_LIBS}"
-  if test "${enable_shared}" = "no"; then
-    LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclatomic.${LIBEXT}"
+    SUBDIRS="${SUBDIRS} atomic"
+    if test "${enable_shared}" = "no"; then
+      LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclatomic.${LIBEXT}"
+    fi
+    AC_DEFINE(ECL_LIBATOMIC_OPS_H)
+    CORE_LIBS="-leclatomic ${CORE_LIBS}"
+  else
+    CORE_LIBS="-latomic_ops ${CORE_LIBS}"
   fi
 fi
 ])

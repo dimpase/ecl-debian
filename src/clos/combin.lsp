@@ -1,6 +1,7 @@
 ;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: CLOS -*-
 ;;;;
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    ECoLisp is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -11,7 +12,7 @@
 
 (in-package "CLOS")
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; COMPILING EFFECTIVE METHODS
 ;;;
 ;;; The following functions take care of transforming the forms
@@ -46,19 +47,19 @@
 ;;;  5) Ordinary forms are turned into lambda forms, much like
 ;;;	what happens with the content of MAKE-METHOD.
 ;;;
-(defun effective-method-function (form &optional top-level)
+(defun effective-method-function (form &optional top-level &aux first)
   (cond ((functionp form)
 	 form)
 	((method-p form)
-	 (wrapped-method-function (method-function form)))
+	 (method-function form))
 	((atom form)
 	 (error "Malformed effective method form:~%~A" form))
-	((eq (first form) 'MAKE-METHOD)
+	((eq (setf first (first form)) 'MAKE-METHOD)
 	 (coerce `(lambda (.combined-method-args. *next-methods*)
 		    (declare (special .combined-method-args. *next-methods*))
 		    ,(second form))
 		 'function))
-	((eq (first form) 'CALL-METHOD)
+	((eq first 'CALL-METHOD)
 	 (combine-method-functions
 	  (effective-method-function (second form))
 	  (mapcar #'effective-method-function (third form))))
@@ -69,11 +70,6 @@
 		 'function))
 	(t
 	 (error "Malformed effective method form:~%~A" form))))
-
-(defun wrapped-method-function (method-function)
-  #'(lambda (.combined-method-args. *next-methods*)
-      (declare (special .combined-method-args. *next-methods*))
-      (apply method-function .combined-method-args.)))
 
 ;;;
 ;;; This function is a combinator of effective methods. It creates a
@@ -133,44 +129,44 @@
 	(funcall (first primary) .combined-method-args. (rest primary)))))
 
 (defun standard-compute-effective-method (gf methods)
-  (declare (si::c-local))
-  (let* ((before ())
-	 (primary ())
-	 (after ())
-	 (around ()))
-    (dolist (m methods)
-      (let* ((qualifiers (method-qualifiers m))
-	     (f (wrapped-method-function (method-function m))))
-	(cond ((null qualifiers) (push f primary))
-	      ((rest qualifiers) (error-qualifier m qualifiers))
-	      ((eq (setq qualifiers (first qualifiers)) :BEFORE)
-	       (push f before))
-	      ((eq qualifiers :AFTER) (push f after))
-	      ((eq qualifiers :AROUND) (push f around))
-	      (t (error-qualifier m qualifiers)))))
-    ;; When there are no primary methods, an error is to be signaled,
-    ;; and we need not care about :AROUND, :AFTER or :BEFORE methods.
-    (when (null primary)
-      (return-from standard-compute-effective-method
-	#'(lambda (&rest args)
-	    (apply 'no-primary-method gf args))))
-    ;; PRIMARY, BEFORE and AROUND are reversed because they have to
-    ;; be on most-specific-first order (ANSI 7.6.6.2), while AFTER
-    ;; may remain as it is because it is least-specific-order.
-    (setf primary (nreverse primary)
-	  before (nreverse before))
-    (if around
-	(let ((main (if (or before after)
-			(list
-			 (standard-main-effective-method before primary after))
-			primary)))
-	  (setf around (nreverse around))
-	  (combine-method-functions (first around)
-				    (nconc (rest around) main)))
-	(if (or before after)
-	    (standard-main-effective-method before primary after)
-	    (combine-method-functions (first primary) (rest primary))))
-    ))
+  (with-early-accessors (+standard-method-slots+)
+    (let* ((before ())
+	   (primary ())
+	   (after ())
+	   (around ()))
+      (dolist (m methods)
+	(let* ((qualifiers (method-qualifiers m))
+	       (f (method-function m)))
+	  (cond ((null qualifiers) (push f primary))
+		((rest qualifiers) (error-qualifier m qualifiers))
+		((eq (setq qualifiers (first qualifiers)) :BEFORE)
+		 (push f before))
+		((eq qualifiers :AFTER) (push f after))
+		((eq qualifiers :AROUND) (push f around))
+		(t (error-qualifier m qualifiers)))))
+      ;; When there are no primary methods, an error is to be signaled,
+      ;; and we need not care about :AROUND, :AFTER or :BEFORE methods.
+      (when (null primary)
+	(return-from standard-compute-effective-method
+	  #'(lambda (&rest args)
+	      (apply 'no-primary-method gf args))))
+      ;; PRIMARY, BEFORE and AROUND are reversed because they have to
+      ;; be on most-specific-first order (ANSI 7.6.6.2), while AFTER
+      ;; may remain as it is because it is least-specific-order.
+      (setf primary (nreverse primary)
+	    before (nreverse before))
+      (if around
+	  (let ((main (if (or before after)
+			  (list
+			   (standard-main-effective-method before primary after))
+			  primary)))
+	    (setf around (nreverse around))
+	    (combine-method-functions (first around)
+				      (nconc (rest around) main)))
+	  (if (or before after)
+	      (standard-main-effective-method before primary after)
+	      (combine-method-functions (first primary) (rest primary))))
+      )))
 
 ;; ----------------------------------------------------------------------
 ;; DEFINE-METHOD-COMBINATION
@@ -190,11 +186,33 @@
 ;; and it outputs an anonymous function which is the effective method.
 ;;
 
-(defparameter *method-combinations* '())
+#+threads
+(defparameter *method-combinations-lock* (mp:make-lock :name 'find-method-combination))
+(defparameter *method-combinations* (make-hash-table :size 32 :test 'eq))
+
+(defun search-method-combination (name)
+  (mp:with-lock (*method-combinations-lock*)
+    (or (gethash name *method-combinations*)
+	(error "~A does not name a method combination" name))))
 
 (defun install-method-combination (name function)
-  (setf (getf *method-combinations* name) function)
+  (mp:with-lock (*method-combinations-lock*)
+    (setf (gethash name *method-combinations*) function))
   name)
+
+(defun make-method-combination (name compiler options)
+  (with-early-make-instance +method-combination-slots+
+    (o (find-class 'method-combination)
+       :name name
+       :compiler compiler
+       :options options)
+    o))
+
+(defun find-method-combination (gf method-combination-type-name method-combination-options)
+  (make-method-combination method-combination-type-name
+			   (search-method-combination method-combination-type-name)
+			   method-combination-options
+			   ))
 
 (defun define-simple-method-combination (name &key documentation
 					 identity-with-one-argument
@@ -306,20 +324,45 @@
 ;;; COMPUTE-EFFECTIVE-METHOD
 ;;;
 
+(eval-when (compile)
+  (let* ((class (find-class 'method-combination)))
+    (define-compiler-macro method-combination-compiler (o)
+      `(si::instance-ref ,o ,(slot-definition-location (gethash 'compiler (slot-table class)))))
+    (define-compiler-macro method-combination-options (o)
+      `(si::instance-ref ,o ,(slot-definition-location (gethash 'options (slot-table class)))))))
+
+(defun std-compute-effective-method (gf method-combination applicable-methods)
+  (declare (type method-combination method-combination)
+	   (type generic-function gf)
+	   (optimize speed (safety 0)))
+  (with-early-accessors (+method-combination-slots+)
+    (let* ((compiler (method-combination-compiler method-combination))
+	   (options (method-combination-options method-combination)))
+      (if options
+	  (apply compiler gf applicable-methods options)
+	  (funcall compiler gf applicable-methods)))))
+
+(defun compute-effective-method-function (gf method-combination applicable-methods)
+  ;; Cannot be inlined because it will be a method
+  (declare (notinline compute-effective-method))
+  (let ((form (compute-effective-method gf method-combination applicable-methods)))
+    (let ((aux form) f)
+      (if (and (listp aux)
+		 (eq (pop aux) 'funcall)
+		 (functionp (setf f (pop aux)))
+		 (eq (pop aux) '.combined-method-args.)
+		 (eq (pop aux) '*next-methods*))
+	  f
+	  (effective-method-function form t)))))
+
 (defun compute-effective-method (gf method-combination applicable-methods)
-  (let* ((method-combination-name (car method-combination))
-	 (method-combination-args (cdr method-combination)))
-    (if (eq method-combination-name 'STANDARD)
-	(standard-compute-effective-method gf applicable-methods)
-	(apply (or (getf *method-combinations* method-combination-name)
-		   (error "~S is not a valid method combination object"
-			  method-combination))
-	       gf applicable-methods
-	       method-combination-args))))
+  `(funcall ,(std-compute-effective-method gf method-combination applicable-methods)
+	    .combined-method-args. *next-methods*))
 
 ;;
 ;; These method combinations are bytecompiled, for simplicity.
 ;;
+(install-method-combination 'standard 'standard-compute-effective-method)
 (eval '(progn
 	(define-method-combination progn :identity-with-one-argument t)
 	(define-method-combination and :identity-with-one-argument t)

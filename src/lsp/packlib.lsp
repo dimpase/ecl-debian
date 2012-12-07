@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -155,16 +156,22 @@ PACKAGE is non-NIL, then only the specified PACKAGE is searched."
   (mapc #'print-symbol-apropos (apropos-list string package))
   (values))
 
-
 (defun apropos-list (string &optional package)
   "Args: (string &optional (package nil))
 Returns a list of all symbols whose print-names contain STRING as substring.
 If PACKAGE is non-NIL, then only the specified PACKAGE is searched."
+  (sort (delete-duplicates (apropos-list-inner string package))
+	#'(lambda (s1 s2)
+	    (string-lessp (prin1-to-string s1)
+			  (prin1-to-string s2)))))
+
+(defun apropos-list-inner (string package)
+  (declare (si::c-local))
   (let* ((list '())
 	 (string (string string)))
     (cond (package
 	   (dolist (p (package-use-list package))
-	     (setf list (nconc (apropos-list string p) list)))
+	     (setf list (nconc (apropos-list-inner string p) list)))
 	   (do-symbols (symbol package)
 	     (when (search string (string symbol) :test #'char-equal)
 	       (setq list (cons symbol list)))))

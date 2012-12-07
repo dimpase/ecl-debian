@@ -16,6 +16,12 @@
 
 (in-package "EXT")
 
+(defpackage "C"
+  (:use "CL")
+  (:export
+   "*SUPPRESS-COMPILER-WARNINGS*"
+   "*SUPPRESS-COMPILER-NOTES*"))
+
 (defun bc-disassemble (thing)
   (when (si::valid-function-name-p thing)
     (setq thing (fdefinition thing)))
@@ -57,7 +63,7 @@
 
 (defun bc-compile-file-pathname (name &key (output-file name) (type :fasl)
 				 verbose print c-file h-file data-file
-				 shared-data-file system-p load)
+				 shared-data-file system-p load external-format)
   (declare (ignore load c-file h-file data-file shared-data-file system-p verbose print))
   (let ((extension "fasc"))
     (case type
@@ -70,6 +76,7 @@
 			((:verbose *compile-verbose*) *compile-verbose*)
 			((:print *compile-print*) *compile-print*)
 			(load nil)
+			(external-format :default)
 			(output-file nil output-file-p)
 			&allow-other-keys &aux foo)
   (setf output-file (if output-file-p
@@ -87,25 +94,19 @@
          (error "COMPILE-FILE invoked with a stream input and no :OUTPUT-FILE"))
         (t
          (with-open-file (sout output-file :direction :output :if-exists :supersede
-                               :if-does-not-exist :create)
-           (handler-case
-	       (let ((binary (loop with *package* = *package*
-				with ext:*bytecodes-compiler* = t
-				for position = (file-position input)
-				for form = (read input nil :EOF)
-				until (eq form :EOF)
-				do (when ext::*source-location*
-				     (rplacd ext:*source-location* position))
-				collect (si:eval-with-env form nil nil nil nil))))
-		 (sys:with-ecl-io-syntax
-		     (write binary :stream sout :circle t :escape t :readably t :pretty nil))
-                 (terpri sout))
-             (error (c) (let ((*print-readably* nil)
-                              (*print-pretty* nil)
-                              (*print-circle* t))
-                          (princ c)
-                          (print foo)
-                          (break)))))))
+                               :if-does-not-exist :create
+			       :external-format external-format)
+	   (let ((binary (loop with *package* = *package*
+			    with ext:*bytecodes-compiler* = t
+			    for position = (file-position input)
+			    for form = (read input nil :EOF)
+			    until (eq form :EOF)
+			    do (when ext::*source-location*
+				 (rplacd ext:*source-location* position))
+			    collect (si:eval-with-env form nil nil nil nil))))
+	     (sys:with-ecl-io-syntax
+		 (write binary :stream sout :circle t :escape t :readably t :pretty nil))
+	     (terpri sout)))))
   (when load
     (load output-file :verbose *compile-verbose*))
   (values output-file nil nil))
@@ -118,6 +119,11 @@
         (fdefinition 'compile-file) #'bc-compile-file
         (fdefinition 'compile-file-pathname) #'bc-compile-file-pathname)
   (ext::package-lock (find-package :cl) t))
+
+(defun install-c-compiler ()
+  (require :cmp)
+  (locally (declare (notinline install-c-compiler))
+    (funcall 'install-c-compiler)))
 
 #-ecl-min
 (progn

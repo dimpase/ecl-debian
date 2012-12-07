@@ -98,7 +98,7 @@
   (when *current-function*
     (unless (eq *current-function* (var-function var))
       (pushnew *current-function* (var-functions-reading var))
-      (pushnew var (fun-referred-vars *current-function*))))
+      (pushnew var (fun-referenced-vars *current-function*))))
   form)
 
 (defun add-to-set-nodes (var form)
@@ -110,7 +110,7 @@
   (when *current-function*
     (unless (eq *current-function* (var-function var))
       (pushnew *current-function* (var-functions-setting var))
-      (pushnew var (fun-referred-vars *current-function*))))
+      (pushnew var (fun-referenced-vars *current-function*))))
   form)
 
 (defun add-to-set-nodes-of-var-list (var-list form)
@@ -290,11 +290,11 @@
     (baboon))
   (case (var-kind var)
     (CLOSURE
-     (wt-nl)(wt-env var-loc)(wt "= ")
+     (wt-nl)(wt-env var-loc)(wt " = ")
      (wt-coerce-loc (var-rep-type var) loc)
      (wt #\;))
     (LEXICAL
-     (wt-nl)(wt-lex var-loc)(wt "= ")
+     (wt-nl)(wt-lex var-loc)(wt " = ")
      (wt-coerce-loc (var-rep-type var) loc)
      (wt #\;))
     ((SPECIAL GLOBAL)
@@ -304,7 +304,7 @@
      (wt-coerce-loc (var-rep-type var) loc)
      (wt ");"))
     (t
-     (wt-nl var-loc "= ")
+     (wt-nl var-loc " = ")
      (wt-coerce-loc (var-rep-type var) loc)
      (wt #\;))
     ))
@@ -390,12 +390,13 @@
          (sym-loc (make-lcl-var))
          (val-loc (make-lcl-var))
          (*unwind-exit* (cons lcl *unwind-exit*)))
-    (wt-nl "{cl_object " sym-loc "," val-loc "; cl_index " lcl ";")
+    (wt-nl-open-brace)
+    (wt-nl "cl_object " sym-loc ", " val-loc "; cl_index " lcl ";")
     (let ((*destination* sym-loc)) (c2expr* symbols))
     (let ((*destination* val-loc)) (c2expr* values))
-    (wt-nl lcl "= ecl_progv(cl_env_copy," sym-loc "," val-loc ");")
+    (wt-nl lcl " = ecl_progv(cl_env_copy, " sym-loc ", " val-loc ");")
     (c2expr body)
-    (wt "}")
+    (wt-nl-close-brace)
     ))
 
 (defun c1psetq (old-args &aux (args nil) (use-psetf nil))
@@ -434,7 +435,8 @@
 			`(checked-value ,type ,form)))
 	    forms))))
 
-(defun c2psetq (c1form vrefs forms &aux (*lcl* *lcl*) (saves nil) (blocks 0))
+(defun c2psetq (c1form vrefs forms
+		&aux (*lcl* *lcl*) (saves nil) (braces *opened-c-braces*))
   (declare (ignore c1form))
   ;; similar to inline-args
   (do ((vrefs vrefs (cdr vrefs))
@@ -452,8 +454,8 @@
                 (let* ((rep-type (var-rep-type var))
 		       (rep-type-name (rep-type-name rep-type))
 		       (temp (make-lcl-var :rep-type rep-type)))
-                  (wt-nl "{" *volatile* rep-type-name " " temp ";")
-                  (incf blocks)
+		  (wt-nl-open-brace)
+                  (wt-nl *volatile* rep-type-name " " temp ";")
                   (let ((*destination* temp)) (c2expr* form))
                   (push (cons var temp) saves))
                 (let ((*destination* (make-temp-var)))
@@ -461,6 +463,6 @@
                   (push (cons var *destination*) saves)))))
         (let ((*destination* var)) (c2expr* form))))
   (dolist (save saves) (set-var (cdr save) (car save)))
-  (dotimes (i blocks) (wt "}"))
+  (wt-nl-close-many-braces braces)
   (unwind-exit nil)
   )

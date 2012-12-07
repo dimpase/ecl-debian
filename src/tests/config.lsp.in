@@ -12,9 +12,13 @@
 
 (setf *load-verbose* nil *load-print* nil)
 
-(defvar *ecl-sources* "@top_srcdir@/")
+(defvar *ecl-sources*
+  (loop for *default-pathname-defaults* in
+	'(#p"@true_srcdir@/" #p"../../" #p"../../src/")
+	when (probe-file "CHANGELOG")
+	return *default-pathname-defaults*))
 
-(defvar *test-sources* "@top_srcdir@/tests/")
+(defvar *test-sources* (merge-pathnames "tests/" *ecl-sources*))
 
 (defvar *here* (merge-pathnames "@builddir@/"))
 
@@ -28,7 +32,9 @@
 
 (defvar *test-image-args*
   (cond ((search "ecl" *test-image*)
-	 '("-norc" "-eval" "(print (ext:getenv \"ECLDIR\"))" #+windows "-eval" #+windows "(require :cmp)"))
+	 '("-norc" "-eval" "(print (ext:getenv \"ECLDIR\"))"
+	   ;#+windows "-eval" #+windows "(require :cmp)"
+	   ))
 	((search "sbcl" *test-image*)
 	 '("--no-userinit" "--no-sysinit"))
 	(t
@@ -48,7 +54,7 @@
 
 (defvar *quicklisp-setup-file* (merge-pathnames "setup.lisp" *quicklisp-sandbox*))
 
-(defvar *regressions-sources* "@top_srcdir@/tests/bugs/")
+(defvar *regressions-sources* (merge-pathnames "bugs/" *test-sources*))
 
 (defvar *regressions-sandbox* (merge-pathnames "regressions/" *here*))
 
@@ -57,6 +63,12 @@
 (defvar *ansi-tests-sandbox* (merge-pathnames "ansi-tests/" *here*))
 
 (defvar *ansi-tests-tarball* "ansi-tests.tar.gz")
+
+(defvar *mop-tests-mirror* "http://ecls.sourceforge.net/mop-features.tar.gz")
+
+(defvar *mop-tests-sandbox* (merge-pathnames "mop-features/" *here*))
+
+(defvar *mop-tests-tarball* "mop-features.tar.gz")
 
 (defvar *fricas-mirror* "http://ecls.sourceforge.net/fricas.tar.gz")
 
@@ -70,6 +82,19 @@
 					:directory '(:relative :wild-inferiors)))
 
 (defvar *cleanup-extensions* '("fasl" "fasb" "c" "h" "obj" "o" "a" "lib" "dll" "dylib" "data"))
+
+(defun lisp-system-directory ()
+  (loop with root = (si::get-library-pathname)
+	with lib-name = (format nil "../lib/ecl-~A/" (lisp-implementation-version))
+	for base in (list root (merge-pathnames lib-name root))
+	when (or (probe-file (merge-pathnames "./BUILD-STAMP" base))
+		 (probe-file (merge-pathnames "./LGPL" base)))
+	do (return base)))
+
+(setf (logical-pathname-translations "SYS")
+      (list (list #p"sys:**;*.*"
+		  (merge-pathnames "**/*.*"
+				   (lisp-system-directory)))))
 
 (require :cmp)
 (require :ecl-curl)
@@ -140,6 +165,8 @@
   t)
 
 (defun copy-directory (orig dest)
+  (setf orig (truename orig))
+  (print dest)
   (loop for f in (directory (merge-pathnames *wild-inferiors* orig))
      for f2 = (enough-namestring f orig)
      for f3 = (merge-pathnames f2 dest)
@@ -178,6 +205,11 @@
     (extract-distribution *ansi-tests-tarball* *ansi-tests-mirror*))
   t)
 
+(defun ensure-mop-tests ()
+  (unless (probe-file *mop-tests-sandbox*)
+    (extract-distribution *mop-tests-tarball* *mop-tests-mirror*))
+  t)
+
 (defun ensure-fricas ()
   (unless (probe-file *fricas-sandbox*)
     (extract-distribution *fricas-tarball* *fricas-url*)))
@@ -204,15 +236,25 @@
   (delete-everything (merge-pathnames "scratch/" *ansi-tests-sandbox*))
   ;; Run with given image
   (ensure-directories-exist output)
-  (unwind-protect 
-       (progn
-	 (ext:chdir *ansi-tests-sandbox*)
-	 (ext:run-program *test-image*
-			  *test-image-args*
-			  :input (merge-pathnames "doit.lsp" *ansi-tests-sandbox*)
-			  :output output
-			  :error :output))
-    (ext:chdir *here*)))
+  (let* ((input (merge-pathnames "doit.lsp" *ansi-tests-sandbox*))
+	 (tmp (merge-pathnames "ecl-tmp-doit.lsp" *ansi-tests-sandbox*)))
+    (with-open-file (s tmp :direction :output
+		       :if-exists :supersede
+		       :if-does-not-exist :create)
+      (format s "(require :cmp)(pprint (ext:getcwd))(load ~S)#+ecl(quit)"
+	      (namestring input)))
+    (unwind-protect
+	(progn
+	  (ext:chdir *ansi-tests-sandbox*)
+	  (ext:run-program *test-image*
+			   *test-image-args*
+			   :input tmp
+			   :output output
+			   :error :output
+			   :wait t))
+      (when (probe-file tmp)
+	(ignore-errors (delete-file tmp)))
+      (ext:chdir *here*))))
 
 (defun run-regressions-tests (&optional (output (merge-pathnames "regressions.log"
 								 *output-directory*)))
@@ -230,6 +272,42 @@
 			  :output output
 			  :error :output))
     (ext:chdir *here*)))
+
+(defun run-mop-tests (&optional (output (merge-pathnames "mop-features.log"
+							 *output-directory*)))
+  (ensure-mop-tests)
+  ;; Cleanup stray files
+  (cleanup-directory *mop-tests-sandbox*)
+  ;; Create the script we are going to run
+  (let ((mop-script (merge-pathnames "./run-mop-tests.lisp" *mop-tests-sandbox*)))
+    (with-open-file (s mop-script :direction :output
+		       :if-exists :supersede
+		       :if-does-not-exist :create)
+      (pprint '(progn
+		(require :asdf)
+		(load "lw-compat-package")
+		(load "lw-compat")
+		(load "mop-features-packages.lisp")
+		(load "mop-feature-tests.lisp")
+		(handler-case
+		    (progn
+		      (funcall (read-from-string "mop-feature-tests::run-feature-tests"))
+		      (format t "~%~%~%MOP-FEATURE-TESTS: OK"))
+		  (error (error)
+		    (format t "~%~%~%MOP-FEATURE-TESTS: Failed"))))
+	      s))
+    ;; Run with given image
+    (ensure-directories-exist output)
+    (unwind-protect 
+	 (progn
+	   (ext:chdir *mop-tests-sandbox*)
+	   (ext:run-program *test-image*
+			    *test-image-args*
+			    :input mop-script
+			    :output output
+			    :error :output))
+      (ext:chdir *here*))))
+
 
 (defvar *quicklisp-library-list*
   '(trivial-features

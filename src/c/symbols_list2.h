@@ -10,9 +10,9 @@
 # define ECL_NAME(x) NULL
 #endif
 #ifdef ECL_RELATIVE_PACKAGE_NAMES
-# define RELATIVE_PACKAGES_P Ct
+# define RELATIVE_PACKAGES_P ECL_T
 #else
-# define RELATIVE_PACKAGES_P Cnil
+# define RELATIVE_PACKAGES_P ECL_NIL
 #endif
 #ifdef DPP
 #define CLOS_ "CLOS::"
@@ -21,6 +21,7 @@
 #define MP_ "MP::"
 #define KEY_ ":"
 #define GRAY_ "GRAY::"
+#define FFI_ "FFI::"
 typedef struct {
 	const char *name, *translation;
 } cl_symbol_initializer;
@@ -32,6 +33,7 @@ typedef struct {
 #define MP_
 #define KEY_
 #define GRAY_
+#define FFI_
 #endif
 /*
  * Conditional addition of functions and symbols. The list of symbols can
@@ -66,11 +68,6 @@ typedef struct {
 #else
 # define IF_SSE2(x) NULL
 #endif
-#if defined(ECL_SEMAPHORE) && defined(ECL_THREADS)
-# define IF_SEM(x) x
-#else
-# define IF_SEM(x) NULL
-#endif
 #if defined(HAVE_LIBFFI) || defined(ECL_DYNAMIC_FFI)
 # define IF_DFFI(x) x
 #else
@@ -93,6 +90,8 @@ cl_symbols[] = {
 {SYS_ "UNBOUND",NULL},
 #endif
 {SYS_ "PROTECT-TAG",NULL},
+{SYS_ "*RESTART-CLUSTERS*",NULL},
+{SYS_ "*HANDLER-CLUSTERS*",NULL},
 
 /* LISP PACKAGE */
 {"&ALLOW-OTHER-KEYS",NULL},
@@ -170,7 +169,7 @@ cl_symbols[] = {
 {"=","cl_E"},
 {">","cl_G"},
 {">=","cl_GE"},
-{"ABORT",NULL},
+{"ABORT","ECL_NAME(cl_abort)"},
 {"ABS","cl_abs"},
 {"ACONS","cl_acons"},
 {"ACOS","ECL_NAME(cl_acos)"},
@@ -343,7 +342,7 @@ cl_symbols[] = {
 {"COND",NULL},
 {"CONDITION",NULL},
 {"CONJUGATE","cl_conjugate"},
-{"CONTINUE",NULL},
+{"CONTINUE","ECL_NAME(cl_continue)"},
 {"CONS","cl_cons"},
 {"CONSP","cl_consp"},
 {"CONSTANTLY","ECL_NAME(cl_constantly)"},
@@ -392,7 +391,7 @@ cl_symbols[] = {
 {"DELETE-PACKAGE","cl_delete_package"},
 {"DENOMINATOR","cl_denominator"},
 {"DEPOSIT-FIELD","ECL_NAME(cl_deposit_field)"},
-{"DESCRIBE",NULL},
+{"DESCRIBE","ECL_NAME(cl_describe)"},
 {"DESTRUCTURING-BIND",NULL},
 {"DIGIT-CHAR","cl_digit_char"},
 {"DIGIT-CHAR-P","cl_digit_char_p"},
@@ -529,7 +528,7 @@ cl_symbols[] = {
 {"INCF",NULL},
 {"INLINE",NULL},
 {"INPUT-STREAM-P","cl_input_stream_p"},
-{"INSPECT",NULL},
+{"INSPECT","ECL_NAME(cl_inspect)"},
 {"INTEGER",NULL},
 {"INTEGER-DECODE-FLOAT","cl_integer_decode_float"},
 {"INTEGER-LENGTH","cl_integer_length"},
@@ -664,7 +663,7 @@ cl_symbols[] = {
 {"MOST-POSITIVE-LONG-FLOAT",NULL},
 {"MOST-POSITIVE-SHORT-FLOAT",NULL},
 {"MOST-POSITIVE-SINGLE-FLOAT",NULL},
-{"MUFFLE-WARNING",NULL},
+{"MUFFLE-WARNING","ECL_NAME(cl_muffle_warning)"},
 {"MULTIPLE-VALUE-BIND",NULL},
 {"MULTIPLE-VALUE-CALL",NULL},
 {"MULTIPLE-VALUE-LIST",NULL},
@@ -891,7 +890,7 @@ cl_symbols[] = {
 {"STANDARD-CHAR-P","cl_standard_char_p"},
 {"STEP",NULL},
 {"STORAGE-CONDITION",NULL},
-{"STORE-VALUE",NULL},
+{"STORE-VALUE","ECL_NAME(cl_store_value)"},
 {"STREAM",NULL},
 {"STREAM-ELEMENT-TYPE","cl_stream_element_type"},
 {"STREAM-ERROR",NULL},
@@ -986,15 +985,15 @@ cl_symbols[] = {
 {"UPGRADED-COMPLEX-PART-TYPE","ECL_NAME(cl_upgraded_complex_part_type)"},
 {"UPPER-CASE-P","cl_upper_case_p"},
 {"USE-PACKAGE","cl_use_package"},
-{"USE-VALUE",NULL},
+{"USE-VALUE","ECL_NAME(cl_use_value)"},
 {"USER-HOMEDIR-PATHNAME","cl_user_homedir_pathname"},
 {"VALUES","cl_values"},
 {"VALUES-LIST","cl_values_list"},
 {"VARIABLE",NULL},
 {"VECTOR","ECL_NAME(cl_vector)"},
 {"VECTOR-POP","ECL_NAME(cl_vector_pop)"},
-{"VECTOR-PUSH","ECL_NAME(cl_vector_push)"},
-{"VECTOR-PUSH-EXTEND","ECL_NAME(cl_vector_push_extend)"},
+{"VECTOR-PUSH","cl_vector_push"},
+{"VECTOR-PUSH-EXTEND","cl_vector_push_extend"},
 {"VECTORP","cl_vectorp"},
 {"WARN",NULL},
 {"WARNING",NULL},
@@ -1235,7 +1234,7 @@ cl_symbols[] = {
 {SYS_ "ROW-MAJOR-ASET","si_row_major_aset"},
 {EXT_ "RUN-PROGRAM","si_run_program"},
 {SYS_ "WAIT-FOR-ALL-PROCESSES","si_wait_for_all_processes"},
-{EXT_ "SAFE-EVAL","si_safe_eval"},
+{EXT_ "SAFE-EVAL","ECL_NAME(si_safe_eval)"},
 {SYS_ "SCH-FRS-BASE","si_sch_frs_base"},
 {SYS_ "SCHAR-SET","si_char_set"},
 {SYS_ "SHARP-A-READER",NULL},
@@ -1279,7 +1278,6 @@ cl_symbols[] = {
 #else
 {SYS_ "COPY-INSTANCE","si_copy_instance"},
 {SYS_ "GENERIC-FUNCTION-P","si_generic_function_p"},
-{SYS_ "INSTANCE-REF-SAFE","si_instance_ref_safe"},
 {SYS_ "INSTANCE-REF","si_instance_ref"},
 {SYS_ "INSTANCE-SET","si_instance_set"},
 {SYS_ "INSTANCE-SIG","si_instance_sig"},
@@ -1313,6 +1311,8 @@ cl_symbols[] = {
 /* #endif TCP */
 
 {EXT_ "CATCH-SIGNAL","si_catch_signal"},
+{EXT_ "GET-SIGNAL-HANDLER","si_get_signal_handler"},
+{EXT_ "SET-SIGNAL-HANDLER","si_set_signal_handler"},
 
 /* KEYWORD PACKAGE */
 {KEY_ "ADJUSTABLE",NULL},
@@ -1517,26 +1517,6 @@ cl_symbols[] = {
 {KEY_ "UNSIGNED-LONG",NULL},
 {KEY_ "UNSIGNED-LONG-LONG",NULL},
 {KEY_ "UNSIGNED-SHORT",NULL},
-{SYS_ "C-CHAR-BIT",NULL},
-{SYS_ "C-CHAR-MAX",NULL},
-{SYS_ "C-CHAR-MIN",NULL},
-{SYS_ "C-INT-MAX",NULL}, /* See main.d */
-{SYS_ "C-INT-MIN",NULL}, /* See main.d */
-{SYS_ "C-SHORT-MAX",NULL},
-{SYS_ "C-SHORT-MIN",NULL},
-{SYS_ "C-LONG-MAX",NULL}, /* See main.d */
-{SYS_ "C-LONG-MIN",NULL}, /* See main.d */
-{SYS_ "C-LONG-LONG-MAX",NULL}, /* See main.d */
-{SYS_ "C-UCHAR-MAX",NULL},
-{SYS_ "C-UINT-MAX",NULL}, /* See main.d */
-{SYS_ "C-USHORT-MAX",NULL},
-{SYS_ "C-ULONG-MAX",NULL}, /* See main.d */
-{SYS_ "C-ULONG-LONG-MAX",NULL}, /* See main.d */
-#ifdef ecl_long_long_t
-{SYS_ "C-LONG-LONG-BIT",NULL},
-#else
-{SYS_ "C-LONG-LONG-BIT",NULL},
-#endif
 
 #ifdef GBC_BOEHM
 {EXT_ "GC","si_gc"},
@@ -1579,10 +1559,8 @@ cl_symbols[] = {
 {KEY_ "RECURSIVE",NULL},
 {MP_ "RECURSIVE-LOCK-P",IF_MP("mp_recursive_lock_p")},
 {MP_ "LOCK-NAME",IF_MP("mp_lock_name")},
-{MP_ "LOCK-HOLDER",IF_MP("mp_lock_holder")},
+{MP_ "LOCK-OWNER",IF_MP("mp_lock_owner")},
 {MP_ "LOCK-COUNT",IF_MP("mp_lock_count")},
-{MP_ "LOCK-MINE-P",IF_MP("mp_lock_mine_p")},
-{MP_ "LOCK-COUNT-MINE",IF_MP("mp_lock_count_mine")},
 {MP_ "GET-LOCK",IF_MP("mp_get_lock")},
 {MP_ "GIVEUP-LOCK",IF_MP("mp_giveup_lock")},
 {MP_ "MAKE-CONDITION-VARIABLE",IF_MP("mp_make_condition_variable")},
@@ -1609,17 +1587,36 @@ cl_symbols[] = {
 {MP_ "GIVEUP-RWLOCK-WRITE",IF_MP("mp_giveup_rwlock_write")},
 {MP_ "GLOBAL-LOCK",NULL},
 {MP_ "ERROR-LOCK",NULL},
-/* #endif ECL_THREADS */
 
-/* #if defined(ECL_SEMAPHORES) && defined(ECL_THREADS) */
 {MP_ "SEMAPHORE",NULL},
-{MP_ "MAKE-SEMAPHORE",IF_SEM("mp_make_semaphore")},
-{MP_ "SEMAPHORE-WAIT",IF_SEM("mp_semaphore_wait")},
-{MP_ "SEMAPHORE-TRYWAIT",IF_SEM("mp_semaphore_trywait")},
-{MP_ "SEMAPHORE-SIGNAL",IF_SEM("mp_semaphore_signal")},
-{MP_ "SEMAPHORE-CLOSE",IF_SEM("mp_semaphore_close")},
+{MP_ "MAKE-SEMAPHORE",IF_MP("mp_make_semaphore")},
+{MP_ "SIGNAL-SEMAPHORE",IF_MP("mp_signal_semaphore")},
+{MP_ "WAIT-ON-SEMAPHORE",IF_MP("mp_wait_on_semaphore")},
+{MP_ "SEMAPHORE-COUNT",IF_MP("mp_semaphore_count")},
+{MP_ "SEMAPHORE-NAME",IF_MP("mp_semaphore_name")},
+{MP_ "SEMAPHORE-WAIT-COUNT",IF_MP("mp_semaphore_wait_count")},
 {KEY_ "COUNT",NULL},
-/* #endif defined(ECL_SEMAPHORES) && defined(ECL_THREADS) */
+
+{MP_ "BARRIER",NULL},
+{MP_ "MAKE-BARRIER",IF_MP("mp_make_barrier")},
+{MP_ "BARRIER-UNBLOCK",IF_MP("mp_barrier_unblock")},
+{MP_ "BARRIER-WAIT",IF_MP("mp_barrier_wait")},
+{MP_ "BARRIER-COUNT",IF_MP("mp_barrier_count")},
+{MP_ "BARRIER-NAME",IF_MP("mp_barrier_name")},
+{MP_ "BARRIER-ARRIVERS-COUNT",IF_MP("mp_barrier_arrivers_count")},
+{KEY_ "DISABLE",NULL},
+{KEY_ "RESET-COUNT",NULL},
+{KEY_ "KILL-WAITING",NULL},
+{KEY_ "UNBLOCKED",NULL},
+
+{MP_ "MAILBOX",NULL},
+{MP_ "MAKE-MAILBOX",IF_MP("mp_make_mailbox")},
+{MP_ "MAILBOX-NAME",IF_MP("mp_mailbox_name")},
+{MP_ "MAILBOX-COUNT",IF_MP("mp_mailbox_count")},
+{MP_ "MAILBOX-EMPTY-P",IF_MP("mp_mailbox_empty_p")},
+{MP_ "MAILBOX-READ",IF_MP("mp_mailbox_read")},
+{MP_ "MAILBOX-SEND",IF_MP("mp_mailbox_send")},
+/* #endif defined(ECL_THREADS) */
 
 {SYS_ "WHILE",NULL},
 {SYS_ "UNTIL",NULL},
@@ -1681,6 +1678,7 @@ cl_symbols[] = {
 {CLOS_ "GENERIC-FUNCTION-METHODS",NULL},
 {CLOS_ "GENERIC-FUNCTION-NAME",NULL},
 {CLOS_ "INTERN-EQL-SPECIALIZER",NULL},
+{CLOS_ "LOCATION-TABLE",NULL},
 {CLOS_ "MAKE-METHOD-LAMBDA",NULL},
 {CLOS_ "MAP-DEPENDENTS",NULL},
 {CLOS_ "METAOBJECT",NULL},
@@ -1688,6 +1686,7 @@ cl_symbols[] = {
 {CLOS_ "METHOD-GENERIC-FUNCTION",NULL},
 {CLOS_ "METHOD-LAMBDA-LIST",NULL},
 {CLOS_ "METHOD-SPECIALIZERS",NULL},
+{CLOS_ "NAME",NULL},
 {CLOS_ "READER-METHOD-CLASS",NULL},
 {CLOS_ "REMOVE-DEPENDENT",NULL},
 {CLOS_ "REMOVE-DIRECT-METHOD",NULL},
@@ -1717,12 +1716,21 @@ cl_symbols[] = {
 {CLOS_ "STANDARD-READER-METHOD",NULL},
 {CLOS_ "STANDARD-SLOT-DEFINITION",NULL},
 {CLOS_ "STANDARD-WRITER-METHOD",NULL},
+{CLOS_ "STANDARD-OPTIMIZED-READER-METHOD",NULL},
+{CLOS_ "STANDARD-OPTIMIZED-WRITER-METHOD",NULL},
+{CLOS_ "STD-COMPUTE-APPLICABLE-METHODS","ECL_NAME(clos_std_compute_applicable_methods)"},
+{CLOS_ "STD-COMPUTE-APPLICABLE-METHODS-USING-CLASSES",NULL},
+{CLOS_ "STD-COMPUTE-EFFECTIVE-METHOD","ECL_NAME(clos_std_compute_effective_method)"},
+{CLOS_ "COMPUTE-EFFECTIVE-METHOD-FUNCTION","ECL_NAME(clos_compute_effective_method_function)"},
 {CLOS_ "UPDATE-DEPENDENT",NULL},
+{CLOS_ "UPDATE-INSTANCE",NULL},
 {CLOS_ "VALIDATE-SUPERCLASS",NULL},
 {CLOS_ "WRITER-METHOD-CLASS",NULL},
 {SYS_ "CLEAR-GFUN-HASH","si_clear_gfun_hash"},
 {CLOS_ "NEED-TO-MAKE-LOAD-FORM-P","ECL_NAME(clos_need_to_make_load_form_p)"},
 {CLOS_ "LOAD-DEFCLASS","ECL_NAME(clos_load_defclass)"},
+{CLOS_ "DOCSTRING",NULL},
+{CLOS_ "SAFE-INSTANCE-REF","clos_safe_instance_ref"},
 #endif
 
 {SYS_ "CL-FIXNUM-BITS",NULL},
@@ -1849,6 +1857,7 @@ cl_symbols[] = {
 {EXT_ "LISP-STACK",NULL},
 {EXT_ "C-STACK",NULL},
 {EXT_ "HEAP-SIZE",NULL},
+{EXT_ "ILLEGAL-INSTRUCTION",NULL},
 {EXT_ "SET-LIMIT","si_set_limit"},
 {EXT_ "GET-LIMIT","si_get_limit"},
 {EXT_ "SEGMENTATION-VIOLATION",NULL},
@@ -1921,6 +1930,7 @@ cl_symbols[] = {
 
 {KEY_ "SYSV",NULL},
 {KEY_ "UNIX64",NULL},
+{KEY_ "WIN64",NULL},
 
 {EXT_ "WEAK-POINTER",NULL},
 {EXT_ "MAKE-WEAK-POINTER","si_make_weak_pointer"},
@@ -2220,6 +2230,90 @@ cl_symbols[] = {
 
 {EXT_ "TRULY-THE",NULL},
 {EXT_ "CHECKED-VALUE",NULL},
+
+{EXT_ "INSTALL-BYTECODES-COMPILER",NULL},
+{EXT_ "INSTALL-C-COMPILER",NULL},
+
+{FFI_ "C-CHAR-BIT",NULL},
+{FFI_ "C-CHAR-MAX",NULL},
+{FFI_ "C-CHAR-MIN",NULL},
+{FFI_ "C-INT-MAX",NULL}, /* See main.d */
+{FFI_ "C-INT-MIN",NULL}, /* See main.d */
+{FFI_ "C-SHORT-MAX",NULL},
+{FFI_ "C-SHORT-MIN",NULL},
+{FFI_ "C-LONG-MAX",NULL}, /* See main.d */
+{FFI_ "C-LONG-MIN",NULL}, /* See main.d */
+{FFI_ "C-LONG-LONG-MAX",NULL}, /* See main.d */
+{FFI_ "C-UCHAR-MAX",NULL},
+{FFI_ "C-UINT-MAX",NULL}, /* See main.d */
+{FFI_ "C-USHORT-MAX",NULL},
+{FFI_ "C-ULONG-MAX",NULL}, /* See main.d */
+{FFI_ "C-ULONG-LONG-MAX",NULL}, /* See main.d */
+#ifdef ecl_long_long_t
+{FFI_ "C-LONG-LONG-BIT",NULL},
+#else
+{FFI_ "C-LONG-LONG-BIT",NULL},
+#endif
+
+{FFI_ "*USE-DFFI*",NULL},
+{FFI_ "+NULL-CSTRING-POINTER+",NULL},
+{FFI_ "ALLOCATE-FOREIGN-OBJECT",NULL},
+{FFI_ "ALLOCATE-FOREIGN-STRING",NULL},
+{FFI_ "C-INLINE",NULL},
+{FFI_ "CALLBACK",NULL},
+{FFI_ "CHAR*",NULL},
+{FFI_ "CHAR-ARRAY-TO-POINTER",NULL},
+{FFI_ "CLINES",NULL},
+{FFI_ "CONVERT-FROM-CSTRING",NULL},
+{FFI_ "CONVERT-FROM-FOREIGN-STRING",NULL},
+{FFI_ "CONVERT-TO-CSTRING",NULL},
+{FFI_ "CONVERT-TO-FOREIGN-STRING",NULL},
+{FFI_ "DEF-ARRAY",NULL},
+{FFI_ "DEF-ARRAY-POINTER",NULL},
+{FFI_ "DEF-CONSTANT",NULL},
+{FFI_ "DEF-ENUM",NULL},
+{FFI_ "DEF-FOREIGN-TYPE",NULL},
+{FFI_ "DEF-FOREIGN-VAR",NULL},
+{FFI_ "DEF-FUNCTION",NULL},
+{FFI_ "DEF-STRUCT",NULL},
+{FFI_ "DEF-TYPE",NULL},
+{FFI_ "DEF-UNION",NULL},
+{FFI_ "DEFCALLBACK",NULL},
+{FFI_ "DEFCBODY",NULL},
+{FFI_ "DEFENTRY",NULL},
+{FFI_ "DEFINLINE",NULL},
+{FFI_ "DEFLA",NULL},
+{FFI_ "DEREF-ARRAY",NULL},
+{FFI_ "DEREF-POINTER",NULL},
+{FFI_ "DOUBLE",NULL},
+{FFI_ "ENSURE-CHAR-CHARACTER",NULL},
+{FFI_ "ENSURE-CHAR-INTEGER",NULL},
+{FFI_ "ENSURE-CHAR-STORABLE",NULL},
+{FFI_ "FIND-FOREIGN-LIBRARY",NULL},
+{FFI_ "FOREIGN-STRING-LENGTH",NULL},
+{FFI_ "FREE-CSTRING",NULL},
+{FFI_ "FREE-FOREIGN-OBJECT",NULL},
+{FFI_ "GET-SLOT-POINTER",NULL},
+{FFI_ "GET-SLOT-VALUE",NULL},
+{FFI_ "INT",NULL},
+{FFI_ "LOAD-FOREIGN-LIBRARY",NULL},
+{FFI_ "MAKE-NULL-POINTER",NULL},
+{FFI_ "MAKE-POINTER",NULL},
+{FFI_ "NULL-CHAR-P",NULL},
+{FFI_ "OBJECT",NULL},
+{FFI_ "POINTER-ADDRESS",NULL},
+{FFI_ "SIZE-OF-FOREIGN-TYPE",NULL},
+{FFI_ "VOID",NULL},
+{FFI_ "WITH-CAST-POINTER",NULL},
+{FFI_ "WITH-CSTRING",NULL},
+{FFI_ "WITH-CSTRINGS",NULL},
+{FFI_ "WITH-FOREIGN-OBJECT",NULL},
+{FFI_ "WITH-FOREIGN-OBJECTS",NULL},
+{FFI_ "WITH-FOREIGN-STRING",NULL},
+{FFI_ "WITH-FOREIGN-STRINGS",NULL},
+
+{SYS_ "BIND-SIMPLE-RESTARTS","ECL_NAME(si_bind_simple_restarts)"},
+{SYS_ "BIND-SIMPLE-HANDLERS","ECL_NAME(si_bind_simple_handlers)"},
 
 /* Tag for end of list */
 {NULL,NULL}};

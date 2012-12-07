@@ -14,13 +14,17 @@
     See file '../Copyright' for full details.
 */
 
+#ifndef __CYGWIN__
+/* Recent versions of cygwin do not define fd_set when WINSOCKAPI is
+ * defined */
 #define _WINSOCKAPI_
+#endif /* __CYGWIN__ */
 #include <ecl/ecl.h>
 #include <math.h> /* for inline mathematics */
 #include <ecl/ecl-inl.h>
 
 #define TRAMPOLINK(narg, vv, lk, cblock) \
-	cl_va_list args; cl_va_start(args, narg, narg, 0); \
+	ecl_va_list args; ecl_va_start(args, narg, narg, 0); \
 	return(_ecl_link_call(vv, (cl_objectfn *)lk, cblock, narg, args))
 
 enum ecl_locative_type {
@@ -41,3 +45,6 @@ struct ecl_var_debug_info {
         const char *name;
         uint8_t type;
 };
+
+#define	_ecl_check_narg(n) \
+	do { if (ecl_unlikely(narg != (n))) FEwrong_num_arguments_anonym();} while(0)

@@ -165,14 +165,17 @@
       (apply dispatch form args))))
 
 (defun c2expr* (form)
-  (let* ((*exit* (next-label))
-	 (*unwind-exit* (cons *exit* *unwind-exit*))
-	 ;;(*lex* *lex*)
-	 (*lcl* *lcl*)
-	 (*temp* *temp*))
-    (c2expr form)
-    (wt-label *exit*))
-  )
+  ;; C2EXPR* compiles the giving expression in a context in which
+  ;; other expressions will follow this one. We must thus create
+  ;; a possible label so that the compiled forms exit right at
+  ;; the point where the next form will be compiled.
+  (with-exit-label (label)
+    (let* ((*exit* label)
+	   (*unwind-exit* (cons *exit* *unwind-exit*))
+	   ;;(*lex* *lex*)
+	   (*lcl* *lcl*)
+	   (*temp* *temp*))
+      (c2expr form))))
 
 (defun c1with-backend (forms)
   (c1progn (loop for tag = (pop forms)

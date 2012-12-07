@@ -21,7 +21,7 @@
 static cl_object
 ecl_negate_fix(cl_object x)
 {
-        return ecl_make_integer(-fix(x));
+        return ecl_make_integer(-ecl_fixnum(x));
 }
 
 static cl_object
@@ -39,20 +39,20 @@ ecl_negate_ratio(cl_object x)
 static cl_object
 ecl_negate_single_float(cl_object x)
 {
-        return ecl_make_singlefloat(-sf(x));
+        return ecl_make_single_float(-ecl_single_float(x));
 }
 
 static cl_object
 ecl_negate_double_float(cl_object x)
 {
-        return ecl_make_doublefloat(-df(x));
+        return ecl_make_double_float(-ecl_double_float(x));
 }
 
 #ifdef ECL_LONG_FLOAT
 static cl_object
 ecl_negate_long_float(cl_object x)
 {
-        return ecl_make_longfloat(-ecl_long_float(x));
+        return ecl_make_long_float(-ecl_long_float(x));
 }
 #endif
 

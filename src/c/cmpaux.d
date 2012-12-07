@@ -22,7 +22,7 @@
 cl_object
 si_specialp(cl_object sym)
 {
-	@(return ((ecl_symbol_type(sym) & stp_special)? Ct : Cnil))
+	@(return ((ecl_symbol_type(sym) & ecl_stp_special)? ECL_T : ECL_NIL))
 }
 
 cl_fixnum
@@ -57,11 +57,11 @@ ecl_imod(cl_fixnum x, cl_fixnum y)
 char
 ecl_to_char(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
-		return fix(x);
+		return ecl_fixnum(x);
 	case t_character:
-		return CHAR_CODE(x);
+		return ECL_CHAR_CODE(x);
 	default:
 		FEerror("~S cannot be coerced to a C char.", 1, x);
 	}
@@ -70,17 +70,17 @@ ecl_to_char(cl_object x)
 cl_fixnum
 ecl_to_fixnum(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 	case t_bignum:
 		return fixint(x);
-/*	case t_character: return (cl_fixnum)CHAR_CODE(x); */
+/*	case t_character: return (cl_fixnum)ECL_CHAR_CODE(x); */
 	case t_ratio:
 		return (cl_fixnum)ecl_to_double(x);
 	case t_singlefloat:
-		return (cl_fixnum)sf(x);
+		return (cl_fixnum)ecl_single_float(x);
 	case t_doublefloat:
-		return (cl_fixnum)df(x);
+		return (cl_fixnum)ecl_double_float(x);
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
 		return (cl_fixnum)ecl_long_float(x);
@@ -93,46 +93,22 @@ ecl_to_fixnum(cl_object x)
 cl_index
 ecl_to_unsigned_integer(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 	case t_bignum:
 		return fixnnint(x);
 	case t_ratio:
 		return (cl_index)ecl_to_double(x);
 	case t_singlefloat:
-		return (cl_index)sf(x);
+		return (cl_index)ecl_single_float(x);
 	case t_doublefloat:
-		return (cl_index)df(x);
+		return (cl_index)ecl_double_float(x);
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
 		return (cl_index)ecl_long_float(x);
 #endif
 	default:
 		FEerror("~S cannot be coerced to a C unsigned int.", 1, x);
-	}
-}
-
-float
-ecl_to_float(cl_object x)
-{
-	if (FIXNUMP(x)) return(fix(x));	/* Immediate fixnum */
-
-	switch (type_of(x)) {
-/*	case t_fixnum: return fix(x);	*/
-/*	case t_character: return CHAR_CODE(x); */
-	case t_bignum:
-	case t_ratio:
-		return ecl_to_double(x);
-	case t_singlefloat:
-		return sf(x);
-	case t_doublefloat:
-		return df(x);
-#ifdef ECL_LONG_FLOAT
-	case t_longfloat:
-		return ecl_long_float(x);
-#endif
-	default:
-                FEwrong_type_nth_arg(@[coerce], 1, x, @[real]);
 	}
 }
 
@@ -176,21 +152,22 @@ cl_return_from(cl_object block_id, cl_object block_name)
 void
 cl_go(cl_object tag_id, cl_object label)
 {
+	const cl_env_ptr the_env = ecl_process_env();
 	ecl_frame_ptr fr = frs_sch(tag_id);
 	if (fr == NULL)
 		FEcontrol_error("GO: The tagbody ~S is missing.", 1, tag_id);
-	VALUES(0)=label;
-	NVALUES=1;
-	ecl_unwind(ecl_process_env(), fr);
+	the_env->values[0] = label;
+	the_env->nvalues = 1;
+	ecl_unwind(the_env, fr);
 }
 
 cl_object
-cl_grab_rest_args(cl_va_list args)
+cl_grab_rest_args(ecl_va_list args)
 {
-	cl_object rest = Cnil;
+	cl_object rest = ECL_NIL;
 	cl_object *r = &rest;
 	while (args[0].narg) {
-		*r = ecl_list1(cl_va_arg(args));
+		*r = ecl_list1(ecl_va_arg(args));
 		r = &ECL_CONS_CDR(*r);
 	}
 	return rest;
@@ -198,7 +175,7 @@ cl_grab_rest_args(cl_va_list args)
 
 void
 cl_parse_key(
-     cl_va_list args,		/* actual args */
+     ecl_va_list args,		/* actual args */
      int nkey,			/* number of keywords */
      cl_object *keys,		/* keywords for the function */
      cl_object *vars,		/* where to put values (vars[0..nkey-1])
@@ -210,16 +187,16 @@ cl_parse_key(
 	cl_object supplied_allow_other_keys = OBJNULL;
 	cl_object unknown_keyword = OBJNULL;
 
-	if (rest != NULL) *rest = Cnil;
+	if (rest != NULL) *rest = ECL_NIL;
 
 	for (i = 0; i < 2*nkey; i++)
-		vars[i] = Cnil;             /* default values: NIL, supplied: NIL */
+		vars[i] = ECL_NIL;             /* default values: NIL, supplied: NIL */
 	if (args[0].narg <= 0) return;
 
 	for (; args[0].narg > 1; ) {
-		cl_object keyword = cl_va_arg(args);
-		cl_object value = cl_va_arg(args);
-		if (ecl_unlikely(!SYMBOLP(keyword)))
+		cl_object keyword = ecl_va_arg(args);
+		cl_object value = ecl_va_arg(args);
+		if (ecl_unlikely(!ECL_SYMBOLP(keyword)))
 			FEprogram_error_noreturn("LAMBDA: Keyword expected, got ~S.",
                                                  1, keyword);
 		if (rest != NULL) {
@@ -228,9 +205,9 @@ cl_parse_key(
 		}
 		for (i = 0; i < nkey; i++) {
 			if (keys[i] == keyword) {
-				if (vars[nkey+i] == Cnil) {
+				if (vars[nkey+i] == ECL_NIL) {
 					vars[i] = value;
-					vars[nkey+i] = Ct;
+					vars[nkey+i] = ECL_T;
 				}
 				goto goon;
 			}
@@ -246,7 +223,7 @@ cl_parse_key(
 	if (ecl_unlikely(args[0].narg != 0))
 		FEprogram_error_noreturn("Odd number of keys", 0);
 	if (ecl_unlikely(unknown_keyword != OBJNULL && !allow_other_keys &&
-                         (supplied_allow_other_keys == Cnil ||
+                         (supplied_allow_other_keys == ECL_NIL ||
                           supplied_allow_other_keys == OBJNULL)))
 		FEprogram_error("Unknown keyword ~S", 1, unknown_keyword);
 }

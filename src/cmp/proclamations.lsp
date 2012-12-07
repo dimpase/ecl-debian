@@ -260,6 +260,9 @@
 (proclamation si::etypecase-error (t t) t)
 (proclamation si::do-check-type (t t t t) t)
 
+(proclamation si::dm-too-many-arguments (t) t)
+(proclamation si::dm-too-few-arguments (t) t)
+
 ;;;
 ;;; 7. OBJECTS
 ;;;
@@ -284,6 +287,19 @@
 
 ;; Slot accessors:
 ; (proclamation unbound-slot-instance (condition) si::instance :predicate)
+
+#+clos
+(proclamation clos::standard-instance-get (ext:instance t) t)
+#+clos
+(proclamation clos::standard-instance-set (t ext:instance t) t)
+#+clos
+(proclamation clos:std-compute-applicable-methods (generic-function list) list)
+#+clos
+(proclamation clos:std-compute-effective-method (generic-function method-combination list) function)
+#+clos
+(proclamation clos:compute-effective-method-function (generic-function method-combination list) function)
+#+clos
+(proclamation clos::update-instance (ext:instance) (values))
 
 ;;;
 ;;; 8. STRUCTURES
@@ -337,6 +353,8 @@
 
 ;; ECL extensions
 (proclamation ext:catch-signal (fixnum gen-bool &key) null)
+(proclamation si:bind-simple-restarts (t t) list)
+(proclamation si:bind-simple-handlers (t t) list)
 
 ;;;
 ;;; 10. SYMBOLS
@@ -872,7 +890,7 @@
               sequence :no-side-effects)
 (proclamation map (type-specifier function-designator sequence &rest sequence)
               sequence)
-(proclamation map-into (sequence function-designator sequence &rest sequence)
+(proclamation map-into (sequence function-designator &rest sequence)
               sequence)
 (proclamation reduce (function-designator sequence &key) t)
 (proclamation count (t sequence &key) sequence-index)
@@ -1304,7 +1322,7 @@
 #+clos
 (proclamation si:allocate-raw-instance (t t fixnum) ext:instance)
 #+clos
-(proclamation si:instance-ref-safe (t fixnum) t)
+(proclamation clos:safe-instance-ref (t fixnum) t)
 #+clos
 (proclamation si:instance-ref (t fixnum) t :reader)
 #+clos

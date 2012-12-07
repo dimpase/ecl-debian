@@ -25,9 +25,7 @@
 #include <ecl/internal.h>
 #include "newhash.h"
 
-static void corrupted_hash(cl_object hashtable) /*__attribute__((noreturn))*/;
-
-#define SYMBOL_NAME(x) (Null(x)? Cnil_symbol->symbol.name : (x)->symbol.name)
+#define SYMBOL_NAME(x) (Null(x)? ECL_NIL_SYMBOL->symbol.name : (x)->symbol.name)
 
 static void ECL_INLINE
 assert_type_hash_table(cl_object function, cl_narg narg, cl_object p)
@@ -36,26 +34,21 @@ assert_type_hash_table(cl_object function, cl_narg narg, cl_object p)
 		FEwrong_type_nth_arg(function, narg, p, @[hash-table]);
 }
 
-static void
-corrupted_hash(cl_object hashtable)
-{
-	FEerror("internal error, corrupted hashtable ~S", 1, hashtable);
-}
-
 static cl_hashkey
 _hash_eql(cl_hashkey h, cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_bignum:
-		return hash_string(h, (unsigned char*)x->big.big_limbs,
-				   labs(x->big.big_size) * sizeof(mp_limb_t));
+		return hash_string(h, (unsigned char*)ECL_BIGNUM_LIMBS(x),
+				   labs(ECL_BIGNUM_SIZE(x)) *
+				   sizeof(mp_limb_t));
 	case t_ratio:
 		h = _hash_eql(h, x->ratio.num);
 		return _hash_eql(h, x->ratio.den);
 	case t_singlefloat:
-		return hash_string(h, (unsigned char*)&sf(x), sizeof(sf(x)));
+		return hash_string(h, (unsigned char*)&ecl_single_float(x), sizeof(ecl_single_float(x)));
 	case t_doublefloat:
-		return hash_string(h, (unsigned char*)&df(x), sizeof(df(x)));
+		return hash_string(h, (unsigned char*)&ecl_double_float(x), sizeof(ecl_double_float(x)));
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
                 /* We coerce to double because long double has extra bits
@@ -71,7 +64,7 @@ _hash_eql(cl_hashkey h, cl_object x)
 		h = _hash_eql(h, x->complex.real);
 		return _hash_eql(h, x->complex.imag);
 	case t_character:
-		return hash_word(h, CHAR_CODE(x));
+		return hash_word(h, ECL_CHAR_CODE(x));
 #ifdef ECL_SSE2
 	case t_sse_pack:
 		return hash_string(h, x->sse.data.b8, 16);
@@ -84,10 +77,10 @@ _hash_eql(cl_hashkey h, cl_object x)
 static cl_hashkey
 _hash_equal(int depth, cl_hashkey h, cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_list:
 		if (Null(x)) {
-			return _hash_equal(depth, h, Cnil_symbol->symbol.name);
+			return _hash_equal(depth, h, ECL_NIL_SYMBOL->symbol.name);
 		}
 		if (--depth == 0) {
 			return h;
@@ -126,12 +119,12 @@ _hash_equal(int depth, cl_hashkey h, cl_object x)
 		return _hash_equal(0, h, x->random.value);
 #ifdef ECL_SIGNED_ZERO
 	case t_singlefloat: {
-		float f = sf(x);
+		float f = ecl_single_float(x);
 		if (f == 0.0) f = 0.0;
 		return hash_string(h, (unsigned char*)&f, sizeof(f));
 	}
 	case t_doublefloat: {
-		double f = df(x);
+		double f = ecl_double_float(x);
 		if (f == 0.0) f = 0.0;
 		return hash_string(h, (unsigned char*)&f, sizeof(f));
 	}
@@ -161,12 +154,12 @@ static cl_hashkey
 _hash_equalp(int depth, cl_hashkey h, cl_object x)
 {
 	cl_index i, len;
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_character:
-		return hash_word(h, ecl_char_upcase(CHAR_CODE(x)));
+		return hash_word(h, ecl_char_upcase(ECL_CHAR_CODE(x)));
 	case t_list:
 		if (Null(x)) {
-			return _hash_equalp(depth, h, Cnil_symbol->symbol.name);
+			return _hash_equalp(depth, h, ECL_NIL_SYMBOL->symbol.name);
 		}
 		if (--depth == 0) {
 			return h;
@@ -191,13 +184,13 @@ _hash_equalp(int depth, cl_hashkey h, cl_object x)
 		}
 		return h;
 	case t_fixnum:
-		return hash_word(h, fix(x));
+		return hash_word(h, ecl_fixnum(x));
 	case t_singlefloat:
 		/* FIXME! We should be more precise here! */
-		return hash_word(h, (cl_index)sf(x));
+		return hash_word(h, (cl_index)ecl_single_float(x));
 	case t_doublefloat:
 		/* FIXME! We should be more precise here! */
-		return hash_word(h, (cl_index)df(x));
+		return hash_word(h, (cl_index)ecl_double_float(x));
 	case t_bignum:
 		/* FIXME! We should be more precise here! */
 	case t_ratio:
@@ -295,7 +288,7 @@ _ecl_remhash_eq(cl_object key, cl_object hashtable)
 		return 0;
 	} else {
 		e->key = OBJNULL;
-		e->value = Cnil;
+		e->value = ECL_NIL;
 		hashtable->hash.entries--;
 		return 1;
 	}
@@ -340,7 +333,7 @@ _ecl_remhash_eql(cl_object key, cl_object hashtable)
 		return 0;
 	} else {
 		e->key = OBJNULL;
-		e->value = Cnil;
+		e->value = ECL_NIL;
 		hashtable->hash.entries--;
 		return 1;
 	}
@@ -379,7 +372,7 @@ _ecl_remhash_equal(cl_object key, cl_object hashtable)
 		return 0;
 	} else {
 		e->key = OBJNULL;
-		e->value = Cnil;
+		e->value = ECL_NIL;
 		hashtable->hash.entries--;
 		return 1;
 	}
@@ -418,7 +411,7 @@ _ecl_remhash_equalp(cl_object key, cl_object hashtable)
 		return 0;
 	} else {
 		e->key = OBJNULL;
-		e->value = Cnil;
+		e->value = ECL_NIL;
 		hashtable->hash.entries--;
 		return 1;
 	}
@@ -431,7 +424,7 @@ _ecl_remhash_equalp(cl_object key, cl_object hashtable)
 static struct ecl_hashtable_entry *
 _ecl_hash_loop_pack(cl_hashkey h, cl_object key, cl_object hashtable)
 {
-        cl_object ho = MAKE_FIXNUM(h & 0xFFFFFFF);
+        cl_object ho = ecl_make_fixnum(h & 0xFFFFFFF);
         HASH_TABLE_LOOP(hkey, hvalue, h, (ho==hkey) && ecl_string_eq(key,SYMBOL_NAME(hvalue)));
 }
 
@@ -446,7 +439,7 @@ _ecl_gethash_pack(cl_object key, cl_object hashtable, cl_object def)
 static cl_object
 _ecl_sethash_pack(cl_object key, cl_object hashtable, cl_object value)
 {
-	HASH_TABLE_SET(h, _ecl_hash_loop_pack, _hash_equal(3, 0, key), MAKE_FIXNUM(h & 0xFFFFFFF));
+	HASH_TABLE_SET(h, _ecl_hash_loop_pack, _hash_equal(3, 0, key), ecl_make_fixnum(h & 0xFFFFFFF));
 }
 
 static bool
@@ -458,7 +451,7 @@ _ecl_remhash_pack(cl_object key, cl_object hashtable)
 		return 0;
 	} else {
 		e->key = OBJNULL;
-		e->value = Cnil;
+		e->value = ECL_NIL;
 		hashtable->hash.entries--;
 		return 1;
 	}
@@ -475,10 +468,10 @@ _ecl_remhash_pack(cl_object key, cl_object hashtable)
 static cl_hashkey
 _ecl_hash_key(cl_object h, cl_object o) {
 	switch (h->hash.test) {
-	case htt_eq: return _hash_eq(o);
-	case htt_eql: return _hash_eql(0, o);
-	case htt_equal: return _hash_equal(3, 0, o);
-	case htt_equalp:
+	case ecl_htt_eq: return _hash_eq(o);
+	case ecl_htt_eql: return _hash_eql(0, o);
+	case ecl_htt_equal: return _hash_equal(3, 0, o);
+	case ecl_htt_equalp:
 	default: return _hash_equalp(3, 0, o);
 	}
 }
@@ -509,32 +502,31 @@ copy_entry(struct ecl_hashtable_entry *e, cl_object h)
 	} else {
 		struct ecl_hashtable_entry output = *e;
 		switch (h->hash.weak) {
-		case htt_weak_key:
+		case ecl_htt_weak_key:
 			if (GC_call_with_alloc_lock(normalize_weak_key_entry,
 						    &output)) {
 				return output;
 			}
 			break;
-		case htt_weak_value:
+		case ecl_htt_weak_value:
 			if (GC_call_with_alloc_lock(normalize_weak_value_entry,
 						    &output)) {
 				return output;
 			}
 			break;
-		case htt_weak_key_and_value:
+		case ecl_htt_weak_key_and_value:
 			if (GC_call_with_alloc_lock(normalize_weak_key_and_value_entry,
 						    &output)) {
 				return output;
 			}
 			break;
-		case htt_not_weak:
+		case ecl_htt_not_weak:
 		default:
 			return output;
 		}
 		h->hash.entries--;
 		output.key = OBJNULL;
-		output.value = Cnil;
-		h->hash.entries--;
+		output.value = ECL_NIL;
 		return *e = output;
 	}
 }
@@ -547,17 +539,15 @@ _ecl_weak_hash_loop(cl_hashkey h, cl_object key, cl_object hashtable,
         cl_index i = h % hsize, j = hsize, k;
 	for (k = 0; k < hsize;  i = (i + 1) % hsize, k++) {
 		struct ecl_hashtable_entry *p = hashtable->hash.data + i;
-		struct ecl_hashtable_entry e = copy_entry(p, hashtable);
+		struct ecl_hashtable_entry e = *aux = copy_entry(p, hashtable);
 		if (e.key == OBJNULL) {
 			if (e.value == OBJNULL) {
 				if (j == hsize) {
-					*aux = e;
 					return p;
 				} else {
 					return hashtable->hash.data + j;
 				}
 			} else {
-				*aux = e;
 				if (j == hsize) {
 					j = i;
 				} else if (j == i) {
@@ -567,13 +557,13 @@ _ecl_weak_hash_loop(cl_hashkey h, cl_object key, cl_object hashtable,
 			continue;
 		}
 		switch (hashtable->hash.test) {
-		case htt_eq:
+		case ecl_htt_eq:
 			if (e.key == key) return p;
-		case htt_eql:
+		case ecl_htt_eql:
 			if (ecl_eql(e.key, key)) return p;
-		case htt_equal:
+		case ecl_htt_equal:
 			if (ecl_equal(e.key, key)) return p;
-		case htt_equalp:
+		case ecl_htt_equalp:
 			if (ecl_equalp(e.key, key)) return p;
 		}
 	}
@@ -609,13 +599,13 @@ _ecl_sethash_weak(cl_object key, cl_object hashtable, cl_object value)
 		}
 		hashtable->hash.entries = i;
 		switch (hashtable->hash.weak) {
-		case htt_weak_key:
+		case ecl_htt_weak_key:
 			key = si_make_weak_pointer(key);
 			break;
-		case htt_weak_value:
+		case ecl_htt_weak_value:
 			value = si_make_weak_pointer(value);
 			break;
-		case htt_weak_key_and_value:
+		case ecl_htt_weak_key_and_value:
 		default:
 			key = si_make_weak_pointer(key);
 			value = si_make_weak_pointer(value);
@@ -638,7 +628,7 @@ _ecl_remhash_weak(cl_object key, cl_object hashtable)
 	if (aux->key != OBJNULL) {
 		hashtable->hash.entries--;
 		e->key = OBJNULL;
-		e->value = Cnil;
+		e->value = ECL_NIL;
 		return 1;
 	} else {
 		return 0;
@@ -690,21 +680,21 @@ ecl_extend_hashtable(cl_object hashtable)
 	old_size = hashtable->hash.size;
 	/* We do the computation with lisp datatypes, just in case the sizes contain
 	 * weird numbers */
-	if (FIXNUMP(hashtable->hash.rehash_size)) {
+	if (ECL_FIXNUMP(hashtable->hash.rehash_size)) {
 		new_size_obj = ecl_plus(hashtable->hash.rehash_size,
-					MAKE_FIXNUM(old_size));
+					ecl_make_fixnum(old_size));
 	} else {
 		new_size_obj = ecl_times(hashtable->hash.rehash_size,
-					 MAKE_FIXNUM(old_size));
+					 ecl_make_fixnum(old_size));
 		new_size_obj = ecl_ceiling1(new_size_obj);
 	}
-	if (!FIXNUMP(new_size_obj)) {
+	if (!ECL_FIXNUMP(new_size_obj)) {
 		/* New size is too large */
 		new_size = old_size * 2;
 	} else {
-		new_size = fix(new_size_obj);
+		new_size = ecl_fixnum(new_size_obj);
 	}
-        if (hashtable->hash.test == htt_pack) {
+        if (hashtable->hash.test == ecl_htt_pack) {
                 new = ecl_alloc_object(t_hashtable);
                 new->hash = hashtable->hash;
                 old = hashtable;
@@ -727,7 +717,7 @@ ecl_extend_hashtable(cl_object hashtable)
 		struct ecl_hashtable_entry e =
 			copy_entry(old->hash.data + i, old);
 		if (e.key != OBJNULL) {
-			new = new->hash.set(new->hash.test == htt_pack?
+			new = new->hash.set(new->hash.test == ecl_htt_pack?
 					    SYMBOL_NAME(e.value) : e.key,
 					    new, e.value);
 		}
@@ -736,8 +726,8 @@ ecl_extend_hashtable(cl_object hashtable)
 }
 
 @(defun make_hash_table (&key (test @'eql')
-			      (weakness Cnil)
-			      (size MAKE_FIXNUM(1024))
+			      (weakness ECL_NIL)
+			      (size ecl_make_fixnum(1024))
                               (rehash_size cl_core.rehash_size)
 			      (rehash_threshold cl_core.rehash_threshold))
 @
@@ -746,16 +736,16 @@ ecl_extend_hashtable(cl_object hashtable)
 #ifdef ECL_WEAK_HASH
 	if (!Null(weakness)) {
 		if (weakness == @':key') {
-			hash->hash.weak = htt_weak_key;
+			hash->hash.weak = ecl_htt_weak_key;
 		} else if (weakness == @':value') {
-			hash->hash.weak = htt_weak_value;
+			hash->hash.weak = ecl_htt_weak_value;
 		} else if (weakness == @':key-and-value') {
-			hash->hash.weak = htt_weak_key_and_value;
+			hash->hash.weak = ecl_htt_weak_key_and_value;
 		} else {
 			FEwrong_type_key_arg(@[make-hash-table],
 					     @[:weakness],
 					     cl_list(5, @'member',
-						     Cnil, @':key', @':value',
+						     ECL_NIL, @':key', @':value',
 						     @':key-and-value'),
 					     weakness);
 		}
@@ -799,28 +789,28 @@ cl__make_hash_table(cl_object test, cl_object size, cl_object rehash_size,
 	/*
 	 * Argument checking
 	 */
-	if (test == @'eq' || test == SYM_FUN(@'eq')) {
-		htt = htt_eq;
+	if (test == @'eq' || test == ECL_SYM_FUN(@'eq')) {
+		htt = ecl_htt_eq;
 		get = _ecl_gethash_eq;
 		set = _ecl_sethash_eq;
 		rem = _ecl_remhash_eq;
-	} else if (test == @'eql' || test == SYM_FUN(@'eql')) {
-		htt = htt_eql;
+	} else if (test == @'eql' || test == ECL_SYM_FUN(@'eql')) {
+		htt = ecl_htt_eql;
 		get = _ecl_gethash_eql;
 		set = _ecl_sethash_eql;
 		rem = _ecl_remhash_eql;
-	} else if (test == @'equal' || test == SYM_FUN(@'equal')) {
-		htt = htt_equal;
+	} else if (test == @'equal' || test == ECL_SYM_FUN(@'equal')) {
+		htt = ecl_htt_equal;
 		get = _ecl_gethash_equal;
 		set = _ecl_sethash_equal;
 		rem = _ecl_remhash_equal;
-	} else if (test == @'equalp' || test == SYM_FUN(@'equalp')) {
-		htt = htt_equalp;
+	} else if (test == @'equalp' || test == ECL_SYM_FUN(@'equalp')) {
+		htt = ecl_htt_equalp;
 		get = _ecl_gethash_equalp;
 		set = _ecl_sethash_equalp;
 		rem = _ecl_remhash_equalp;
 	} else if (test == @'package') {
-		htt = htt_pack;
+		htt = ecl_htt_pack;
 		get = _ecl_gethash_pack;
 		set = _ecl_sethash_pack;
 		rem = _ecl_remhash_pack;
@@ -830,12 +820,12 @@ cl__make_hash_table(cl_object test, cl_object size, cl_object rehash_size,
 	}
         if (ecl_unlikely(!ECL_FIXNUMP(size) ||
                          ecl_fixnum_minusp(size) ||
-                         ecl_fixnum_geq(size,MAKE_FIXNUM(ATOTLIM)))) {
+                         ecl_fixnum_geq(size,ecl_make_fixnum(ECL_ARRAY_TOTAL_LIMIT)))) {
             FEwrong_type_key_arg(@[make-hash-table], @[:size], size,
-                                 ecl_make_integer_type(MAKE_FIXNUM(0),
-                                                       MAKE_FIXNUM(ATOTLIM)));
+                                 ecl_make_integer_type(ecl_make_fixnum(0),
+                                                       ecl_make_fixnum(ECL_ARRAY_TOTAL_LIMIT)));
         }
-        hsize = fix(size);
+        hsize = ecl_fixnum(size);
 	if (hsize < 16) {
 		hsize = 16;
 	}
@@ -849,17 +839,17 @@ cl__make_hash_table(cl_object test, cl_object size, cl_object rehash_size,
 		goto AGAIN;
 	}
 	if (floatp(rehash_size)) {
-		if (ecl_number_compare(rehash_size, MAKE_FIXNUM(1)) < 0 ||
+		if (ecl_number_compare(rehash_size, ecl_make_fixnum(1)) < 0 ||
 		    ecl_minusp(rehash_size)) {
 			goto ERROR1;
 		}
-		rehash_size = ecl_make_doublefloat(ecl_to_double(rehash_size));
-	} else if (!FIXNUMP(rehash_size)) {
+		rehash_size = ecl_make_double_float(ecl_to_double(rehash_size));
+	} else if (!ECL_FIXNUMP(rehash_size)) {
 		goto ERROR1;
 	}
 	while (!ecl_numberp(rehash_threshold) ||
 	       ecl_minusp(rehash_threshold) ||
-	       ecl_number_compare(rehash_threshold, MAKE_FIXNUM(1)) > 0)
+	       ecl_number_compare(rehash_threshold, ecl_make_fixnum(1)) > 0)
 	{
 		rehash_threshold =
 			ecl_type_error(@'make-hash-table',"rehash-threshold",
@@ -871,7 +861,7 @@ cl__make_hash_table(cl_object test, cl_object size, cl_object rehash_size,
 	 */
 	h = ecl_alloc_object(t_hashtable);
 	h->hash.test = htt;
-	h->hash.weak = htt_not_weak;
+	h->hash.weak = ecl_htt_not_weak;
 	h->hash.get = get;
 	h->hash.set = set;
 	h->hash.rem = rem;
@@ -892,34 +882,34 @@ cl__make_hash_table(cl_object test, cl_object size, cl_object rehash_size,
 cl_object
 cl_hash_table_p(cl_object ht)
 {
-	@(return (ECL_HASH_TABLE_P(ht) ? Ct : Cnil))
+	@(return (ECL_HASH_TABLE_P(ht) ? ECL_T : ECL_NIL))
 }
 
 cl_object
 si_hash_table_weakness(cl_object ht)
 {
-	cl_object output = Cnil;
+	cl_object output = ECL_NIL;
 #ifdef ECL_WEAK_HASH
 	switch (ht->hash.weak) {
-	case htt_weak_key: output = @':key'; break;
-	case htt_weak_value: output = @':value'; break;
-	case htt_weak_key_and_value: output = @':key-and-value'; break;
-	case htt_not_weak: default: output = Cnil; break;
+	case ecl_htt_weak_key: output = @':key'; break;
+	case ecl_htt_weak_value: output = @':value'; break;
+	case ecl_htt_weak_key_and_value: output = @':key-and-value'; break;
+	case ecl_htt_not_weak: default: output = ECL_NIL; break;
 	}
 #endif
 	@(return output)
 }
 
-@(defun gethash (key ht &optional (no_value Cnil))
+@(defun gethash (key ht &optional (no_value ECL_NIL))
 @
 {
 	assert_type_hash_table(@[gethash], 2, ht);
 	{
 		cl_object v = ht->hash.get(key, ht, OBJNULL);
 		if (v != OBJNULL) {
-			@(return v Ct);
+			@(return v ECL_T);
 		} else {
-			@(return no_value Cnil);
+			@(return no_value ECL_NIL);
 		}
 	}
 }
@@ -944,7 +934,7 @@ cl_object
 cl_remhash(cl_object key, cl_object ht)
 {
 	/* INV: _ecl_remhash() checks the type of hashtable */
-	@(return (ecl_remhash(key, ht)? Ct : Cnil));
+	@(return (ecl_remhash(key, ht)? ECL_T : ECL_NIL));
 }
 
 cl_object
@@ -963,11 +953,11 @@ cl_hash_table_test(cl_object ht)
 	cl_object output;
 	assert_type_hash_table(@[hash-table-test], 1, ht);
 	switch(ht->hash.test) {
-	    case htt_eq: output = @'eq'; break;
-	    case htt_eql: output = @'eql'; break;
-	    case htt_equal: output = @'equal'; break;
-	    case htt_equalp: output = @'equalp'; break;
-	    case htt_pack:
+	    case ecl_htt_eq: output = @'eq'; break;
+	    case ecl_htt_eql: output = @'eql'; break;
+	    case ecl_htt_equal: output = @'equal'; break;
+	    case ecl_htt_equalp: output = @'equalp'; break;
+	    case ecl_htt_pack:
 	    default: output = @'equal';
 	}
 	@(return output)
@@ -977,14 +967,14 @@ cl_object
 cl_hash_table_size(cl_object ht)
 {
 	assert_type_hash_table(@[hash-table-size], 1, ht);
-	@(return MAKE_FIXNUM(ht->hash.size))
+	@(return ecl_make_fixnum(ht->hash.size))
 }
 
 cl_object
 cl_hash_table_count(cl_object ht)
 {
 	assert_type_hash_table(@[hash-table-count], 1, ht);
-	@(return (MAKE_FIXNUM(ht->hash.entries)))
+	@(return (ecl_make_fixnum(ht->hash.entries)))
 }
 
 static cl_object
@@ -996,21 +986,21 @@ si_hash_table_iterate(cl_narg narg)
 	cl_object ht = CADR(env);
 	cl_fixnum i;
 	if (!Null(index)) {
-		i = fix(index);
+		i = ecl_fixnum(index);
 		if (i < 0)
 			i = -1;
 		for (; ++i < ht->hash.size; ) {
 			struct ecl_hashtable_entry e =
 				copy_entry(ht->hash.data + i, ht);
 			if (e.key != OBJNULL) {
-				cl_object ndx = MAKE_FIXNUM(i);
+				cl_object ndx = ecl_make_fixnum(i);
 				ECL_RPLACA(env, ndx);
 				@(return ndx e.key e.value)
 			}
 		}
-		ECL_RPLACA(env, Cnil);
+		ECL_RPLACA(env, ECL_NIL);
 	}
-	@(return Cnil)
+	@(return ECL_NIL)
 }
 
 cl_object
@@ -1018,7 +1008,7 @@ si_hash_table_iterator(cl_object ht)
 {
 	assert_type_hash_table(@[si::hash-table-iterator], 1, ht);
 	@(return ecl_make_cclosure_va((cl_objectfn)si_hash_table_iterate,
-                                      cl_list(2, MAKE_FIXNUM(-1), ht),
+                                      cl_list(2, ecl_make_fixnum(-1), ht),
                                       @'si::hash-table-iterator'))
 }
 
@@ -1041,37 +1031,37 @@ cl_sxhash(cl_object key)
 {
 	cl_index output = _hash_equal(3, 0, key);
 	const cl_index mask = ((cl_index)1 << (FIXNUM_BITS - 3)) - 1;
-	@(return MAKE_FIXNUM(output & mask))
+	@(return ecl_make_fixnum(output & mask))
 }
 
 @(defun si::hash-eql (&rest args)
 	cl_index h;
 @
 	for (h = 0; narg; narg--) {
-		cl_object o = cl_va_arg(args);
+		cl_object o = ecl_va_arg(args);
 		h = _hash_eql(h, o);
 	}
-	@(return MAKE_FIXNUM(h))
+	@(return ecl_make_fixnum(h))
 @)
 
 @(defun si::hash-equal (&rest args)
 	cl_index h;
 @
 	for (h = 0; narg; narg--) {
-		cl_object o = cl_va_arg(args);
+		cl_object o = ecl_va_arg(args);
 		h = _hash_equal(3, h, o);
 	}
-	@(return MAKE_FIXNUM(h))
+	@(return ecl_make_fixnum(h))
 @)
 
 @(defun si::hash-equalp (&rest args)
 	cl_index h;
 @
 	for (h = 0; narg; narg--) {
-		cl_object o = cl_va_arg(args);
+		cl_object o = ecl_va_arg(args);
 		h = _hash_equalp(3, h, o);
 	}
-	@(return MAKE_FIXNUM(h))
+	@(return ecl_make_fixnum(h))
 @)
 
 cl_object
@@ -1085,14 +1075,14 @@ cl_maphash(cl_object fun, cl_object ht)
 		if(e.key != OBJNULL)
 			funcall(3, fun, e.key, e.value);
 	}
-	@(return Cnil)
+	@(return ECL_NIL)
 }
 
 cl_object
 si_hash_table_content(cl_object ht)
 {
 	cl_index i;
-	cl_object output = Cnil;
+	cl_object output = ECL_NIL;
 	assert_type_hash_table(@[ext::hash-table-content], 2, ht);
 	for (i = 0;  i < ht->hash.size;  i++) {
 		struct ecl_hashtable_entry e = ht->hash.data[i];
@@ -1105,7 +1095,6 @@ si_hash_table_content(cl_object ht)
 cl_object
 si_hash_table_fill(cl_object ht, cl_object values)
 {
-	cl_object pair;
 	assert_type_hash_table(@[ext::hash-table-fill], 2, ht);
 	while (!Null(values)) {
 		cl_object pair = ecl_car(values);

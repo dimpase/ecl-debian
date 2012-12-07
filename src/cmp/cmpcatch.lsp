@@ -22,29 +22,31 @@
 
 (defun c2catch (c1form tag body)
   (declare (ignore c1form))
-  (let* ((new-destination (tmp-destination *destination*)))
-    (let* ((*destination* 'VALUE0))
+  (let* ((new-destination (tmp-destination *destination*))
+	 (code (incf *last-label*)))
+    (let ((*destination* 'VALUE0))
       (c2expr* tag))
     (let* ((*destination* new-destination)
-	   (code (incf *last-label*))
-	   (*exit* (next-label))
-	   (*unwind-exit* (list* *exit* 'FRAME *unwind-exit*)))
+	   (*unwind-exit* (cons 'FRAME *unwind-exit*)))
       (if (member new-destination '(TRASH VALUES))
 	  (progn
 	    (wt-nl "if (ecl_frs_push(cl_env_copy," 'VALUE0 ")==0) {")
 	    (wt-comment "BEGIN CATCH ~A" code)
-	    (c2expr body)
-	    (wt-nl "}"))
+	    (with-indentation
+		(c2expr* body)))
 	  (progn
 	    (wt-nl "if (ecl_frs_push(cl_env_copy," 'VALUE0 ")) {")
 	    (wt-comment "BEGIN CATCH ~A" code)
-	    (unwind-exit 'VALUES t)
-	    (wt-nl "}")
-	    (c2expr body)))
-      (wt-label *exit*)
-      (wt-nl "ecl_frs_pop(cl_env_copy);")
-      (wt-comment "END CATCH ~A" code)
-      )
+	    (with-indentation
+		(with-exit-label (label)
+		  (let ((*exit* label))
+		    (unwind-exit 'VALUES))))
+	    (wt-nl "} else {")
+	    (with-indentation
+		(c2expr* body)))))
+    (wt-nl "}")
+    (wt-nl "ecl_frs_pop(cl_env_copy);")
+    (wt-comment "END CATCH ~A" code)
     (unwind-exit new-destination)))
 
 (defun c1unwind-protect (args)
@@ -60,7 +62,7 @@
   (let* ((sp (make-lcl-var :rep-type :cl-index))
 	 (nargs (make-lcl-var :rep-type :cl-index))
 	 (*unwind-exit* `((STACK ,sp) ,@*unwind-exit*)))
-    (wt-nl "{")
+    (wt-nl-open-brace)
     (wt-nl "volatile bool unwinding = FALSE;")
     (wt-nl "cl_index " sp "=ECL_STACK_INDEX(cl_env_copy)," nargs ";")
     (wt-nl "ecl_frame_ptr next_fr;")
@@ -86,7 +88,7 @@
     (wt-nl "if (unwinding) ecl_unwind(cl_env_copy,next_fr);")
     ;; ... or simply return the values of the protected form.
     (unwind-exit 'VALUES)
-    (wt "}")))
+    (wt-nl-close-brace)))
 
 (defun c1throw (args)
   (check-args-number 'THROW args 2 2)

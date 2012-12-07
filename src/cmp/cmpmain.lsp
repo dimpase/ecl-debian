@@ -279,11 +279,11 @@ extern int
 main(int argc, char **argv)
 {
 	cl_boot(argc, argv);
-	CL_CATCH_ALL_BEGIN(ecl_process_env()) {
+	ECL_CATCH_ALL_BEGIN(ecl_process_env()) {
 	~A
 	ecl_init_module(OBJNULL, ~A);
 	~A
-	} CL_CATCH_ALL_END;
+	} ECL_CATCH_ALL_END;
 	si_exit(0);
 }")
 
@@ -292,11 +292,11 @@ extern int
 ~A(int argc, char **argv)
 {
 	cl_boot(argc, argv);
-	CL_CATCH_ALL_BEGIN(ecl_process_env()) {
+	ECL_CATCH_ALL_BEGIN(ecl_process_env()) {
 	~A
 	ecl_init_module(OBJNULL, ~A);
 	~A
-	} CL_CATCH_ALL_END;
+	} ECL_CATCH_ALL_END;
 }")
 
 #+:win32
@@ -309,11 +309,11 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 	int argc;
 	ecl_get_commandline_args(&argc, &argv);
 	cl_boot(argc, argv);
-	CL_CATCH_ALL_BEGIN(ecl_process_env()) {
+	ECL_CATCH_ALL_BEGIN(ecl_process_env()) {
 	~A
 	ecl_init_module(OBJNULL, ~A);
 	~A
-	} CL_CATCH_ALL_END;
+	} ECL_CATCH_ALL_END;
 	si_exit(0);
 }")
 
@@ -422,7 +422,7 @@ filesystem or in the database of ASDF modules."
 		   (princ ";
 cl_object output;
 si_select_package(ecl_make_simple_base_string(\"CL-USER\", 7));
-output = si_safe_eval(2, ecl_read_from_cstring(lisp_code), Cnil);
+output = si_safe_eval(2, ecl_read_from_cstring(lisp_code), ECL_NIL);
 }" stream)
 		   )))))
   (cond ((null prologue-code)
@@ -438,7 +438,7 @@ output = si_safe_eval(2, ecl_read_from_cstring(lisp_code), Cnil);
 		   (princ ";
 cl_object output;
 si_select_package(ecl_make_simple_base_string(\"CL-USER\", 7));
-output = si_safe_eval(2, ecl_read_from_cstring(lisp_code), Cnil);
+output = si_safe_eval(2, ecl_read_from_cstring(lisp_code), ECL_NIL);
 }" stream)
 		   )))))
   ;;
@@ -955,5 +955,18 @@ from the C language code.  NIL means \"do not create the file\"."
 (ext:package-lock "CL" t)
 
 (setf *features* (delete :ecl-bytecmp *features*))
+
+(let* ((compile #'compile)
+       (disassemble #'disassemble)
+       (compile-file #'compile-file)
+       (compile-file-pathname #'compile-file-pathname))
+  (defun ext:install-c-compiler ()
+    (ext::package-lock (find-package :cl) nil)
+    (setf *features* (delete :ecl-bytecmp *features*))
+    (setf (fdefinition 'disassemble) disassemble
+	  (fdefinition 'compile) compile
+	  (fdefinition 'compile-file) #'compile-file
+	  (fdefinition 'compile-file-pathname) #'compile-file-pathname)
+    (ext::package-lock (find-package :cl) t)))
 
 (provide 'cmp)

@@ -61,7 +61,7 @@ si_print_unreadable_object_function(cl_object o, cl_object stream, cl_object typ
 		if (!Null(type)) {
 			cl_index i, l;
 			type = cl_type_of(o);
-			if (!SYMBOLP(type)) {
+			if (!ECL_SYMBOLP(type)) {
 				type = @'standard-object';
 			}
 			type = type->symbol.name;
@@ -70,7 +70,7 @@ si_print_unreadable_object_function(cl_object o, cl_object stream, cl_object typ
                         ecl_write_char(' ', stream);
 		}
 		if (!Null(function)) {
-			cl_funcall(1, function);
+			_ecl_funcall1(function);
 		}
 		if (!Null(id)) {
 			ecl_write_char(' ', stream);
@@ -78,5 +78,5 @@ si_print_unreadable_object_function(cl_object o, cl_object stream, cl_object typ
 		}
 		ecl_write_char('>', stream);
 	}
-	@(return Cnil)
+	@(return ECL_NIL)
 }
