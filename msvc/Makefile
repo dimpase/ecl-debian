@@ -10,8 +10,8 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 12.2.1
-ECL_VERSION_NUMBER= 120201
+ECL_VERSION       = 12.12.1
+ECL_VERSION_NUMBER= 121201
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
@@ -26,7 +26,9 @@ THEHOST           = win32
 # 	p0 -> Pentium processor
 # 	p3 -> Pentium III processor
 # 	p4 -> Pentium IV processor
-GMP_TYPE      = gc
+!if "$(GMP_TYPE)" == ""
+GMP_TYPE = gc
+!endif
 
 # Set it to non-empty to include Win32 thread support
 # Currently it is NOT SUPPORTED to build ECL without threads. The reason
@@ -79,11 +81,11 @@ MV      = move /Y
 MSDEV   = msdev
 MKNSI   = makensis.exe
 
-# ==================== Flags ====================
-
-!if "$(ECL_SSE)" != ""
-CFLAGS_SSE=/arch:SSE2
+!if "$(YASM)" == ""
+YASM=yasm-1.2.0-win32.exe
 !endif
+
+# ==================== Flags ====================
 
 !if "$(ECL_WIN64)" != ""
 GMP_BITS=64
@@ -95,6 +97,9 @@ GMP_BITS=32
 GC_CPU=i386
 ARCHITECTURE=PENTIUM4
 VCREDIST=vcredist_x86.exe
+!if "$(ECL_SSE)" != ""
+CFLAGS_SSE=/arch:SSE2
+!endif
 !endif
 
 #
@@ -334,7 +339,8 @@ eclmin.lib: eclgmp.lib eclgc.lib lsp/config.lsp
 	cd c
 	$(MAKE) ECL_VERSION_NUMBER=$(ECL_VERSION_NUMBER) \
 	        ECL_THREADS=$(ECL_THREADS) ECL_UNICODE=$(ECL_UNICODE) \
-		ECL_SSE=$(ECL_SSE) "ECL_CFLAGS=$(CFLAGS) -DGC_BUILD"
+		ECL_SSE=$(ECL_SSE) ECL_WIN64=$(ECL_WIN64) \
+		"ECL_CFLAGS=$(CFLAGS) -DGC_BUILD"
 	cd ..
 eclgc.lib:
 	cd gc
@@ -352,7 +358,7 @@ eclgc.lib:
 eclgmp.lib:
 	cd gmp
 	$(MAKE) "MPN_TYPE=$(GMP_TYPE)" "CFLAGS_CONFIG=$(CFLAGS_CONFIG)" \
-		"BITS=$(GMP_BITS)"
+		"BITS=$(GMP_BITS)" "YASM=$(YASM)"
 	$(CP) gmp.lib ..\eclgmp.lib
 	$(CP) gmp.h ..\ecl\gmp.h
 	cd ..
@@ -375,6 +381,8 @@ install:
 	IF NOT EXIST "$(includedir)\ecl\gc" $(MKDIR) $(includedir)\ecl\gc
 	IF NOT EXIST "$(includedir)\ecl\gc\private" $(MKDIR) "$(includedir)\ecl\gc\private"
 	for %i in (ecl\*.h ecl\gc\*.h ecl\gc\private\*.h) do $(CP) %i $(includedir)\%i
+	IF EXIST "$(include)\ecl\atomic_ops" rmdir /S /Q "$(include)\ecl\atomic_ops"
+	IF EXIST "ecl\atomic_ops" xcopy /S /Y "ecl\atomic_ops" "$(includedir)\atomic_ops\"
 	cd c
 	$(MAKE) cut.exe
 	cd ..
@@ -432,7 +440,8 @@ clean_ecl:
 	            lsp\load.lsp clos\load.lsp cmp\load.lsp cmp\cmpdefs.lsp \
 		    ecl.lib ecl.dll ecl_min$(EXE) eclmin.lib help.doc sysfun.lsp \
 		    BUILD-STAMP $(TARGETS) *.exp *.ilk *.manifest *.pdb *.c *.obj \
-		    ecl-config.bat ecl-static.lib) \
+		    ecl-config.bat ecl-static.lib *.tmp *.implib *.lib ecl.ico \
+		    ecl-cc.bat ecl.rc ecl.res) \
 	     do $(RM) %i
 	cd c
 	-$(MAKE) ECL_THREADS=$(ECL_THREADS) clean
@@ -440,6 +449,7 @@ clean_ecl:
 clean_lisp:
 	-for %i in (lsp clos $(ECL_MODULES)) do for %k in (%i.lib %i.fas %i.ilk %i.c %i.obj %i.pdb) do $(RM) %k
 	-for %i in (lsp clos ext $(ECL_MODULES)) do $(RMDIR) %i
+	-for %i in ( *.fas *.implib *.lib *.asd) do $(RM) %i
 	-$(RM) help.doc
 	-$(RM) MODULES
 distclean: clean

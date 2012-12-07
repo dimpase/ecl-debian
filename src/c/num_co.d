@@ -40,6 +40,7 @@
 # define tanf tan
 # define tanhf tanh
 #endif
+#include <ecl/internal.h>
 
 static cl_object
 number_remainder(cl_object x, cl_object y, cl_object q)
@@ -58,11 +59,11 @@ number_remainder(cl_object x, cl_object y, cl_object q)
 	cl_type ty, tx;
 @
 	if (y != OBJNULL) {
-		ty = type_of(y);
+		ty = ecl_t_of(y);
 	} else {
 		ty = t_singlefloat;
 	}
-	switch (tx = type_of(x)) {
+	switch (tx = ecl_t_of(x)) {
 	case t_singlefloat:
 	case t_doublefloat:
 #ifdef ECL_LONG_FLOAT
@@ -75,12 +76,12 @@ number_remainder(cl_object x, cl_object y, cl_object q)
 	case t_ratio:
 		switch (ty) {
 		case t_singlefloat:
-			x = ecl_make_singlefloat(ecl_to_double(x)); break;
+			x = ecl_make_single_float(ecl_to_double(x)); break;
 		case t_doublefloat:
-			x = ecl_make_doublefloat(ecl_to_double(x)); break;
+			x = ecl_make_double_float(ecl_to_double(x)); break;
 #ifdef ECL_LONG_FLOAT
 		case t_longfloat:
-			x = ecl_make_longfloat(ecl_to_long_double(x)); break;
+			x = ecl_make_long_float(ecl_to_long_double(x)); break;
 #endif
 		default:
                         FEwrong_type_nth_arg(@[float],2,y,@[float]);
@@ -95,7 +96,7 @@ number_remainder(cl_object x, cl_object y, cl_object q)
 cl_object
 cl_numerator(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_ratio:
 		x = x->ratio.num;
 		break;
@@ -111,13 +112,13 @@ cl_numerator(cl_object x)
 cl_object
 cl_denominator(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_ratio:
 		x = x->ratio.den;
 		break;
 	case t_fixnum:
 	case t_bignum:
-		x = MAKE_FIXNUM(1);
+		x = ecl_make_fixnum(1);
 		break;
 	default:
                 FEwrong_type_nth_arg(@[numerator],1,x,@[rational]);
@@ -130,43 +131,43 @@ ecl_floor1(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 	case t_bignum:
 		v0 = x;
-		v1 = MAKE_FIXNUM(0);
+		v1 = ecl_make_fixnum(0);
 		break;
 	case t_ratio:
 		v0 = ecl_floor2(x->ratio.num, x->ratio.den);
-		v1 = ecl_make_ratio(VALUES(1), x->ratio.den);
+		v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), x->ratio.den);
 		break;
 	case t_singlefloat: {
-		float d = sf(x);
+		float d = ecl_single_float(x);
 		float y = floorf(d);
-		v0 = float_to_integer(y);
-		v1 = ecl_make_singlefloat(d - y);
+		v0 = _ecl_float_to_integer(y);
+		v1 = ecl_make_single_float(d - y);
 		break;
 	}
 	case t_doublefloat: {
-		double d = df(x);
+		double d = ecl_double_float(x);
 		double y = floor(d);
-		v0 = double_to_integer(y);
-		v1 = ecl_make_doublefloat(d - y);
+		v0 = _ecl_double_to_integer(y);
+		v1 = ecl_make_double_float(d - y);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
 		long double d = ecl_long_float(x);
 		long double y = floorl(d);
-		v0 = long_double_to_integer(y);
-		v1 = ecl_make_longfloat(d - y);
+		v0 = _ecl_long_double_to_integer(y);
+		v1 = ecl_make_long_float(d - y);
 		break;
 	}
 #endif
 	default:
                 FEwrong_type_nth_arg(@[floor],1,x,@[real]);
 	}
-	@(return v0 v1)
+	ecl_return2(the_env, v0, v1);
 }
 
 cl_object
@@ -175,22 +176,22 @@ ecl_floor2(cl_object x, cl_object y)
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
 	cl_type ty;
-        ty = type_of(y);
-	if (ecl_unlikely(!REAL_TYPE(ty))) {
+        ty = ecl_t_of(y);
+	if (ecl_unlikely(!ECL_REAL_TYPE_P(ty))) {
                 FEwrong_type_nth_arg(@[floor],2,y,@[real]);
 	}
-	switch(type_of(x)) {
+	switch(ecl_t_of(x)) {
 	case t_fixnum:
 		switch(ty) {
 		case t_fixnum: {	/* FIX / FIX */
-		  cl_fixnum a = fix(x), b = fix(y);
+		  cl_fixnum a = ecl_fixnum(x), b = ecl_fixnum(y);
 		  cl_fixnum q = a / b,  r = a % b;
 		  if ((r^b) < 0 && r) {	/* opposite sign and some remainder*/
-		    v0 = MAKE_FIXNUM(q-1);
-		    v1 = MAKE_FIXNUM(r+b);
+		    v0 = ecl_make_fixnum(q-1);
+		    v1 = ecl_make_fixnum(r+b);
 		  } else {
-		    v0 = MAKE_FIXNUM(q);
-		    v1 = MAKE_FIXNUM(r);
+		    v0 = ecl_make_fixnum(q);
+		    v1 = ecl_make_fixnum(r);
 		  }
 		  break;
 		}
@@ -201,37 +202,37 @@ ecl_floor2(cl_object x, cl_object y)
 		   *    y = - MOST_NEGATIVE_FIXNUM
 		   */
                   ECL_WITH_TEMP_BIGNUM(bx,4);
-                  _ecl_big_set_fixnum(bx, fix(x));
+                  _ecl_big_set_fixnum(bx, ecl_fixnum(x));
                   v0 = _ecl_big_floor(bx, y, &v1);
 		  break;
 		}
 		case t_ratio:		/* FIX / RAT */
 		  v0 = ecl_floor2(ecl_times(x, y->ratio.den), y->ratio.num);
-		  v1 = ecl_make_ratio(VALUES(1), y->ratio.den);
+		  v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), y->ratio.den);
 		  break;
 		case t_singlefloat: {	/* FIX / SF */
-		  float n = sf(y);
-		  float p = fix(x) / n;
+		  float n = ecl_single_float(y);
+		  float p = ecl_fixnum(x) / n;
 		  float q = floorf(p);
-		  v0 = float_to_integer(q);
-		  v1 = ecl_make_singlefloat((p - q)*n);
+		  v0 = _ecl_float_to_integer(q);
+		  v1 = ecl_make_single_float((p - q)*n);
 		  break;
 		}
 		case t_doublefloat: {	/* FIX / DF */
-		  double n = df(y);
-		  double p = fix(x) / n;
+		  double n = ecl_double_float(y);
+		  double p = ecl_fixnum(x) / n;
 		  double q = floor(p);
-		  v0 = double_to_integer(q);
-		  v1 = ecl_make_doublefloat((p - q)*n);
+		  v0 = _ecl_double_to_integer(q);
+		  v1 = ecl_make_double_float((p - q)*n);
 		  break;
 		}
 #ifdef ECL_LONG_FLOAT
 		case t_longfloat: {	/* FIX / LF */
 		  long double n = ecl_long_float(y);
-		  long double p = fix(x) / n;
+		  long double p = ecl_fixnum(x) / n;
 		  long double q = floorl(p);
-		  v0 = long_double_to_integer(q);
-		  v1 = ecl_make_longfloat((p - q)*n);
+		  v0 = _ecl_long_double_to_integer(q);
+		  v1 = ecl_make_long_float((p - q)*n);
 		  break;
 		}
 #endif
@@ -243,7 +244,7 @@ ecl_floor2(cl_object x, cl_object y)
 		switch(ty) {
 		case t_fixnum: {	/* BIG / FIX */
                   ECL_WITH_TEMP_BIGNUM(by,4);
-                  _ecl_big_set_fixnum(by, fix(y));
+                  _ecl_big_set_fixnum(by, ecl_fixnum(y));
                   v0 = _ecl_big_floor(x, by, &v1);
 		  break;
 		}
@@ -253,22 +254,22 @@ ecl_floor2(cl_object x, cl_object y)
 		}
 		case t_ratio:		/* BIG / RAT */
 		  v0 = ecl_floor2(ecl_times(x, y->ratio.den), y->ratio.num);
-		  v1 = ecl_make_ratio(VALUES(1), y->ratio.den);
+		  v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), y->ratio.den);
 		  break;
 		case t_singlefloat: {	/* BIG / SF */
-		  float n = sf(y);
+		  float n = ecl_single_float(y);
 		  float p = _ecl_big_to_double(x) / n;
 		  float q = floorf(p);
-		  v0 = float_to_integer(q);
-		  v1 = ecl_make_singlefloat((p - q)*n);
+		  v0 = _ecl_float_to_integer(q);
+		  v1 = ecl_make_single_float((p - q)*n);
 		  break;
 		}
 		case t_doublefloat: {	/* BIG / DF */
-		  double n = df(y);
+		  double n = ecl_double_float(y);
 		  double p = _ecl_big_to_double(x) / n;
 		  double q = floor(p);
-		  v0 = double_to_integer(q);
-		  v1 = ecl_make_doublefloat((p - q)*n);
+		  v0 = _ecl_double_to_integer(q);
+		  v1 = ecl_make_double_float((p - q)*n);
 		  break;
 		}
 #ifdef ECL_LONG_FLOAT
@@ -276,8 +277,8 @@ ecl_floor2(cl_object x, cl_object y)
 		  long double n = ecl_long_float(y);
 		  long double p = _ecl_big_to_double(x) / n;
 		  long double q = floorl(p);
-		  v0 = long_double_to_integer(q);
-		  v1 = ecl_make_longfloat((p - q)*n);
+		  v0 = _ecl_long_double_to_integer(q);
+		  v1 = ecl_make_long_float((p - q)*n);
 		  break;
 		}
 #endif
@@ -290,30 +291,30 @@ ecl_floor2(cl_object x, cl_object y)
 		case t_ratio:		/* RAT / RAT */
 		  v0 = ecl_floor2(ecl_times(x->ratio.num, y->ratio.den),
 				  ecl_times(x->ratio.den, y->ratio.num));
-		  v1 = ecl_make_ratio(VALUES(1), ecl_times(x->ratio.den, y->ratio.den));
+		  v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), ecl_times(x->ratio.den, y->ratio.den));
 		  break;
 		default:		/* RAT / ANY */
 		  v0 = ecl_floor2(x->ratio.num, ecl_times(x->ratio.den, y));
-		  v1 = ecl_divide(VALUES(1), x->ratio.den);
+		  v1 = ecl_divide(ecl_nth_value(the_env, 1), x->ratio.den);
 		}
 		break;
 	case t_singlefloat: {		/* SF / ANY */
 		float n = ecl_to_double(y);
-		float p = sf(x)/n;
+		float p = ecl_single_float(x)/n;
 		float q = floorf(p);
-		v0 = float_to_integer(q);
+		v0 = _ecl_float_to_integer(q);
 		/* We cannot factor these two multiplications because
 		 * if we have signed zeros (1 - 1) * (-1) = -0 while
 		 * 1*(-1) - 1*(-1) = +0 */
-		v1 = ecl_make_singlefloat(p*n - q*n);
+		v1 = ecl_make_single_float(p*n - q*n);
 		break;
 	}
 	case t_doublefloat: {		/* DF / ANY */
 		double n = ecl_to_double(y);
-		double p = df(x)/n;
+		double p = ecl_double_float(x)/n;
 		double q = floor(p);
-		v0 = double_to_integer(q);
-		v1 = ecl_make_doublefloat(p*n - q*n);
+		v0 = _ecl_double_to_integer(q);
+		v1 = ecl_make_double_float(p*n - q*n);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
@@ -321,60 +322,61 @@ ecl_floor2(cl_object x, cl_object y)
 		long double n = ecl_to_long_double(y);
 		long double p = ecl_long_float(x)/n;
 		long double q = floorl(p);
-		v0 = long_double_to_integer(q);
-		v1 = ecl_make_longfloat(p*n - q*n);
+		v0 = _ecl_long_double_to_integer(q);
+		v1 = ecl_make_long_float(p*n - q*n);
 		break;
 	}
 #endif
 	default:
                 FEwrong_type_nth_arg(@[floor], 1, x, @[real]);
 	}
-	@(return v0 v1)
+	ecl_return2(the_env, v0, v1);
 }
 
 @(defun floor (x &optional (y OBJNULL))
 @
 	if (narg == 1)
-		x = ecl_floor1(x);
+		return ecl_floor1(x);
 	else
-		x = ecl_floor2(x, y);
-	returnn(x);
+		return ecl_floor2(x, y);
 @)
 
 cl_object
 ecl_ceiling1(cl_object x)
 {
 	cl_object v0, v1;
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 	case t_bignum:
 		v0 = x;
-		v1 = MAKE_FIXNUM(0);
+		v1 = ecl_make_fixnum(0);
 		break;
-	case t_ratio:
+	case t_ratio: {
+		const cl_env_ptr the_env = ecl_process_env();
 		v0 = ecl_ceiling2(x->ratio.num, x->ratio.den);
-		v1 = ecl_make_ratio(VALUES(1), x->ratio.den);
+		v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), x->ratio.den);
 		break;
+	}
 	case t_singlefloat: {
-		float d = sf(x);
+		float d = ecl_single_float(x);
 		float y = ceilf(d);
-		v0 = float_to_integer(y);
-		v1 = ecl_make_singlefloat(d - y);
+		v0 = _ecl_float_to_integer(y);
+		v1 = ecl_make_single_float(d - y);
 		break;
 	}
 	case t_doublefloat: {
-		double d = df(x);
+		double d = ecl_double_float(x);
 		double y = ceil(d);
-		v0 = double_to_integer(y);
-		v1 = ecl_make_doublefloat(d - y);
+		v0 = _ecl_double_to_integer(y);
+		v1 = ecl_make_double_float(d - y);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
 		long double d = ecl_long_float(x);
 		long double y = ceill(d);
-		v0 = long_double_to_integer(y);
-		v1 = ecl_make_longfloat(d - y);
+		v0 = _ecl_long_double_to_integer(y);
+		v1 = ecl_make_long_float(d - y);
 		break;
 	}
 #endif
@@ -390,22 +392,22 @@ ecl_ceiling2(cl_object x, cl_object y)
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
 	cl_type ty;
-        ty = type_of(y);
-	if (ecl_unlikely(!REAL_TYPE(ty))) {
+        ty = ecl_t_of(y);
+	if (ecl_unlikely(!ECL_REAL_TYPE_P(ty))) {
 		FEwrong_type_nth_arg(@[ceiling],2, y, @[real]);
 	}
-	switch(type_of(x)) {
+	switch(ecl_t_of(x)) {
 	case t_fixnum:
 		switch(ty) {
 		case t_fixnum: {	/* FIX / FIX */
-		  cl_fixnum a = fix(x); cl_fixnum b = fix(y);
+		  cl_fixnum a = ecl_fixnum(x); cl_fixnum b = ecl_fixnum(y);
 		  cl_fixnum q = a / b;  cl_fixnum r = a % b;
 		  if ((r^b) > 0 && r) {	/* same signs and some remainder */
-		    v0 = MAKE_FIXNUM(q+1);
-		    v1 = MAKE_FIXNUM(r-b);
+		    v0 = ecl_make_fixnum(q+1);
+		    v1 = ecl_make_fixnum(r-b);
 		  } else {
-		    v0 = MAKE_FIXNUM(q);
-		    v1 = MAKE_FIXNUM(r);
+		    v0 = ecl_make_fixnum(q);
+		    v1 = ecl_make_fixnum(r);
 		  }
 		  break;
 		}
@@ -416,37 +418,37 @@ ecl_ceiling2(cl_object x, cl_object y)
 		   *    y = - MOST_NEGATIVE_FIXNUM
 		   */
                   ECL_WITH_TEMP_BIGNUM(bx,4);
-                  _ecl_big_set_fixnum(bx, fix(x));
+                  _ecl_big_set_fixnum(bx, ecl_fixnum(x));
                   v0 = _ecl_big_ceiling(bx, y, &v1);
 		  break;
 		}
 		case t_ratio:		/* FIX / RAT */
 		  v0 = ecl_ceiling2(ecl_times(x, y->ratio.den), y->ratio.num);
-		  v1 = ecl_make_ratio(VALUES(1), y->ratio.den);
+		  v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), y->ratio.den);
 		  break;
 		case t_singlefloat: {	/* FIX / SF */
-		  float n = sf(y);
-		  float p = fix(x)/n;
+		  float n = ecl_single_float(y);
+		  float p = ecl_fixnum(x)/n;
 		  float q = ceilf(p);
-		  v0 = float_to_integer(q);
-		  v1 = ecl_make_singlefloat(p*n - q*n);
+		  v0 = _ecl_float_to_integer(q);
+		  v1 = ecl_make_single_float(p*n - q*n);
 		  break;
 		}
 		case t_doublefloat: {	/* FIX / DF */
-		  double n = df(y);
-		  double p = fix(x)/n;
+		  double n = ecl_double_float(y);
+		  double p = ecl_fixnum(x)/n;
 		  double q = ceil(p);
-		  v0 = double_to_integer(q);
-		  v1 = ecl_make_doublefloat(p*n - q*n);
+		  v0 = _ecl_double_to_integer(q);
+		  v1 = ecl_make_double_float(p*n - q*n);
 		  break;
 		}
 #ifdef ECL_LONG_FLOAT
 		case t_longfloat: {	/* FIX / LF */
 		  long double n = ecl_long_float(y);
-		  long double p = fix(x)/n;
+		  long double p = ecl_fixnum(x)/n;
 		  long double q = ceill(p);
-		  v0 = long_double_to_integer(q);
-		  v1 = ecl_make_longfloat(p*n - q*n);
+		  v0 = _ecl_long_double_to_integer(q);
+		  v1 = ecl_make_long_float(p*n - q*n);
 		  break;
 		}
 #endif
@@ -455,10 +457,10 @@ ecl_ceiling2(cl_object x, cl_object y)
 		}
 		break;
 	case t_bignum:
-		switch(type_of(y)) {
+		switch(ecl_t_of(y)) {
 		case t_fixnum: {	/* BIG / FIX */
                   ECL_WITH_TEMP_BIGNUM(by,4);
-                  _ecl_big_set_fixnum(by, fix(y));
+                  _ecl_big_set_fixnum(by, ecl_fixnum(y));
                   v0 = _ecl_big_ceiling(x, by, &v1);
 		  break;
 		}
@@ -468,22 +470,22 @@ ecl_ceiling2(cl_object x, cl_object y)
 		}
 		case t_ratio:		/* BIG / RAT */
 		  v0 = ecl_ceiling2(ecl_times(x, y->ratio.den), y->ratio.num);
-		  v1 = ecl_make_ratio(VALUES(1), y->ratio.den);
+		  v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), y->ratio.den);
 		  break;
 		case t_singlefloat: {	/* BIG / SF */
-		  float n = sf(y);
+		  float n = ecl_single_float(y);
 		  float p = _ecl_big_to_double(x)/n;
 		  float q = ceilf(p);
-		  v0 = float_to_integer(q);
-		  v1 = ecl_make_singlefloat(p*n - q*n);
+		  v0 = _ecl_float_to_integer(q);
+		  v1 = ecl_make_single_float(p*n - q*n);
 		  break;
 		}
 		case t_doublefloat: {	/* BIG / DF */
-		  double n = df(y);
+		  double n = ecl_double_float(y);
 		  double p = _ecl_big_to_double(x)/n;
 		  double q = ceil(p);
-		  v0 = double_to_integer(q);
-		  v1 = ecl_make_doublefloat(p*n - q*n);
+		  v0 = _ecl_double_to_integer(q);
+		  v1 = ecl_make_double_float(p*n - q*n);
 		  break;
 		}
 #ifdef ECL_LONG_FLOAT
@@ -491,8 +493,8 @@ ecl_ceiling2(cl_object x, cl_object y)
 		  long double n = ecl_long_float(y);
 		  long double p = _ecl_big_to_double(x)/n;
 		  long double q = ceill(p);
-		  v0 = long_double_to_integer(q);
-		  v1 = ecl_make_longfloat(p*n - q*n);
+		  v0 = _ecl_long_double_to_integer(q);
+		  v1 = ecl_make_long_float(p*n - q*n);
 		  break;
 		}
 #endif
@@ -501,31 +503,31 @@ ecl_ceiling2(cl_object x, cl_object y)
 		}
 		break;
 	case t_ratio:
-		switch(type_of(y)) {
+		switch(ecl_t_of(y)) {
 		case t_ratio:		/* RAT / RAT */
 		  v0 = ecl_ceiling2(ecl_times(x->ratio.num, y->ratio.den),
 				    ecl_times(x->ratio.den, y->ratio.num));
-		  v1 = ecl_make_ratio(VALUES(1), ecl_times(x->ratio.den, y->ratio.den));
+		  v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), ecl_times(x->ratio.den, y->ratio.den));
 		  break;
 		default:		/* RAT / ANY */
 		  v0 = ecl_ceiling2(x->ratio.num, ecl_times(x->ratio.den, y));
-		  v1 = ecl_divide(VALUES(1), x->ratio.den);
+		  v1 = ecl_divide(ecl_nth_value(the_env, 1), x->ratio.den);
 		}
 		break;
 	case t_singlefloat: {		/* SF / ANY */
 		float n = ecl_to_double(y);
-		float p = sf(x)/n;
+		float p = ecl_single_float(x)/n;
 		float q = ceilf(p);
-		v0 = float_to_integer(q);
-		v1 = ecl_make_singlefloat(p*n - q*n);
+		v0 = _ecl_float_to_integer(q);
+		v1 = ecl_make_single_float(p*n - q*n);
 		break;
 	}
 	case t_doublefloat: {		/* DF / ANY */
 		double n = ecl_to_double(y);
-		double p = df(x)/n;
+		double p = ecl_double_float(x)/n;
 		double q = ceil(p);
-		v0 = double_to_integer(q);
-		v1 = ecl_make_doublefloat(p*n - q*n);
+		v0 = _ecl_double_to_integer(q);
+		v1 = ecl_make_double_float(p*n - q*n);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
@@ -533,24 +535,23 @@ ecl_ceiling2(cl_object x, cl_object y)
 		long double n = ecl_to_long_double(y);
 		long double p = ecl_long_float(x)/n;
 		long double q = ceill(p);
-		v0 = long_double_to_integer(q);
-		v1 = ecl_make_longfloat(p*n - q*n);
+		v0 = _ecl_long_double_to_integer(q);
+		v1 = ecl_make_long_float(p*n - q*n);
 		break;
 	}
 #endif
 	default:
                 FEwrong_type_nth_arg(@[ceiling], 1, x, @[real]);
 	}
-	@(return v0 v1)
+	ecl_return2(the_env, v0, v1);
 }
 
 @(defun ceiling (x &optional (y OBJNULL))
 @
 	if (narg == 1)
-		x = ecl_ceiling1(x);
+		return ecl_ceiling1(x);
 	else
-		x = ecl_ceiling2(x, y);
-	returnn(x);
+		return ecl_ceiling2(x, y);
 @)
 
 cl_object
@@ -558,49 +559,48 @@ ecl_truncate1(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 	case t_bignum:
 		v0 = x;
-		v1 = MAKE_FIXNUM(0);
+		v1 = ecl_make_fixnum(0);
 		break;
 	case t_ratio:
 		v0 = ecl_truncate2(x->ratio.num, x->ratio.den);
-		v1 = ecl_make_ratio(VALUES(1), x->ratio.den);
+		v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), x->ratio.den);
 		break;
 	case t_singlefloat: {
-		float d = sf(x);
+		float d = ecl_single_float(x);
 		float y = d > 0? floorf(d) : ceilf(d);
-		v0 = float_to_integer(y);
-		v1 = ecl_make_singlefloat(d - y);
+		v0 = _ecl_float_to_integer(y);
+		v1 = ecl_make_single_float(d - y);
 		break;
 	}
 	case t_doublefloat: {
-		double d = df(x);
+		double d = ecl_double_float(x);
 		double y = d > 0? floor(d) : ceil(d);
-		v0 = double_to_integer(y);
-		v1 = ecl_make_doublefloat(d - y);
+		v0 = _ecl_double_to_integer(y);
+		v1 = ecl_make_double_float(d - y);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
 		long double d = ecl_long_float(x);
 		long double y = d > 0? floorl(d) : ceill(d);
-		v0 = long_double_to_integer(y);
-		v1 = ecl_make_longfloat(d - y);
+		v0 = _ecl_long_double_to_integer(y);
+		v1 = ecl_make_long_float(d - y);
 		break;
 	}
 #endif
 	default:
                 FEwrong_type_nth_arg(@[truncate],1,x,@[real]);
 	}
-	@(return v0 v1)
+	ecl_return2(the_env, v0, v1);
 }
 
 cl_object
 ecl_truncate2(cl_object x, cl_object y)
 {
-	const cl_env_ptr the_env = ecl_process_env();
 	if (ecl_plusp(x) != ecl_plusp(y))
 		return ecl_ceiling2(x, y);
 	else
@@ -610,10 +610,9 @@ ecl_truncate2(cl_object x, cl_object y)
 @(defun truncate (x &optional (y OBJNULL))
 @
 	if (narg == 1)
-		x = ecl_truncate1(x);
+		return ecl_truncate1(x);
 	else
-		x = ecl_truncate2(x, y);
-	returnn(x);
+		return ecl_truncate2(x, y);
 @)
 
 static double
@@ -657,43 +656,43 @@ ecl_round1(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v0, v1;
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 	case t_bignum:
 		v0 = x;
-		v1 = MAKE_FIXNUM(0);
+		v1 = ecl_make_fixnum(0);
 		break;
 	case t_ratio:
 		v0 = ecl_round2(x->ratio.num, x->ratio.den);
-		v1 = ecl_make_ratio(VALUES(1), x->ratio.den);
+		v1 = ecl_make_ratio(ecl_nth_value(the_env, 1), x->ratio.den);
 		break;
 	case t_singlefloat: {
-		float d = sf(x);
+		float d = ecl_single_float(x);
 		float q = round_double(d);
-		v0 = float_to_integer(q);
-		v1 = ecl_make_singlefloat(d - q);
+		v0 = _ecl_float_to_integer(q);
+		v1 = ecl_make_single_float(d - q);
 		break;
 	}
 	case t_doublefloat: {
-		double d = df(x);
+		double d = ecl_double_float(x);
 		double q = round_double(d);
-		v0 = double_to_integer(q);
-		v1 = ecl_make_doublefloat(d - q);
+		v0 = _ecl_double_to_integer(q);
+		v1 = ecl_make_double_float(d - q);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
 		long double d = ecl_long_float(x);
 		long double q = round_long_double(d);
-		v0 = long_double_to_integer(q);
-		v1 = ecl_make_longfloat(d - q);
+		v0 = _ecl_long_double_to_integer(q);
+		v1 = ecl_make_long_float(d - q);
 		break;
 	}
 #endif
 	default:
                 FEwrong_type_nth_arg(@[round],1,x,@[real]);
 	}
-	@(return v0 v1)
+	ecl_return2(the_env, v0, v1);
 }
 
 cl_object
@@ -704,11 +703,11 @@ ecl_round2(cl_object x, cl_object y)
 	cl_object q;
 
 	q = ecl_divide(x, y);
-	switch (type_of(q)) {
+	switch (ecl_t_of(q)) {
 	case t_fixnum:
 	case t_bignum:
 		v0 = q;
-		v1 = MAKE_FIXNUM(0);
+		v1 = ecl_make_fixnum(0);
 		break;
 	case t_ratio: {
 		cl_object q1 = ecl_integer_divide(q->ratio.num, q->ratio.den);
@@ -732,16 +731,15 @@ ecl_round2(cl_object x, cl_object y)
 		v0 = q = ecl_round1(q);
 		v1 = number_remainder(x, y, q);
 	}
-	@(return v0 v1)
+	ecl_return2(the_env, v0, v1);
 }
 
 @(defun round (x &optional (y OBJNULL))
 @
 	if (narg == 1)
-		x = ecl_round1(x);
+		return ecl_round1(x);
 	else
-		x = ecl_round2(x, y);
-	returnn(x);
+		return ecl_round2(x, y);
 @)
 
 
@@ -751,7 +749,7 @@ cl_mod(cl_object x, cl_object y)
 	const cl_env_ptr the_env = ecl_process_env();
 	/* INV: #'floor always outputs two values */
 	@floor(2, x, y);
-	@(return VALUES(1))
+	ecl_return1(the_env, the_env->values[1]);
 }
 
 cl_object
@@ -759,7 +757,7 @@ cl_rem(cl_object x, cl_object y)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	@truncate(2, x, y);
-	@(return VALUES(1))
+	ecl_return1(the_env, the_env->values[1]);
 }
 
 cl_object
@@ -767,13 +765,12 @@ cl_decode_float(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	int e, s;
-	cl_type tx = type_of(x);
+	cl_type tx = ecl_t_of(x);
 	float f;
 
 	switch (tx) {
 	case t_singlefloat: {
-		f = sf(x);
-	FLOAT:
+		f = ecl_single_float(x);
 		if (f >= 0.0) {
 			s = 1;
 		} else {
@@ -781,11 +778,11 @@ cl_decode_float(cl_object x)
 			s = 0;
 		}
 		f = frexpf(f, &e);
-		x = ecl_make_singlefloat(f);
+		x = ecl_make_single_float(f);
 		break;
 	}
 	case t_doublefloat: {
-		double d = df(x);
+		double d = ecl_double_float(x);
 		if (d >= 0.0) {
 			s = 1;
 		} else {
@@ -793,7 +790,7 @@ cl_decode_float(cl_object x)
 			s = 0;
 		}
 		d = frexp(d, &e);
-		x = ecl_make_doublefloat(d);
+		x = ecl_make_double_float(d);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
@@ -806,14 +803,14 @@ cl_decode_float(cl_object x)
 			s = 0;
 		}
 		d = frexpl(d, &e);
-		x = ecl_make_longfloat(d);
+		x = ecl_make_long_float(d);
 		break;
 	}
 #endif
 	default:
                 FEwrong_type_nth_arg(@[decode-float],1,x,@[float]);
 	}
-	@(return x MAKE_FIXNUM(e) ecl_make_singlefloat(s))
+	ecl_return3(the_env, x, ecl_make_fixnum(e), ecl_make_single_float(s));
 }
 
 cl_object
@@ -822,47 +819,47 @@ cl_scale_float(cl_object x, cl_object y)
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_fixnum k;
 
-	if (FIXNUMP(y)) {
-		k = fix(y);
+	if (ECL_FIXNUMP(y)) {
+		k = ecl_fixnum(y);
 	} else {
 		FEwrong_type_nth_arg(@[scale-float],2,y,@[fixnum]);
 	}
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_singlefloat:
-		x = ecl_make_singlefloat(ldexpf(sf(x), k));
+		x = ecl_make_single_float(ldexpf(ecl_single_float(x), k));
 		break;
 	case t_doublefloat:
-		x = ecl_make_doublefloat(ldexp(df(x), k));
+		x = ecl_make_double_float(ldexp(ecl_double_float(x), k));
 		break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		x = ecl_make_longfloat(ldexpl(ecl_long_float(x), k));
+		x = ecl_make_long_float(ldexpl(ecl_long_float(x), k));
 		break;
 #endif
 	default:
                 FEwrong_type_nth_arg(@[scale-float],1,x,@[float]);
 	}
-	@(return x)
+	ecl_return1(the_env, x);
 }
 
 cl_object
 cl_float_radix(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	if (ecl_unlikely(cl_floatp(x) != Ct)) {
+	if (ecl_unlikely(cl_floatp(x) != ECL_T)) {
 		FEwrong_type_nth_arg(@[float-radix],1,x,@[float]);
 	}
-	@(return MAKE_FIXNUM(FLT_RADIX))
+	ecl_return1(the_env, ecl_make_fixnum(FLT_RADIX));
 }
 
 int
 ecl_signbit(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_singlefloat:
-		return signbit(sf(x));
+		return signbit(ecl_single_float(x));
 	case t_doublefloat:
-		return signbit(df(x));
+		return signbit(ecl_double_float(x));
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
 		return signbit(ecl_long_float(x));
@@ -876,24 +873,24 @@ ecl_signbit(cl_object x)
 	int negativep;
 @
 	if (!yp) {
-		y = cl_float(2, MAKE_FIXNUM(1), x);
+		y = cl_float(2, ecl_make_fixnum(1), x);
 	}
 	negativep = ecl_signbit(x);
-	switch (type_of(y)) {
+	switch (ecl_t_of(y)) {
 	case t_singlefloat: {
-		float f = sf(y);
-                if (signbit(f) != negativep) y = ecl_make_singlefloat(-f);
+		float f = ecl_single_float(y);
+                if (signbit(f) != negativep) y = ecl_make_single_float(-f);
 		break;
 	}
 	case t_doublefloat: {
-		double f = df(y);
-                if (signbit(f) != negativep) y = ecl_make_doublefloat(-f);
+		double f = ecl_double_float(y);
+                if (signbit(f) != negativep) y = ecl_make_double_float(-f);
 		break;
 	}
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
 		long double f = ecl_long_float(y);
-                if (signbit(f) != negativep) y = ecl_make_longfloat(-f);
+                if (signbit(f) != negativep) y = ecl_make_long_float(-f);
 		break;
 	}
 #endif
@@ -907,22 +904,22 @@ cl_object
 cl_float_digits(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_singlefloat:
-		x = MAKE_FIXNUM(FLT_MANT_DIG);
+		x = ecl_make_fixnum(FLT_MANT_DIG);
 		break;
 	case t_doublefloat:
-		x = MAKE_FIXNUM(DBL_MANT_DIG);
+		x = ecl_make_fixnum(DBL_MANT_DIG);
 		break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		x = MAKE_FIXNUM(LDBL_MANT_DIG);
+		x = ecl_make_fixnum(LDBL_MANT_DIG);
 		break;
 #endif
 	default:
                 FEwrong_type_nth_arg(@[float-digits],1,x,@[float]);
 	}
-	@(return x)
+	ecl_return1(the_env, x);
 }
 
 cl_object
@@ -930,9 +927,9 @@ cl_float_precision(cl_object x)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	int precision;
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_singlefloat: {
-		float f = sf(x);
+		float f = ecl_single_float(x);
 		if (f == 0.0) {
 			precision = 0;
 		} else {
@@ -947,7 +944,7 @@ cl_float_precision(cl_object x)
 		break;
 	}
 	case t_doublefloat: {
-		double f = df(x);
+		double f = ecl_double_float(x);
 		if (f == 0.0) {
 			precision = 0;
 		} else {
@@ -981,7 +978,7 @@ cl_float_precision(cl_object x)
 	default:
 		FEwrong_type_nth_arg(@[float-precision],1,x,@[float]);
 	}
-	@(return MAKE_FIXNUM(precision))
+	ecl_return1(the_env, ecl_make_fixnum(precision));
 }
 
 cl_object
@@ -990,7 +987,7 @@ cl_integer_decode_float(cl_object x)
 	const cl_env_ptr the_env = ecl_process_env();
 	int e, s = 1;
 
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat: {
 		long double d = ecl_long_float(x);
@@ -1000,43 +997,43 @@ cl_integer_decode_float(cl_object x)
                 }
 		if (d == 0.0) {
 			e = 0;
-			x = MAKE_FIXNUM(0);
+			x = ecl_make_fixnum(0);
 		} else {
                         d = frexpl(d, &e);
-			x = long_double_to_integer(ldexpl(d, LDBL_MANT_DIG));
+			x = _ecl_long_double_to_integer(ldexpl(d, LDBL_MANT_DIG));
 			e -= LDBL_MANT_DIG;
 		}
 		break;
 	}
 #endif
 	case t_doublefloat: {
-		double d = df(x);
+		double d = ecl_double_float(x);
                 if (signbit(d)) {
                         s = -1;
                         d = -d;
                 }
 		if (d == 0.0) {
 			e = 0;
-			x = MAKE_FIXNUM(0);
+			x = ecl_make_fixnum(0);
 		} else {
                         d = frexp(d, &e);
-			x = double_to_integer(ldexp(d, DBL_MANT_DIG));
+			x = _ecl_double_to_integer(ldexp(d, DBL_MANT_DIG));
 			e -= DBL_MANT_DIG;
 		}
 		break;
 	}
 	case t_singlefloat: {
-		float d = sf(x);
+		float d = ecl_single_float(x);
                 if (signbit(d)) {
                         s = -1;
                         d = -d;
                 }
 		if (d == 0.0) {
 			e = 0;
-			x = MAKE_FIXNUM(0);
+			x = ecl_make_fixnum(0);
 		} else {
                         d = frexpf(d, &e);
-			x = double_to_integer(ldexp(d, FLT_MANT_DIG));
+			x = _ecl_double_to_integer(ldexp(d, FLT_MANT_DIG));
 			e -= FLT_MANT_DIG;
 		}
 		break;
@@ -1044,11 +1041,11 @@ cl_integer_decode_float(cl_object x)
 	default:
 		FEwrong_type_nth_arg(@[integer-decode-float],1,x,@[float]);
 	}
-	@(return x MAKE_FIXNUM(e) MAKE_FIXNUM(s))
+	ecl_return3(the_env, x, ecl_make_fixnum(e), ecl_make_fixnum(s));
 }
 
 
-@(defun complex (r &optional (i MAKE_FIXNUM(0)))
+@(defun complex (r &optional (i ecl_make_fixnum(0)))
 @	/* INV: ecl_make_complex() checks types */
 	@(return ecl_make_complex(r, i))
 @)
@@ -1056,7 +1053,7 @@ cl_integer_decode_float(cl_object x)
 cl_object
 cl_realpart(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 	case t_bignum:
 	case t_ratio:
@@ -1078,20 +1075,20 @@ cl_realpart(cl_object x)
 cl_object
 cl_imagpart(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 	case t_bignum:
 	case t_ratio:
-		x = MAKE_FIXNUM(0);
+		x = ecl_make_fixnum(0);
 		break;
 	case t_singlefloat:
-                if (signbit(sf(x)))
+                if (signbit(ecl_single_float(x)))
                         x = cl_core.singlefloat_minus_zero;
                 else
                         x = cl_core.singlefloat_zero;
 		break;
 	case t_doublefloat:
-                if (signbit(df(x)))
+                if (signbit(ecl_double_float(x)))
                         x = cl_core.doublefloat_minus_zero;
                 else
                         x = cl_core.doublefloat_zero;

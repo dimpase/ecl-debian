@@ -35,7 +35,7 @@ write_sse_float(float v, cl_object stream)
 		writestr_stream(" TRUE", stream);
 	} else {
                 ecl_write_char(' ', stream);
-                si_write_ugly_object(ecl_make_singlefloat(v), stream);
+                si_write_ugly_object(ecl_make_single_float(v), stream);
 	}
 }
 
@@ -46,7 +46,7 @@ write_sse_double(double v, cl_object stream)
 		writestr_stream(" TRUE", stream);
         else {
                 ecl_write_char(' ', stream);
-                si_write_ugly_object(ecl_make_doublefloat(v), stream);
+                si_write_ugly_object(ecl_make_double_float(v), stream);
 	}
 }
 
@@ -57,18 +57,18 @@ write_sse_pack(cl_object x, cl_object stream)
 	cl_elttype etype = x->sse.elttype;
 	cl_object mode = ecl_symbol_value(@'ext::*sse-pack-print-mode*');
 
-	if (mode != Cnil) {
-		if (mode == @':float') etype = aet_sf;
-		else if (mode == @':double') etype = aet_df;
-		else etype = aet_b8;
+	if (mode != ECL_NIL) {
+		if (mode == @':float') etype = ecl_aet_sf;
+		else if (mode == @':double') etype = ecl_aet_df;
+		else etype = ecl_aet_b8;
 	}
 
 	switch (etype) {
-	case aet_sf:
+	case ecl_aet_sf:
 		for (i = 0; i < 4; i++)
                         write_sse_float(x->sse.data.sf[i], stream);
 		break;
-	case aet_df:
+	case ecl_aet_df:
 		write_sse_double(x->sse.data.df[0], stream);
 		write_sse_double(x->sse.data.df[1], stream);
 		break;
@@ -77,10 +77,10 @@ write_sse_pack(cl_object x, cl_object stream)
 		for (i = 0; i < 16; i++) {
                         ecl_string_push_extend(buffer, ' ');
                         if (i%4 == 0) ecl_string_push_extend(buffer, ' ');
-                        si_integer_to_string(buffer, MAKE_FIXNUM(x->sse.data.b8[i]),
-                                             MAKE_FIXNUM(16), Cnil, Cnil);
+                        si_integer_to_string(buffer, ecl_make_fixnum(x->sse.data.b8[i]),
+                                             ecl_make_fixnum(16), ECL_NIL, ECL_NIL);
 		}
-                si_do_write_sequence(buffer, stream, MAKE_FIXNUM(0), Cnil);
+                si_do_write_sequence(buffer, stream, ecl_make_fixnum(0), ECL_NIL);
                 si_put_buffer_string(buffer);
                 break;
         }

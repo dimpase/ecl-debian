@@ -1,6 +1,7 @@
 ;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: CLOS -*-
 ;;;;
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -10,10 +11,6 @@
 ;;;;    See file '../Copyright' for full details.
 
 (in-package "CLOS")
-
-;;; The mechanism for updating classes.
-
-(defclass forward-referenced-class (class) ())
 
 ;;; ----------------------------------------------------------------------
 ;;; INSTANCE UPDATE PROTOCOL
@@ -197,10 +194,6 @@
   ;; if there are no forward references, we can just finalize the class here
   (setf (class-finalized-p class) nil)
   (finalize-unless-forward class)
-
-  ;; Now we can call the dependents
-  (map-dependents class #'(lambda (dep)
-                            (apply #'update-dependent class dep initargs)))
 
   class)
 

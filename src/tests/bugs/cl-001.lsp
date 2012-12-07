@@ -304,6 +304,7 @@
 ;;;	parsed as a hostname.
 ;;;
 
+#-windows
 (deftest cl-0013-truename
     (progn
       (si:system "rm -rf foo; ln -sf //usr/ foo")
@@ -479,7 +480,8 @@
 ;;;	Inspection of structs is broken due to undefined inspect-indent
 ;;;
 (deftest cl-0022-inspect-struct
-    (let ((*query-io* (make-string-input-stream "")))
+    (let ((*query-io* (make-string-input-stream "q
+")))
       (defstruct st1 p1)
       (let ((v1 (make-st1 :p1 "tttt")))
         (handler-case (progn (inspect v1) t)

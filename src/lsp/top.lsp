@@ -3,6 +3,7 @@
 ;;;;  top.lsp -- Top-level loop, break loop, and error handlers
 ;;;;
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -414,7 +415,6 @@ under certain conditions; see file 'Copyright' for details.")
 (progn
 
 (defparameter *console-lock* (mp:make-lock :name "Console lock"))
-#-:win32
 (defparameter *console-available* (mp:make-condition-variable))
 (defparameter *console-owner* nil)
 (defparameter *console-waiting-list* '())
@@ -440,15 +440,11 @@ under certain conditions; see file 'Copyright' for details.")
                  (setf *console-owner* process)
                  (setf repeat nil))
                 (t
-                 #+:win32
-                 (sleep 0.1)
-                 #-:win32
                  (mp:condition-variable-wait *console-available* *console-lock*))))))
 
 (defun release-console (process)
   (mp:with-lock (*console-lock*)
     (and (eq process *console-owner*) (setf *console-owner* nil))
-    #-:win32
     (mp:condition-variable-signal *console-available*)))
 
 ) ; #+threads
@@ -502,7 +498,7 @@ Use special code 0 to cancel this operation.")
   (restart-case (simple-terminal-interrupt)
     (continue ())))
 
-(defun terminal-interrupt (&optional (correctablep t))
+(defun terminal-interrupt (&key process (correctablep t))
   (declare (ignore correctablep))
   #+threads
   (mp:without-interrupts
@@ -830,14 +826,19 @@ Use special code 0 to cancel this operation.")
 	  (push '&allow-other-keys output))))
     (nreverse output)))
 
+(defun lambda-list-from-annotations (name)
+  (declare (si::c-local)) 
+  (let ((args (ext:get-annotation name :lambda-list nil)))
+    (values args (and args t))))
+
 (defun function-lambda-list (function)
   (cond
     ((symbolp function)
-     (if (or (not (fboundp function))
-             (special-operator-p function)
-             (macro-function function))
-         (values nil nil)
-         (function-lambda-list (fdefinition function))))
+     (cond ((or (special-operator-p function)
+		(macro-function function))
+	    (lambda-list-from-annotations function))
+	   (t
+	    (function-lambda-list (fdefinition function)))))
     ((typep function 'generic-function)
      (values (clos:generic-function-lambda-list function) t))
     ;; Use the lambda list from the function definition, if available,
@@ -861,9 +862,7 @@ Use special code 0 to cancel this operation.")
     ;; If it's a compiled function of ECL itself, reconstruct the
     ;; lambda-list from its documentation string.
     (t
-     (let* ((name (compiled-function-name function))
-            (args (ext:get-annotation name :lambda-list nil)))
-       (values args (and args t))))))
+     (lambda-list-from-annotations (compiled-function-name function)))))
 
 #-ecl-min
 (defun decode-env-elt (env ndx)
@@ -887,12 +886,12 @@ Use special code 0 to cancel this operation.")
 	}
 	case _ecl_float_loc: {
 		float *p = (float*)value;
-		output = ecl_make_singlefloat(*p);
+		output = ecl_make_single_float(*p);
 		break;
 	}
 	case _ecl_double_loc: {
 		double *p = (double*)value;
-		output = ecl_make_doublefloat(*p);
+		output = ecl_make_double_float(*p);
 		break;
 	}
 #ifdef ECL_SSE2
@@ -914,7 +913,7 @@ Use special code 0 to cancel this operation.")
 #endif
 	default: {
 		ecl_base_char *p = (ecl_base_char*)value;
-		output = CODE_CHAR(*p);
+		output = ECL_CODE_CHAR(*p);
 		break;
 	}
 	}
@@ -1426,6 +1425,7 @@ package."
     (let* ((*standard-input* *debug-io*)
            (*standard-output* *debug-io*)
            ;;(*tpl-prompt-hook* "[dbg] ")
+	   (*print-readably* nil)
            (*print-pretty* nil)
            (*print-circle* t)
            (*readtable* (or *break-readtable* *readtable*))

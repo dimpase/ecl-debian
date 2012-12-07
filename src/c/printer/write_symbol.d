@@ -24,6 +24,8 @@ potential_number_p(cl_object s, int base)
 	/* See ANSI 2.3.1.1 */
 	static cl_index i, l;
         ecl_character c;
+	/* A potential number must contain at least one digit */
+	bool some_digit = FALSE;
 
 	l = s->base_string.fillp;
 	if (l == 0)
@@ -32,7 +34,9 @@ potential_number_p(cl_object s, int base)
 
 	/* A potential number must begin with a digit, sign or
            extension character (^ _) */
-	if ((ecl_digitp(c, base) < 0) && c != '+' && c != '-' && c != '^' && c != '_')
+	if (ecl_digitp(c,base) >= 0)
+		some_digit = TRUE;
+	else if (c != '+' && c != '-' && c != '^' && c != '_')
 		return FALSE;
 
 	/* A potential number cannot end with a sign */
@@ -46,17 +50,19 @@ potential_number_p(cl_object s, int base)
 		 * extension characters and number markers. Number
 		 * markers are letters, but two adjacent letters fail
 		 * to be a number marker. */
-		if (ecl_digitp(c, base) >= 0 || c == '+' || c == '-' ||
-                    c == '/' || c == '.' || c == '^' || c == '_') {
+		if (ecl_digitp(c, base) >= 0) {
+			some_digit = TRUE;
+		} else if (c == '+' || c == '-' ||
+			   c == '/' || c == '.' || c == '^' || c == '_') {
 			continue;
-		}
-		if (ecl_alpha_char_p(c) &&
-                    (((i+1) >= l) || !ecl_alpha_char_p(ecl_char(s, i+1)))) {
+		} else if (ecl_alpha_char_p(c) &&
+			   (((i+1) >= l) || !ecl_alpha_char_p(ecl_char(s, i+1)))) {
 			continue;
+		} else {
+			return FALSE;
 		}
-		return FALSE;
 	}
-	return TRUE;
+	return some_digit;
 }
 
 #define needs_to_be_inverted(s) (ecl_string_case(s) != 0)
@@ -166,8 +172,8 @@ _ecl_write_symbol(cl_object x, cl_object stream)
 	bool forced_package = 0;
 
 	if (Null(x)) {
-		package = Cnil_symbol->symbol.hpack;
-		name = Cnil_symbol->symbol.name;
+		package = ECL_NIL_SYMBOL->symbol.hpack;
+		name = ECL_NIL_SYMBOL->symbol.name;
 	} else {
 		package = x->symbol.hpack;
 		name = x->symbol.name;
@@ -197,9 +203,9 @@ _ecl_write_symbol(cl_object x, cl_object stream)
 				    needs_to_be_escaped(name, readtable, print_case));
 		if (ecl_find_symbol(ecl_symbol_name(x), package, &intern_flag) != x)
 			ecl_internal_error("can't print symbol");
-		if (intern_flag == INTERNAL || forced_package) {
+		if (intern_flag == ECL_INTERNAL || forced_package) {
 			writestr_stream("::", stream);
-		} else if (intern_flag == EXTERNAL) {
+		} else if (intern_flag == ECL_EXTERNAL) {
 			ecl_write_char(':', stream);
 		} else {
 			FEerror("Pathological symbol --- cannot print.", 0);

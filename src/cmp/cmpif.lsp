@@ -74,22 +74,31 @@
 			 :args butlast last)
 	    last))))
 
-(eval-when (:compile-toplevel :execute)
-(defmacro with-exit-label ((label) &body body)
-  `(let* ((,label (next-label))
-	  (*unwind-exit* (cons ,label *unwind-exit*)))
-     ,@body
-     (wt-label ,label))))
-
 (defun c2if (c1form fmla form1 form2)
   (declare (ignore c1form))
   ;; FIXME! Optimize when FORM1 or FORM2 are constants
-  (with-exit-label (normal-exit)
-    (with-exit-label (false-label)
-      (let ((*destination* `(JUMP-FALSE ,false-label)))
-	(c2expr* fmla))
-      (c2expr form1))
-    (c2expr form2)))
+  (cond ((and (eq *destination* 'TRASH)
+	      (eq (c1form-name form2) 'LOCATION))
+	 ;; Optimize (IF condition true-branch) or a situation in which
+	 ;; the false branch can be discarded.
+	 (with-optional-exit-label (false-label)
+	   (let ((*destination* `(JUMP-FALSE ,false-label)))
+	     (c2expr* fmla))
+	   (c2expr form1)))
+	((and (eq *destination* 'TRASH)
+	      (eq (c1form-name form1) 'LOCATION))
+	 ;; Optimize (IF condition useless-value false-branch) when
+	 ;; the true branch can be discarded.
+	 (with-optional-exit-label (true-label)
+	   (let ((*destination* `(JUMP-TRUE ,true-label)))
+	     (c2expr* fmla))
+	   (c2expr form2)))
+	(t
+	 (with-exit-label (false-label)
+	   (let ((*destination* `(JUMP-FALSE ,false-label)))
+	     (c2expr* fmla))
+	   (c2expr form1))
+	 (c2expr form2))))
 
 (defun negate-argument (inlined-arg dest-loc)
   (let* ((loc (second inlined-arg))
@@ -98,21 +107,21 @@
            (list inlined-arg)
            (if (eq (loc-representation-type dest-loc) :bool)
                (case rep-type
-                 (:bool '((:bool) (:bool) "(#0)==Cnil" nil t))
-                 (:object '((:object) (:bool) "(#0)!=Cnil" nil t))
+                 (:bool '((:bool) (:bool) "(#0)==ECL_NIL" nil t))
+                 (:object '((:object) (:bool) "(#0)!=ECL_NIL" nil t))
                  (otherwise (return-from negate-argument nil)))
                (case rep-type
-                 (:bool '((:bool) (:object) "(#0)?Cnil:Ct" nil t))
-                 (:object '((:object) (:object) "Null(#0)?Ct:Cnil" nil t))
+                 (:bool '((:bool) (:object) "(#0)?ECL_NIL:ECL_T" nil t))
+                 (:object '((:object) (:object) "Null(#0)?ECL_T:ECL_NIL" nil t))
                  (otherwise (return-from negate-argument nil)))))))
 
 (defun c2fmla-not (c1form arg)
   (declare (ignore c1form))
   (let ((dest *destination*))
-    (cond ((and (consp dest) (eq (car dest) 'JUMP-TRUE))
+    (cond ((jump-true-destination-p dest)
            (let ((*destination* `(JUMP-FALSE ,@(cdr dest))))
              (c2expr arg)))
-          ((and (consp dest) (eq (car dest) 'JUMP-FALSE))
+          ((jump-false-destination-p dest)
            (let ((*destination* `(JUMP-TRUE ,@(cdr dest))))
              (c2expr arg)))
           (t
@@ -120,20 +129,18 @@
                  (*temp* *temp*))
              (unwind-exit (negate-argument
                            (emit-inline-form arg nil)
-                           *destination*))
+                           dest))
              (close-inline-blocks))))))
 
-(defun jump-true-destination? ()
-  (let ((dest *destination*))
-    (and (consp dest) (eq (car dest) 'JUMP-TRUE))))
+(defun jump-true-destination-p (dest)
+  (and (consp dest) (eq (si:cons-car dest) 'JUMP-TRUE)))
 
-(defun jump-false-destination? ()
-  (let ((dest *destination*))
-    (and (consp dest) (eq (car dest) 'JUMP-FALSE))))
+(defun jump-false-destination-p (dest)
+  (and (consp dest) (eq (si:cons-car dest) 'JUMP-FALSE)))
 
 (defun c2fmla-and (c1form butlast last)
   (declare (ignore c1form))
-  (if (jump-false-destination?)
+  (if (jump-false-destination-p *destination*)
       (progn
 	(mapc #'c2expr* butlast)
 	(c2expr last))
@@ -146,10 +153,10 @@
 
 (defun c2fmla-or (c1form butlast last)
   (declare (ignore c1form))
-  (cond ((jump-true-destination?)
+  (cond ((jump-true-destination-p *destination*)
 	 (mapc #'c2expr* butlast)
 	 (c2expr last))
-	((jump-false-destination?)
+	((jump-false-destination-p *destination*)
 	 (with-exit-label (true-label)
 	   (let ((*destination* `(JUMP-TRUE ,true-label)))
 	     (mapc #'c2expr* butlast))
@@ -170,14 +177,17 @@
       (loc-immediate-value-p loc)
     (cond ((not constantp)
            (cond ((eq (loc-representation-type loc) :bool)
-                  (wt-nl "if(" loc "){"))
+                  (wt-nl "if (" loc ") {"))
                  (t
-                  (wt-nl "if((")
+                  (wt-nl "if ((")
                   (wt-coerce-loc :object loc)
-                  (wt ")!=Cnil){")))
-           (unwind-no-exit label)
-           (wt-nl) (wt-go label)
-           (wt "}"))
+                  (wt ")!=ECL_NIL) {")))
+           (cond ((unwind-no-exit label)
+		  (incf *opened-c-braces*)
+		  (wt-nl) (wt-go label)
+		  (wt-nl-close-brace))
+		 (t
+		  (wt " ") (wt-go label) (wt " }"))))
           ((null value))
           (t
            (unwind-no-exit label)
@@ -188,14 +198,17 @@
       (loc-immediate-value-p loc)
     (cond ((not constantp)
            (cond ((eq (loc-representation-type loc) :bool)
-                  (wt-nl "if(!(" loc ")){"))
+                  (wt-nl "if (!(" loc ")) {"))
                  (t
-                  (wt-nl "if((")
+                  (wt-nl "if (Null(")
                   (wt-coerce-loc :object loc)
-                  (wt ")==Cnil){")))
-           (unwind-no-exit label)
-           (wt-nl) (wt-go label)
-           (wt "}"))
+                  (wt ")) {")))
+	   (cond ((unwind-no-exit label)
+		  (incf *opened-c-braces*)
+		  (wt-nl) (wt-go label)
+		  (wt-nl-close-brace))
+		 (t
+		  (wt " ") (wt-go label) (wt " }"))))
           (value)
           (t
            (unwind-no-exit label)

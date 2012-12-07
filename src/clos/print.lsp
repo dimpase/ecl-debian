@@ -1,6 +1,7 @@
 ;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: CLOS -*-
 ;;;;
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -134,10 +135,21 @@ printer and we should rather use MAKE-LOAD-FORM."
 	      `(ext:hash-table-fill ,make-form ',content)
 	      nil))))
       (t
-       (error "Cannot externalize object ~a" object)))))
+       (no-make-load-form object)))))
 
 (defmethod make-load-form ((object standard-object) &optional environment)
-  (make-load-form-saving-slots object :environment environment))
+  (no-make-load-form object))
+
+(defmethod make-load-form ((object structure-object) &optional environment)
+  (no-make-load-form object))
+
+(defmethod make-load-form ((object condition) &optional environment)
+  (no-make-load-form object))
+
+(defun no-make-load-form (object)
+  (declare (si::c-local))
+  (error "No adequate specialization of MAKE-LOAD-FORM for an object of type"
+	 (type-of object)))
 
 (defmethod make-load-form ((class class) &optional environment)
   (declare (ignore environment))
@@ -156,14 +168,16 @@ printer and we should rather use MAKE-LOAD-FORM."
 
 (defmethod print-object ((instance t) stream)
   (print-unreadable-object (instance stream)
-	(format stream "a ~S"
-		(class-name (si:instance-class instance))))
+    (let ((*package* (find-package "CL")))
+      (format stream "a ~S"
+	      (class-name (si:instance-class instance)))))
   instance)
 
 (defmethod print-object ((class class) stream)
   (print-unreadable-object (class stream)
-	(format stream "The ~A ~S"
-		(class-name (si:instance-class class)) (class-name class)))
+    (let ((*package* (find-package "CL")))
+      (format stream "The ~S ~S"
+	      (class-name (si:instance-class class)) (class-name class))))
   class)
 
 (defmethod print-object ((gf standard-generic-function) stream)

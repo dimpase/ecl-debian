@@ -7,6 +7,7 @@
 (in-package "COMPILER")
 #-new-cmp
 (import 'sys::arglist "COMPILER")
+(import 'sys::with-clean-symbols "COMPILER")
 #+new-cmp
 (in-package "C-DATA")
 
@@ -60,9 +61,35 @@
 (defmacro next-cmacro () '(incf *next-cmacro*))
 
 ;;; from cmplabel.lsp
-(defmacro next-label () `(cons (incf *last-label*) nil))
+(defun next-label ()
+  (cons (incf *last-label*) nil))
 
-(defmacro next-label* () `(cons (incf *last-label*) t))
+(defun next-label* ()
+  (cons (incf *last-label*) t))
+
+(defun labelp (x)
+  (and (consp x) (integerp (si::cons-car x))))
+
+(defun maybe-next-label ()
+  (if (labelp *exit*)
+      *exit*
+      (next-label)))
+
+(defun maybe-wt-label (label)
+  (unless (eq label *exit*)
+    (wt-label label)))
+
+(defmacro with-exit-label ((label) &body body)
+  `(let* ((,label (next-label))
+	  (*unwind-exit* (cons ,label *unwind-exit*)))
+     ,@body
+     (wt-label ,label)))
+
+(defmacro with-optional-exit-label ((label) &body body)
+  `(let* ((,label (maybe-next-label))
+	  (*unwind-exit* (adjoin ,label *unwind-exit*)))
+     ,@body
+     (maybe-wt-label ,label)))
 
 (defun next-lcl () (list 'LCL (incf *lcl*)))
 
@@ -83,13 +110,6 @@
 (defun next-env () (prog1 *env*
 		     (incf *env*)
 		     (setq *max-env* (max *env* *max-env*))))
-
-(defmacro with-clean-symbols (symbols &body body)
-  "Rewrites the given forms replacing the given symbols with uninterned
-ones, which is useful for creating hygienic macros."
-  `(progn ,@(sublis (loop for s in symbols
-                      collect (cons s (make-symbol (symbol-name s))))
-                   body)))
 
 (defmacro reckless (&rest body)
   `(locally (declare (optimize (safety 0)))

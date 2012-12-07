@@ -40,30 +40,23 @@
 	      (subtypep var-type type))
      return (c2expr form)))
 
+(defconstant +simple-type-assertions+
+  '((cons . "if (ecl_unlikely(ECL_ATOM(#0))) FEtype_error_cons(#0);")
+    (array . "if (ecl_unlikely(!ECL_ARRAYP(#0))) FEtype_error_array(#0);")
+    (list . "if (ecl_unlikely(!ECL_LISTP(#0))) FEtype_error_list(#0);")
+    (sequence . "if (ecl_unlikely(!(ECL_LISTP(#0) || ECL_VECTORP(#0))))
+           FEtype_error_sequence(#0);")
+    (vector . "if (ecl_unlikely(!ECL_VECTORP(#0))) FEtype_error_vector(#0);")))
+
 (defun simple-type-assertion (value type env)
-  (case type
-    (cons
-     `(ffi:c-inline (,value) (:object) :void
-		    "@0;if (ecl_unlikely(ATOM(#0))) FEtype_error_cons(#0);"
-		    :one-liner nil))
-    (array
-     `(ffi:c-inline (,value) (:object) :void
-		    "if (ecl_unlikely(!ECL_ARRAYP(#0))) FEtype_error_array(#0);"
-		    :one-liner nil))
-    (list
-     `(ffi:c-inline (,value) (:object) :void
-		    "if (ecl_unlikely(!ECL_LISTP(#0))) FEtype_error_list(#0);"
-		    :one-liner nil))
-    (sequence
-     `(ffi:c-inline (,value) (:object) :void
-		    "if (ecl_unlikely(!(ECL_LISTP(#0) || ECL_VECTORP(#0))))
-           FEtype_error_sequence(#0);"
-		    :one-liner nil))
-    (otherwise
-     `(ffi:c-inline
-       ((typep ,value ',type) ',type ,value)
-       (:bool :object :object) :void
-       "if (ecl_unlikely(!(#0)))
+  (let ((simple-form (cdr (assoc type +simple-type-assertions+))))
+    (if simple-form
+	`(ffi:c-inline (,value) (:object) :void ,simple-form
+		       :one-liner nil)
+	`(ffi:c-inline
+	  ((typep ,value ',type) ',type ,value)
+	  (:bool :object :object) :void
+	  "if (ecl_unlikely(!(#0)))
          FEwrong_type_argument(#1,#2);" :one-liner nil))))
 
 (defun expand-type-assertion (value type env compulsory)
@@ -93,10 +86,14 @@
 	 form form-type and-type)
     (cond ((or (trivial-type-p args) (not (policy-type-assertions)))
 	   value)
+	  ((and (consp type)
+		(eq (first type) 'values))
+	   (c1checked-value (list (values-type-primary-type type)
+				  value)))
 	  ((and (policy-evaluate-forms) (constantp value))
 	   (unless (typep (cmp-eval value) type)
-	     (cmpwarning "Failed type assertion for value ~A and type ~A"
-			 value type))
+	     (cmpwarn "Failed type assertion for value ~A and type ~A"
+		      value type))
 	   value)
 	  ;; Is the form type contained in the test?
 	  ((progn
@@ -126,7 +123,7 @@
 (defun c2checked-value (c1form type value let-form)
   (c2expr (if (subtypep (c1form-primary-type value) type)
 	      value
-	      let-form)))      
+	      let-form)))
 
 (defmacro optional-type-assertion (&whole whole value type &environment env)
   "If safety settings are high enough, generates a type check on an

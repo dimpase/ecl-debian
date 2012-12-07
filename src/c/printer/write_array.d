@@ -23,7 +23,7 @@ write_array_inner(bool vector, cl_object x, cl_object stream)
 {
 	cl_env_ptr env = ecl_process_env();
 	const cl_index *adims;
-	cl_index subscripts[ARANKLIM];
+	cl_index subscripts[ECL_ARRAY_RANK_LIMIT];
 	cl_fixnum n, j, m, k, i;
 	cl_fixnum print_length;
 	cl_fixnum print_level;
@@ -60,13 +60,13 @@ write_array_inner(bool vector, cl_object x, cl_object stream)
 		if (n > 0) {
 			ecl_write_char('(', stream);
 			for (j=0; j<n; j++) {
-				si_write_object(MAKE_FIXNUM(adims[j]), stream);
+				si_write_object(ecl_make_fixnum(adims[j]), stream);
 				if (j < n-1)
 					ecl_write_char(' ', stream);
 			}
 			ecl_write_char(')', stream);
 		} else {
-			si_write_object(Cnil, stream);
+			si_write_object(ECL_NIL, stream);
 		}
 		ecl_write_char(' ', stream);
 	} else if (!vector) {
@@ -76,7 +76,7 @@ write_array_inner(bool vector, cl_object x, cl_object stream)
 	if (print_level >= n) {
 		/* We can write the elements of the array */
 		print_level -= n;
-		ecl_bds_bind(env, @'*print-level*', MAKE_FIXNUM(print_level));
+		ecl_bds_bind(env, @'*print-level*', ecl_make_fixnum(print_level));
 	} else {
 		/* The elements of the array are not printed */
 		n = print_level;

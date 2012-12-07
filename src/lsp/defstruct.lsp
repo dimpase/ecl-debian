@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -497,7 +498,7 @@ as a STRUCTURE doc and can be retrieved by (documentation 'NAME 'structure)."
 
     ;; Check the print-function.
     (when (and print-function type)
-      (error "An print function is supplied to a typed structure."))
+      (error "A print function is supplied to a typed structure."))
 
     ;;
     ;; The constructors rely on knowing the structure class. For toplevel
@@ -514,7 +515,7 @@ as a STRUCTURE doc and can be retrieved by (documentation 'NAME 'structure)."
 				    (make-constructor name constructor type named
 						      slot-descriptions))
 				constructors)))
-      `(eval-when (:compile-toplevel :load-toplevel :execute)
+      `(progn
 	 (eval-when (:compile-toplevel :load-toplevel)
 	   ,core
 	   ,(si::register-with-pde whole)

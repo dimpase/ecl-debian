@@ -23,9 +23,14 @@
   (cmperr "The declaration ~s was found in a bad place." (cons 'DECLARE args)))
 
 (defun c1the (args)
-  (if (policy-the-is-checked)
-      (c1checked-value args)
-      (c1truly-the args)))
+  (check-args-number 'THE args 2 2)
+  ;; FIXME: C1CHECKED-VALUE cannot check multiple values.
+  (let ((type (first args)))
+    (if (and (policy-the-is-checked)
+	     (not (and (consp type)
+		       (eq (first type) 'values))))
+	(c1checked-value args)
+	(c1truly-the args))))
 
 (defun c1truly-the (args)
   (check-args-number 'TRULY-THE args 2 2)
@@ -81,11 +86,7 @@
 	     (if (eq (first fun) 'EXT::LAMBDA)
 		 (setf name (gensym) body (rest fun))
 		 (setf name (second fun) body (cddr fun)))
-	     (let* ((funob (c1compile-function body :name name))
-		    (lambda-form (fun-lambda funob)))
-	       (setf (fun-ref-ccb funob) t)
-	       (compute-fun-closure-type funob)
-	       (make-c1form 'FUNCTION lambda-form 'CLOSURE lambda-form funob))))
+	     (c1expr `(flet ((,name ,@body)) #',name))))
 	  (t (cmperr "The function ~s is illegal." fun)))))
 
 (defun c2function (c1form kind funob fun)
@@ -94,6 +95,7 @@
     (GLOBAL
      (unwind-exit (list 'FDEFINITION fun)))
     (CLOSURE
+     (baboon)
      (new-local fun)
      (unwind-exit `(MAKE-CCLOSURE ,fun)))))
 
@@ -183,6 +185,6 @@
 	  ((eq closure 'LEXICAL)
 	   (baboon))
 	  ((setf narg (fun-fixed-narg fun)) ; empty environment fixed number of args
-	   (wt "ecl_make_cfun((cl_objectfn_fixed)" cfun ",Cnil,Cblock," narg ")"))
+	   (wt "ecl_make_cfun((cl_objectfn_fixed)" cfun ",ECL_NIL,Cblock," narg ")"))
 	  (t ; empty environment variable number of args
-	   (wt "ecl_make_cfun_va((cl_objectfn)" cfun ",Cnil,Cblock)")))))
+	   (wt "ecl_make_cfun_va((cl_objectfn)" cfun ",ECL_NIL,Cblock)")))))

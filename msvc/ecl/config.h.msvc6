@@ -65,6 +65,9 @@
 /* __thread thread-local variables?                                     */
 /* #undef WITH___THREAD */
 
+/* Use Windows's interlocked operations to define compare-and-swap      */
+#define AO_ASSUME_WINDOWS98
+
 /* Use Boehm's garbage collector					*/
 #define GBC_BOEHM 0
 #ifdef GBC_BOEHM
@@ -73,6 +76,7 @@
 # include <ecl/gc/gc.h>
 # define ECL_DYNAMIC_VV
 #endif
+#define ECL_LIBATOMIC_OPS_H
 
 /* Network streams							*/
 #define TCP 1
@@ -119,13 +123,10 @@
 #define ecl_int16_t short
 #define ecl_uint32_t unsigned int
 #define ecl_int32_t int
-
-#ifdef _WIN64
-# define ecl_uint64_t unsigned __int64
-# define ecl_int64_t __int64
-# define ecl_long_long_t long long
-# define ecl_ulong_long_t unsigned long long
-#endif
+#define ecl_uint64_t unsigned __int64
+#define ecl_int64_t __int64
+#define ecl_long_long_t long long
+#define ecl_ulong_long_t unsigned long long
 
 /*
  * C TYPES AND SYSTEM LIMITS
@@ -162,9 +163,9 @@ typedef unsigned int cl_hashkey;
  * The character type
  */
 #ifdef ECL_UNICODE
-#define	CHAR_CODE_LIMIT	1114112	/*  unicode character code limit  */
+#define	ECL_CHAR_CODE_LIMIT	1114112	/*  unicode character code limit  */
 #else
-#define	CHAR_CODE_LIMIT	256	/*  unicode character code limit  */
+#define	ECL_CHAR_CODE_LIMIT	256	/*  unicode character code limit  */
 #endif
 typedef int ecl_character;
 typedef unsigned char ecl_base_char;
@@ -172,14 +173,13 @@ typedef unsigned char ecl_base_char;
 /*
  * Array limits
  */
-#define	ARANKLIM	64		/*  array rank limit  		*/
+#define	ECL_ARRAY_RANK_LIMIT 64
 #ifdef GBC_BOEHM
-#define	ADIMLIM		536870911	/*  array dimension limit	*/
-#define	ATOTLIM		536870911	/*  array total limit		*/
+#define	ECL_ARRAY_DIMENSION_LIMIT 536870911
 #else
-#define	ADIMLIM		16*1024*1024	/*  array dimension limit	*/
-#define	ATOTLIM		16*1024*1024	/*  array total limit		*/
+#define ECL_ARRAY_DIMENSION_LIMIT 16*1024*1024
 #endif
+#define ECL_ARRAY_TOTAL_LIMIT ECL_ARRAY_DIMENSION_LIMIT
 
 /*
  * Function limits.
@@ -187,14 +187,14 @@ typedef unsigned char ecl_base_char;
  * In general, any of these limits must fit in a "signed int".
  */
 /*	Maximum number of function arguments 				*/
-#define CALL_ARGUMENTS_LIMIT 65536
+#define ECL_CALL_ARGUMENTS_LIMIT 65536
 
 /*	Maximum number of required arguments				*/
-#define LAMBDA_PARAMETERS_LIMIT CALL_ARGUMENTS_LIMIT
+#define ECL_LAMBDA_PARAMETERS_LIMIT ECL_CALL_ARGUMENTS_LIMIT
 
 /*	Numb. of args. which can be passed using the C stack		*/
 /*	See cmplam.lsp if you change this value				*/
-#define C_ARGUMENTS_LIMIT 64
+#define ECL_C_ARGUMENTS_LIMIT 64
 
 /*	Maximum number of output arguments				*/
 #define ECL_MULTIPLE_VALUES_LIMIT 64
@@ -280,6 +280,8 @@ typedef unsigned int uint32_t;
 
 /* Activate Boehm-Weiser incremental garbage collector			*/
 /* #undef GBC_BOEHM_GENGC */
+
+#define ECL_WEAK_HASH
 
 /*
  * SYSTEM FEATURES:

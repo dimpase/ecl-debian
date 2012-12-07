@@ -114,6 +114,7 @@
 	    (when (si::fixnump index)
 	      `(si::instance-set ,(second args) ,index ,(first args)))))))))
 
+#+(or)
 (progn .
   #.(loop for var in '(clos::+standard-generic-function-slots+
                        clos::+standard-method-slots+
@@ -127,5 +128,5 @@
             when accessor
             collect `(define-compiler-macro ,accessor (&whole whole obj &environment env)
                        (if (policy-inline-slot-access env)
-                           `(si::instance-ref ,obj ,,i)
+			   `(clos::safe-instance-ref ,obj ,,i)
                            whole)))))

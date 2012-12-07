@@ -206,7 +206,7 @@
 #+WANTS-ASDF
 (build-module "asdf"
               '("ext:asdf;asdf.lisp"
-		"ext:asdf;asdf-ecl.lisp")
+		"ext:asdf;asdf-bundle.lisp")
               :dir "build:ext;"
               :prefix "EXT"
               :builtin #+:BUILTIN-ASDF t #-:BUILTIN-ASDF nil)
@@ -240,6 +240,7 @@
 #+WANTS-SOCKETS
 (build-module "sb-bsd-sockets"
 	      '("ext:sockets;sb-bsd-sockets.lisp")
+              :depends-on '("sockets")
 	      :dir "build:ext;"
 	      :prefix "EXT"
 	      :builtin nil)
@@ -270,6 +271,13 @@
 #+WANTS-SOCKETS
 (build-module "deflate"
 	      '("ext:deflate;deflate.lisp")
+	      :dir "build:ext;"
+	      :prefix "EXT"
+	      :builtin nil)
+
+#+WANTS-SOCKETS
+(build-module "ecl-quicklisp"
+	      '("ext:quicklisp;ecl-quicklisp.lisp")
 	      :dir "build:ext;"
 	      :prefix "EXT"
 	      :builtin nil)

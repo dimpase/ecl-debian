@@ -13,6 +13,7 @@
     See file '../Copyright' for full details.
 */
 
+#include <string.h>
 #include <ecl/ecl.h>
 #include <ecl/ecl-inl.h>
 
@@ -34,7 +35,7 @@ si_get_cdata(cl_object filename)
         map = si_mmap(3, filename, @':direction', @':input');
         array = si_mmap_array(map);
         {
-                char *v = array->base_string.self
+                char *v = (char*)array->base_string.self
                         + array->base_string.dim
                         - sizeof(cdata_header);
                 header = (cdata_header*)v;
@@ -44,11 +45,11 @@ si_get_cdata(cl_object filename)
 		displaced = str_no_data;
         } else {
                 displaced = cl_funcall(8, @'make-array',
-                                       MAKE_FIXNUM(header->size),
+                                       ecl_make_fixnum(header->size),
                                        @':element-type', @'base-char',
                                        @':displaced-to', array,
                                        @':displaced-index-offset',
-                                       MAKE_FIXNUM(header->offset));
+                                       ecl_make_fixnum(header->offset));
         }
         @(return map displaced);
 }
@@ -75,7 +76,7 @@ si_add_cdata(cl_object filename, cl_object data)
                 unsigned char *c = (unsigned char *)&header;
                 int i;
                 for (i = 0; i < sizeof(header); i++) {
-                        ecl_write_byte(MAKE_FIXNUM(c[i]), stream);
+                        ecl_write_byte(ecl_make_fixnum(c[i]), stream);
                 }
         }
         cl_close(1, stream);

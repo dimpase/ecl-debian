@@ -38,13 +38,13 @@ ecl_number_compare(cl_object x, cl_object y)
 #endif
 	cl_type ty;
  BEGIN:
-	ty = type_of(y);
-	switch (type_of(x)) {
+	ty = ecl_t_of(y);
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
-	  	ix = fix(x);
+	  	ix = ecl_fixnum(x);
 		switch (ty) {
 		case t_fixnum:
-		  	iy = fix(y);
+		  	iy = ecl_fixnum(y);
 			if (ix < iy)
 				return(-1);
 			else return(ix != iy);
@@ -116,7 +116,7 @@ ecl_number_compare(cl_object x, cl_object y)
 	DOUBLEFLOAT0:
 		switch (ty) {
 		case t_fixnum:
-			return -double_fix_compare(fix(y), dx);
+			return -double_fix_compare(ecl_fixnum(y), dx);
 		case t_bignum:
 		case t_ratio:
 			x = cl_rational(x);
@@ -148,7 +148,7 @@ ecl_number_compare(cl_object x, cl_object y)
 		ldx = ecl_long_float(x);
 		switch (ty) {
 		case t_fixnum:
-			return -long_double_fix_compare(fix(y), ldx);
+			return -long_double_fix_compare(ecl_fixnum(y), ldx);
 		case t_bignum:
 		case t_ratio:
 			x = cl_rational(x);
@@ -180,23 +180,23 @@ ecl_number_compare(cl_object x, cl_object y)
 }
 
 static cl_object
-monotonic(int s, int t, int narg, cl_va_list nums)
+monotonic(int s, int t, int narg, ecl_va_list nums)
 {
 	cl_object c, d;
 
 	if (narg == 0)
 		FEwrong_num_arguments_anonym();
 	/* INV: type check occurs in ecl_number_compare() */
-	for (c = cl_va_arg(nums); --narg; c = d) {
-		d = cl_va_arg(nums);
+	for (c = ecl_va_arg(nums); --narg; c = d) {
+		d = ecl_va_arg(nums);
 		if (s*ecl_number_compare(d, c) < t)
-			return1(Cnil);
+			return1(ECL_NIL);
 	}
-	return1(Ct);
+	return1(ECL_T);
 }
 
 #define MONOTONIC(i, j) (cl_narg narg, ...) \
-{ cl_va_list nums; cl_va_start(nums, narg, narg, 0); \
+{ ecl_va_list nums; ecl_va_start(nums, narg, narg, 0); \
   return monotonic(i, j, narg, nums); }
 
 cl_object @<= MONOTONIC( 1, 0)

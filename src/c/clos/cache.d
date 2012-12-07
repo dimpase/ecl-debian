@@ -20,8 +20,8 @@
 
 #define RECORD_KEY(e) ((e)[0])
 #define RECORD_VALUE(e) ((e)[1])
-#define RECORD_GEN(e) fix((e+2)[0])
-#define RECORD_GEN_SET(e,v) ((e+2)[0]=MAKE_FIXNUM(v))
+#define RECORD_GEN(e) ecl_fixnum((e+2)[0])
+#define RECORD_GEN_SET(e,v) ((e+2)[0]=ecl_make_fixnum(v))
 
 static void
 empty_cache(ecl_cache_ptr cache)
@@ -35,7 +35,7 @@ empty_cache(ecl_cache_ptr cache)
 		table->vector.self.fix[i+2] = 0;
 	}
 #ifdef ECL_THREADS
-	cache->clear_list = Cnil;
+	cache->clear_list = ECL_NIL;
 #endif
 }
 
@@ -59,22 +59,18 @@ clear_one_from_cache(ecl_cache_ptr cache, cl_object target)
 static void
 clear_list_from_cache(ecl_cache_ptr cache)
 {
-        const cl_env_ptr the_env = ecl_process_env();
-	ECL_WITH_GLOBAL_LOCK_BEGIN(the_env) {
-		cl_object table = cache->table;
-		cl_index i, total_size = table->vector.dim;
-		cl_object list = cache->clear_list;
-		for (i = 0; i < total_size; i+=3) {
-			cl_object key = table->vector.self.t[i];
-			if (key != OBJNULL) {
-				if (ecl_member_eq(key->vector.self.t[0], list)) {
-					table->vector.self.t[i] = OBJNULL;
-					table->vector.self.fix[i+2] = 0;
-				}
+	cl_object list = ecl_atomic_get(&cache->clear_list);
+	cl_object table = cache->table;
+	cl_index i, total_size = table->vector.dim;
+	for (i = 0; i < total_size; i+=3) {
+		cl_object key = table->vector.self.t[i];
+		if (key != OBJNULL) {
+			if (ecl_member_eq(key->vector.self.t[0], list)) {
+				table->vector.self.t[i] = OBJNULL;
+				table->vector.self.fix[i+2] = 0;
 			}
 		}
-		cache->clear_list = Cnil;
-	} ECL_WITH_GLOBAL_LOCK_END;
+	}
 }
 #endif
 
@@ -82,21 +78,20 @@ ecl_cache_ptr
 ecl_make_cache(cl_index key_size, cl_index cache_size)
 {
 	ecl_cache_ptr cache = ecl_alloc(sizeof(struct ecl_cache));
-	cl_object table;
 	cache->keys =
-		si_make_vector(Ct, /* element type */
-			       MAKE_FIXNUM(key_size), /* Maximum size */
-			       Ct, /* adjustable */
-			       MAKE_FIXNUM(0), /* fill pointer */
-			       Cnil, /* displaced */
-			       Cnil);
+		si_make_vector(ECL_T, /* element type */
+			       ecl_make_fixnum(key_size), /* Maximum size */
+			       ECL_T, /* adjustable */
+			       ecl_make_fixnum(0), /* fill pointer */
+			       ECL_NIL, /* displaced */
+			       ECL_NIL);
 	cache->table =
-		si_make_vector(Ct, /* element type */
-			       MAKE_FIXNUM(3*cache_size), /* Maximum size */
-			       Cnil, /* adjustable */
-			       Cnil, /* fill pointer */
-			       Cnil, /* displaced */
-			       Cnil);
+		si_make_vector(ECL_T, /* element type */
+			       ecl_make_fixnum(3*cache_size), /* Maximum size */
+			       ECL_NIL, /* adjustable */
+			       ECL_NIL, /* fill pointer */
+			       ECL_NIL, /* displaced */
+			       ECL_NIL);
 	empty_cache(cache);
 	return cache;
 }
@@ -105,10 +100,7 @@ void
 ecl_cache_remove_one(ecl_cache_ptr cache, cl_object first_key)
 {
 #ifdef ECL_THREADS
-        const cl_env_ptr the_env = ecl_process_env();
-	ECL_WITH_GLOBAL_LOCK_BEGIN(the_env) {
-		cache->clear_list = CONS(first_key, cache->clear_list);
-	} ECL_WITH_GLOBAL_LOCK_END;
+	ecl_atomic_push(&cache->clear_list, first_key);
 #else
 	clear_one_from_cache(cache, first_key);
 #endif
@@ -218,7 +210,7 @@ ecl_search_cache(ecl_cache_ptr cache)
 			cl_fixnum g = RECORD_GEN(e) - gen;
 			if (g <= 0) {
 				RECORD_KEY(e) = OBJNULL;
-				RECORD_VALUE(e) = Cnil;
+				RECORD_VALUE(e) = ECL_NIL;
 				g = 0;
 			}
 			RECORD_GEN_SET(e, g);

@@ -23,8 +23,8 @@
 int
 ecl_oddp(cl_object x)
 {
-	if (FIXNUMP(x))
-		return fix(x) & 1;
+	if (ECL_FIXNUMP(x))
+		return ecl_fixnum(x) & 1;
 	unlikely_if (!ECL_BIGNUMP(x))
                 FEwrong_type_only_arg(@[oddp], x, @[integer]);
         return _ecl_big_odd_p(x);
@@ -33,8 +33,8 @@ ecl_oddp(cl_object x)
 int
 ecl_evenp(cl_object x)
 {
-	if (FIXNUMP(x))
-		return ~fix(x) & 1;
+	if (ECL_FIXNUMP(x))
+		return ~ecl_fixnum(x) & 1;
 	unlikely_if (!ECL_BIGNUMP(x))
                 FEwrong_type_only_arg(@[evenp], x, @[integer]);
         return _ecl_big_even_p(x);
@@ -43,25 +43,25 @@ ecl_evenp(cl_object x)
 cl_object
 cl_oddp(cl_object x)
 {	/* INV: ecl_oddp() checks type */
-	@(return (ecl_oddp(x) ? Ct : Cnil))
+	@(return (ecl_oddp(x) ? ECL_T : ECL_NIL))
 }
 
 cl_object
 cl_evenp(cl_object x)
 {	/* INV: ecl_evenp() checks_type */
-	@(return (ecl_evenp(x) ? Ct : Cnil))
+	@(return (ecl_evenp(x) ? ECL_T : ECL_NIL))
 }
 
 cl_object
 si_float_nan_p(cl_object x)
 {
-	@(return (ecl_float_nan_p(x)? Ct : Cnil))
+	@(return (ecl_float_nan_p(x)? ECL_T : ECL_NIL))
 }
 
 cl_object
 si_float_infinity_p(cl_object x)
 {
-	@(return (ecl_float_infinity_p(x)? Ct : Cnil))
+	@(return (ecl_float_infinity_p(x)? ECL_T : ECL_NIL))
 }
 
 bool
@@ -73,11 +73,11 @@ ecl_float_nan_p(cl_object x)
 bool
 ecl_float_infinity_p(cl_object x)
 {
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_singlefloat:
-		return !isfinite(sf(x));
+		return !isfinite(ecl_single_float(x));
 	case t_doublefloat:
-		return !isfinite(df(x));
+		return !isfinite(ecl_double_float(x));
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
 		return !isfinite(ecl_long_float(x));

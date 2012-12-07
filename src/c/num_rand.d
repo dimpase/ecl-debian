@@ -21,6 +21,9 @@
 #include <stdlib.h>
 #include <ecl/internal.h>
 #include <fcntl.h>
+#if !defined(ECL_MS_WINDOWS_HOST)
+# include <unistd.h>
+#endif
 #if !defined(_MSC_VER) && !defined(__MINGW32__)
 # include <sys/stat.h>
 /* it isn't pulled in by fcntl.h */
@@ -167,9 +170,9 @@ random_integer(cl_object limit, cl_object state)
         cl_object buffer;
         if (bit_length <= FIXNUM_BITS)
                 bit_length = FIXNUM_BITS;
-        buffer = ecl_ash(MAKE_FIXNUM(1), bit_length);
+        buffer = ecl_ash(ecl_make_fixnum(1), bit_length);
         for (bit_length = mpz_size(buffer->big.big_num); bit_length; ) {
-                buffer->big.big_limbs[--bit_length] =
+                ECL_BIGNUM_LIMBS(buffer)[--bit_length] =
                         generate_limb(state);
         }
         return cl_mod(buffer, limit);
@@ -182,26 +185,26 @@ rando(cl_object x, cl_object rs)
 	if (!ecl_plusp(x)) {
 		goto ERROR;
 	}
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 #if FIXNUM_BITS <= 32
-                z = MAKE_FIXNUM(generate_int32(rs->random.value) % fix(x));
+                z = ecl_make_fixnum(generate_int32(rs->random.value) % ecl_fixnum(x));
                 break;
 #endif
 	case t_bignum:
 		z = random_integer(x, rs->random.value);
 		break;
 	case t_singlefloat:
-		z = ecl_make_singlefloat(sf(x) *
+		z = ecl_make_single_float(ecl_single_float(x) *
                                          (float)generate_double(rs->random.value));
 		break;
 	case t_doublefloat:
-		z = ecl_make_doublefloat(df(x) *
+		z = ecl_make_double_float(ecl_double_float(x) *
                                          generate_double(rs->random.value));
 		break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		z = ecl_make_longfloat(ecl_long_float(x) *
+		z = ecl_make_long_float(ecl_long_float(x) *
                                        (long double)generate_double(rs->random.value));
 		break;
 #endif
@@ -217,7 +220,7 @@ cl_object
 ecl_make_random_state(cl_object rs)
 {
         cl_object z = ecl_alloc_object(t_random);
-	if (rs == Ct) {
+	if (rs == ECL_T) {
 		z->random.value = init_random_state();
 	} else {
 		if (Null(rs)) {
@@ -238,7 +241,7 @@ ecl_make_random_state(cl_object rs)
 	@(return rando(x, rs));
 @)
 
-@(defun make_random_state (&optional (rs Cnil))
+@(defun make_random_state (&optional (rs ECL_NIL))
 @
 	@(return ecl_make_random_state(rs))
 @)
@@ -246,5 +249,5 @@ ecl_make_random_state(cl_object rs)
 cl_object
 cl_random_state_p(cl_object x)
 {
-	@(return (ECL_RANDOM_STATE_P(x) ? Ct : Cnil))
+	@(return (ECL_RANDOM_STATE_P(x) ? ECL_T : ECL_NIL))
 }

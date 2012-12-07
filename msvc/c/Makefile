@@ -14,7 +14,8 @@ ECL_FPE_CODE=fpe_x86.c
 
 !if "$(ECL_THREADS)" != ""
 ECL_THREADS_FLAG=1
-THREADS_OBJ= process.obj mutex.obj condition_variable.obj rwlock.obj
+THREADS_OBJ= process.obj mutex.obj condition_variable.obj rwlock.obj \
+             semaphore.obj barrier.obj mailbox.obj atomic.obj queue.obj
 !else
 ECL_THREADS_FLAG=0
 THREADS_OBJ=
@@ -31,8 +32,10 @@ ECL_UNICODE_FLAG=0
 
 !if "$(ECL_SSE)" != ""
 ECL_SSE_FLAG=1
+ECL_SSE_OBJ=sse2.obj
 !else
 ECL_SSE_FLAG=0
+ECL_SSE_OBJ=
 !endif
 
 # Programs used by "make":
@@ -92,13 +95,14 @@ OBJS	= main.obj symbol.obj package.obj cons.obj list.obj\
 	typespec.obj assignment.obj \
 	predicate.obj big.obj number.obj\
 	num_pred.obj num_arith.obj num_co.obj\
-	num_log.obj num_rand.obj array.obj sequence.obj cmpaux.obj\
+	num_log.obj num_rand.obj array.obj vector_push.obj \
+	sequence.obj cmpaux.obj\
 	macros.obj backq.obj stacks.obj \
 	time.obj unixint.obj\
 	mapfun.obj multival.obj hash.obj format.obj pathname.obj\
 	structure.obj load.obj unixfsys.obj unixsys.obj \
 	ffi.obj alloc_2.obj tcp.obj $(THREADS_OBJ) serialize.obj \
-	$(ECL_FFI_OBJ) $(ECL_UCD_OBJ) mmap.obj cdata.obj
+	$(ECL_FFI_OBJ) $(ECL_UCD_OBJ) $(ECL_SSE_OBJ) mmap.obj cdata.obj
 
 all:	$(DPP) ..\eclmin.lib ..\cinit.obj
 

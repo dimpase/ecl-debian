@@ -26,8 +26,8 @@ cl_object
 ecl_symbol_package(cl_object s)
 {
         if (Null(s))
-                return Cnil_symbol->symbol.hpack;
-        if (type_of(s) == t_symbol)
+                return ECL_NIL_SYMBOL->symbol.hpack;
+        if (ecl_t_of(s) == t_symbol)
                 return s->symbol.hpack;
         FEwrong_type_nth_arg(@[symbol-package], 1, s, @[symbol]);
 }
@@ -36,8 +36,8 @@ int
 ecl_symbol_type(cl_object s)
 {
         if (Null(s))
-                return Cnil_symbol->symbol.stype;
-        if (type_of(s) == t_symbol)
+                return ECL_NIL_SYMBOL->symbol.stype;
+        if (ecl_t_of(s) == t_symbol)
                 return s->symbol.stype;
         FEwrong_type_nth_arg(@[symbol-name], 1, s, @[symbol]);
 }
@@ -46,10 +46,10 @@ void
 ecl_symbol_type_set(cl_object s, int type)
 {
         if (Null(s)) {
-                Cnil_symbol->symbol.stype = type;
+                ECL_NIL_SYMBOL->symbol.stype = type;
                 return;
         }
-        if (type_of(s) == t_symbol) {
+        if (ecl_t_of(s) == t_symbol) {
                 s->symbol.stype = type;
                 return;
         }
@@ -60,9 +60,9 @@ cl_object
 ecl_symbol_name(cl_object s)
 {
         if (Null(s)) {
-                return Cnil_symbol->symbol.name;
+                return ECL_NIL_SYMBOL->symbol.name;
         }
-        if (type_of(s) == t_symbol) {
+        if (ecl_t_of(s) == t_symbol) {
                 return s->symbol.name;
         }
         FEwrong_type_nth_arg(@[symbol-name], 1, s, @[symbol]);
@@ -72,9 +72,9 @@ static cl_object *
 ecl_symbol_plist(cl_object s)
 {
         if (Null(s)) {
-                return &Cnil_symbol->symbol.plist;
+                return &ECL_NIL_SYMBOL->symbol.plist;
         }
-        if (type_of(s) == t_symbol) {
+        if (ecl_t_of(s) == t_symbol) {
                 return &s->symbol.plist;
         }
         FEwrong_type_nth_arg(@[symbol-plist], 1, s, @[symbol]);
@@ -89,7 +89,7 @@ cl_make_symbol(cl_object str)
 {
 	cl_object x;
 	/* INV: In several places it is assumed that we copy the string! */
-	switch (type_of(str)) {
+	switch (ecl_t_of(str)) {
 #ifdef ECL_UNICODE
 	case t_string:
 		if (!ecl_fits_in_base_string(str)) {
@@ -112,10 +112,10 @@ cl_make_symbol(cl_object str)
 	x->symbol.binding = ECL_MISSING_SPECIAL_BINDING;
 #endif	/*  */
 	ECL_SET(x,OBJNULL);
-	SYM_FUN(x) = Cnil;
-	x->symbol.plist = Cnil;
-	x->symbol.hpack = Cnil;
-	x->symbol.stype = stp_ordinary;
+	ECL_SYM_FUN(x) = ECL_NIL;
+	x->symbol.plist = ECL_NIL;
+	x->symbol.hpack = ECL_NIL;
+	x->symbol.stype = ecl_stp_ordinary;
 	@(return x)
 }
 
@@ -126,6 +126,15 @@ cl_object
 ecl_make_keyword(const char *s)
 {
 	cl_object x = _ecl_intern(s, cl_core.keyword_package);
+	/* cl_export(x, keyword_package); this is implicit in ecl_intern() */
+	return x;
+}
+
+cl_object
+ecl_make_symbol(const char *s, const char *p)
+{
+	cl_object package = ecl_find_package(p);
+	cl_object x = _ecl_intern(s, package);
 	/* cl_export(x, keyword_package); this is implicit in ecl_intern() */
 	return x;
 }
@@ -171,7 +180,7 @@ ecl_getf(cl_object place, cl_object indicator, cl_object deflt)
 			return ECL_CONS_CAR(cdr_l);
 		l = ECL_CONS_CDR(cdr_l);
 	}
-	if (l != Cnil)
+	if (l != ECL_NIL)
 		FEtype_error_plist(place);
 	return(deflt);
 }
@@ -206,7 +215,7 @@ si_put_f(cl_object place, cl_object value, cl_object indicator)
 		}
 		l = ECL_CONS_CDR(cdr_l);
 	}
-	if (l != Cnil)
+	if (l != ECL_NIL)
 		FEtype_error_plist(place);
 	place = CONS(value, place);
 	@(return CONS(indicator, place));
@@ -224,7 +233,7 @@ si_put_f(cl_object place, cl_object value, cl_object indicator)
 static bool
 remf(cl_object *place, cl_object indicator)
 {
-	cl_object l = *place, tail = Cnil;
+	cl_object l = *place, tail = ECL_NIL;
 	while (!Null(l)) {
 		cl_object ind;
 		if (!LISTP(l))
@@ -250,7 +259,7 @@ remf(cl_object *place, cl_object indicator)
 bool
 ecl_keywordp(cl_object s)
 {
-	return (type_of(s) == t_symbol) && (s->symbol.hpack == cl_core.keyword_package);
+	return (ecl_t_of(s) == t_symbol) && (s->symbol.hpack == cl_core.keyword_package);
 }
 
 @(defun get (sym indicator &optional deflt)
@@ -264,7 +273,7 @@ cl_object
 cl_remprop(cl_object sym, cl_object prop)
 {
 	cl_object *plist = ecl_symbol_plist(sym);
-	@(return (remf(plist, prop)? Ct: Cnil))
+	@(return (remf(plist, prop)? ECL_T: ECL_NIL))
 }
 
 cl_object
@@ -292,24 +301,24 @@ cl_get_properties(cl_object place, cl_object indicator_list)
 		if (!CONSP(cdr_l))
 			break;
 		if (ecl_member_eq(ECL_CONS_CAR(l), indicator_list))
-			@(return ECL_CONS_CAR(l) ECL_CONS_CAR(cdr_l) l)
+			ecl_return3(the_env,ECL_CONS_CAR(l),ECL_CONS_CAR(cdr_l),l);
 		l = ECL_CONS_CDR(cdr_l);
 	}
-	if (l != Cnil)
+	if (l != ECL_NIL)
 		FEtype_error_plist(place);
-	@(return Cnil Cnil Cnil)
+	ecl_return3(the_env, ECL_NIL, ECL_NIL, ECL_NIL);
 }
 
 cl_object
 cl_symbol_name(cl_object x)
 {
-	@(return ecl_symbol_name(x))
+	ecl_return1(ecl_process_env(), ecl_symbol_name(x));
 }
 
 @(defun copy_symbol (sym &optional cp &aux x)
 @
 	if (Null(sym))
-		sym = Cnil_symbol;
+		sym = ECL_NIL_SYMBOL;
 	x = cl_make_symbol(ecl_symbol_name(sym));
 	if (!Null(cp)) {
 		x->symbol.dynamic = 0;
@@ -333,7 +342,7 @@ cl_symbol_name(cl_object x)
 	if (ecl_stringp(prefix)) {
 		counter = ECL_SYM_VAL(the_env, @'*gensym-counter*');
 		increment = 1;
-	} else if ((t = type_of(prefix)) == t_fixnum || t == t_bignum) {
+	} else if ((t = ecl_t_of(prefix)) == t_fixnum || t == t_bignum) {
 		counter = prefix;
 		prefix = cl_core.gensym_prefix;
 		increment = 0;
@@ -342,10 +351,10 @@ cl_symbol_name(cl_object x)
                                      cl_list(3, @'or', @'string', @'integer'));
 	}
 	output = ecl_make_string_output_stream(64, 1);
-	ecl_bds_bind(the_env, @'*print-escape*', Cnil);
-	ecl_bds_bind(the_env, @'*print-readably*', Cnil);
-	ecl_bds_bind(the_env, @'*print-base*', MAKE_FIXNUM(10));
-	ecl_bds_bind(the_env, @'*print-radix*', Cnil);
+	ecl_bds_bind(the_env, @'*print-escape*', ECL_NIL);
+	ecl_bds_bind(the_env, @'*print-readably*', ECL_NIL);
+	ecl_bds_bind(the_env, @'*print-base*', ecl_make_fixnum(10));
+	ecl_bds_bind(the_env, @'*print-radix*', ECL_NIL);
 	si_write_ugly_object(prefix, output);
 	si_write_ugly_object(counter, output);
 	ecl_bds_unwind_n(the_env, 4);
@@ -364,10 +373,10 @@ cl_symbol_name(cl_object x)
 	pack = si_coerce_to_package(pack);
 ONCE_MORE:
 	output = ecl_make_string_output_stream(64, 1);
-	ecl_bds_bind(the_env, @'*print-escape*', Cnil);
-	ecl_bds_bind(the_env, @'*print-readably*', Cnil);
-	ecl_bds_bind(the_env, @'*print-base*', MAKE_FIXNUM(10));
-	ecl_bds_bind(the_env, @'*print-radix*', Cnil);
+	ecl_bds_bind(the_env, @'*print-escape*', ECL_NIL);
+	ecl_bds_bind(the_env, @'*print-readably*', ECL_NIL);
+	ecl_bds_bind(the_env, @'*print-base*', ecl_make_fixnum(10));
+	ecl_bds_bind(the_env, @'*print-radix*', ECL_NIL);
 	si_write_ugly_object(prefix, output);
 	si_write_ugly_object(cl_core.gentemp_counter, output);
 	ecl_bds_unwind_n(the_env, 4);
@@ -387,7 +396,7 @@ cl_symbol_package(cl_object sym)
 cl_object
 cl_keywordp(cl_object sym)
 {
-	@(return (ecl_keywordp(sym)? Ct: Cnil))
+	@(return (ecl_keywordp(sym)? ECL_T: ECL_NIL))
 }
 
 /*
@@ -406,7 +415,7 @@ si_rem_f(cl_object plist, cl_object indicator)
 {
 	cl_env_ptr the_env = ecl_process_env();
 	bool found = remf(&plist, indicator);
-	@(return plist (found? Ct : Cnil))
+	ecl_return2(the_env, plist, (found? ECL_T : ECL_NIL));
 }
 
 cl_object
@@ -428,8 +437,8 @@ si_putprop(cl_object sym, cl_object value, cl_object indicator)
 @(defun si::put-properties (sym &rest ind_values)
 @
 	while (--narg >= 2) {
-		cl_object prop = cl_va_arg(ind_values);
-		si_putprop(sym, cl_va_arg(ind_values), prop);
+		cl_object prop = ecl_va_arg(ind_values);
+		si_putprop(sym, ecl_va_arg(ind_values), prop);
 		narg--;
 	}
 	@(return sym)
@@ -439,9 +448,9 @@ cl_object
 @si::*make-special(cl_object sym)
 {
 	int type = ecl_symbol_type(sym);
-	if (type & stp_constant)
+	if (type & ecl_stp_constant)
 		FEerror("~S is a constant.", 1, sym);
-	ecl_symbol_type_set(sym, type | stp_special);
+	ecl_symbol_type_set(sym, type | ecl_stp_special);
 	cl_remprop(sym, @'si::symbol-macro');
 	@(return sym)
 }
@@ -450,10 +459,10 @@ cl_object
 @si::*make-constant(cl_object sym, cl_object val)
 {
 	int type = ecl_symbol_type(sym);
-	if (type & stp_special)
+	if (type & ecl_stp_special)
 		FEerror("The argument ~S to DEFCONSTANT is a special variable.",
 			1, sym);
-	ecl_symbol_type_set(sym, type | stp_constant);
+	ecl_symbol_type_set(sym, type | ecl_stp_constant);
 	ECL_SET(sym, val);
 	@(return sym)
 }
@@ -461,11 +470,11 @@ cl_object
 void
 ecl_defvar(cl_object sym, cl_object val)
 {
-	si_safe_eval(3, cl_list(3, @'defvar', sym, cl_list(2, @'quote', val)), Cnil, Cnil);
+	si_safe_eval(3, cl_list(3, @'defvar', sym, cl_list(2, @'quote', val)), ECL_NIL, ECL_NIL);
 }
 
 void
 ecl_defparameter(cl_object sym, cl_object val)
 {
-	si_safe_eval(3, cl_list(3, @'defparameter', sym, cl_list(2, @'quote', val)), Cnil, Cnil);
+	si_safe_eval(3, cl_list(3, @'defparameter', sym, cl_list(2, @'quote', val)), ECL_NIL, ECL_NIL);
 }

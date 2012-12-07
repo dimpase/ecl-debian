@@ -50,7 +50,7 @@ get_mark_bit(void *x) {
 
 #define	inheap(pp)	((unsigned long)(pp) < (unsigned long)heap_end)
 #define VALID_DATA_ADDRESS(pp) \
-  !IMMEDIATE(pp) && (cl_index)DATA_START <= (cl_index)(pp) && (cl_index)(pp) < (cl_index)heap_end
+  !ECL_IMMEDIATE(pp) && (cl_index)DATA_START <= (cl_index)(pp) && (cl_index)(pp) < (cl_index)heap_end
 
 cl_object siVgc_verbose;
 cl_object siVgc_message;
@@ -101,8 +101,8 @@ register_root(cl_object *p)
 #define mark_displaced(ar) mark_object(ar)
 #define mark_contblock(x,s) {if (collect_blocks) _mark_contblock(x,s); }
 #if 1
-#define mark_object(x) if ((x != OBJNULL) && !IMMEDIATE(x)) _mark_object(x)
-#define mark_next(a) if ((a != OBJNULL) && !IMMEDIATE(a)) { x=(a); goto BEGIN; }
+#define mark_object(x) if ((x != OBJNULL) && !ECL_IMMEDIATE(x)) _mark_object(x)
+#define mark_next(a) if ((a != OBJNULL) && !ECL_IMMEDIATE(a)) { x=(a); goto BEGIN; }
 #else
 #define mark_object(x) _mark_object(x)
 #define mark_next(a) x=(a); goto BEGIN
@@ -123,7 +123,7 @@ _mark_object(cl_object x)
 BEGIN:
 #if 0
 	/* We cannot get here because mark_object() and mark_next() already check this */
-	if (IMMEDIATE(x)) return;	/* fixnum, character or locative */
+	if (ECL_IMMEDIATE(x)) return;	/* fixnum, character or locative */
 	if (x == OBJNULL)
 		return;
 #endif
@@ -131,7 +131,7 @@ BEGIN:
 		return;
 	set_mark_bit(x);
 
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 
 	case t_bignum:
 #ifdef WITH_GMP
@@ -171,7 +171,7 @@ BEGIN:
 	case t_symbol:
 		mark_object(x->symbol.name);
 		mark_object(x->symbol.plist);
-		mark_object(SYM_FUN(x));
+		mark_object(ECL_SYM_FUN(x));
 		mark_next(SYM_VAL(x));
 		break;
 
@@ -208,17 +208,17 @@ BEGIN:
 	case t_string:
 #endif
 	case t_vector:
-		if ((y = x->array.displaced) != Cnil)
+		if ((y = x->array.displaced) != ECL_NIL)
 			mark_displaced(y);
 		cp = (char *)x->array.self.t;
 		if (cp == NULL)
 			break;
 		switch ((enum aelttype)x->array.elttype) {
 #ifdef ECL_UNICODE
-		case aet_ch:
+		case ecl_aet_ch:
 #endif
-		case aet_object:
-			if (x->array.displaced == Cnil || CAR(x->array.displaced) == Cnil) {
+		case ecl_aet_object:
+			if (x->array.displaced == ECL_NIL || CAR(x->array.displaced) == ECL_NIL) {
 				cl_object *p = x->array.self.t;
 				cl_index i;
 				if (x->array.t == t_vector && x->vector.hasfillp)
@@ -230,19 +230,19 @@ BEGIN:
 			}
 			j = sizeof(cl_object)*x->array.dim;
 			break;
-		case aet_bc:
+		case ecl_aet_bc:
 			j = x->array.dim;
 			break;
-		case aet_bit:
+		case ecl_aet_bit:
 			j = sizeof(int) * ((x->vector.offset + x->vector.dim + W_SIZE -1)/W_SIZE);
 			break;
-		case aet_fix:
+		case ecl_aet_fix:
 			j = x->array.dim * sizeof(cl_fixnum);
 			break;
-		case aet_sf:
+		case ecl_aet_sf:
 			j = x->array.dim * sizeof(float);
 			break;
-		case aet_df:
+		case ecl_aet_df:
 			j = x->array.dim * sizeof(double);
 			break;
 		default:
@@ -250,7 +250,7 @@ BEGIN:
 		}
 		goto COPY_ARRAY;
 	case t_base_string:
-		if ((y = x->base_string.displaced) != Cnil)
+		if ((y = x->base_string.displaced) != ECL_NIL)
 			mark_displaced(y);
 		cp = x->base_string.self;
 		if (cp == NULL)
@@ -260,7 +260,7 @@ BEGIN:
 		mark_contblock(cp, j);
 		break;
 	case t_bitvector:
-		if ((y = x->vector.displaced) != Cnil)
+		if ((y = x->vector.displaced) != ECL_NIL)
 			mark_displaced(y);
 		cp = x->vector.self.bit;
 		if (cp == NULL)
@@ -282,36 +282,36 @@ BEGIN:
 
 	case t_stream:
 		switch ((enum smmode)x->stream.mode) {
-		case smm_closed:
+		case ecl_smm_closed:
 			/* Rest of fields are NULL */
 			mark_next(x->stream.object1);
 			break;
-		case smm_input:
-		case smm_output:
-		case smm_io:
-		case smm_probe:
+		case ecl_smm_input:
+		case ecl_smm_output:
+		case ecl_smm_io:
+		case ecl_smm_probe:
 			mark_object(x->stream.object0);
 			mark_object(x->stream.object1);
 			mark_contblock(x->stream.buffer, BUFSIZ);
 			break;
 
-		case smm_synonym:
+		case ecl_smm_synonym:
 			mark_next(x->stream.object0);
 			break;
 
-		case smm_broadcast:
-		case smm_concatenated:
+		case ecl_smm_broadcast:
+		case ecl_smm_concatenated:
 			mark_next(x->stream.object0);
 			break;
 
-		case smm_two_way:
-		case smm_echo:
+		case ecl_smm_two_way:
+		case ecl_smm_echo:
 			mark_object(x->stream.object0);
 			mark_next(x->stream.object1);
 			break;
 
-		case smm_string_input:
-		case smm_string_output:
+		case ecl_smm_string_input:
+		case ecl_smm_string_output:
 			mark_next(x->stream.object0);
 			break;
 
@@ -413,7 +413,7 @@ BEGIN:
 		break;
 	default:
 		if (debug)
-			printf("\ttype = %d\n", type_of(x));
+			printf("\ttype = %d\n", ecl_t_of(x));
 		error("mark botch");
 	}
 }
@@ -450,12 +450,12 @@ mark_phase(void)
 {
 	register int i;
 	register struct package *pp;
-	register bds_ptr bdp;
+	register ecl_bds_ptr bdp;
 	register ecl_frame_ptr frp;
-	register ihs_ptr ihsp;
+	register ecl_ihs_ptr ihsp;
 
-	mark_object(Cnil);
-	mark_object(Ct);
+	mark_object(ECL_NIL);
+	mark_object(ECL_T);
 
 #ifdef THREADS
 	{
@@ -565,8 +565,8 @@ sweep_phase(void)
 	register struct typemanager *tm;
 	register cl_object f;
 
-	Cnil->symbol.m = FALSE;
-	Ct->symbol.m = FALSE;
+	ECL_NIL->symbol.m = FALSE;
+	ECL_T->symbol.m = FALSE;
 
 	if (debug)
 		printf("type map\n");
@@ -696,7 +696,7 @@ gc(enum type t)
   if (!GC_enabled())
     return;
 
-  if (SYM_VAL(siVgc_verbose) != Cnil) {
+  if (SYM_VAL(siVgc_verbose) != ECL_NIL) {
     printf("\n[GC ..");
     /* To use this should add entries in tm_table for reloc and contig.
        fprintf(stdout, "\n[GC for %d %s pages ..",
@@ -705,7 +705,7 @@ gc(enum type t)
     fflush(stdout);
   }
 
-  debug = symbol_value(siVgc_message) != Cnil;
+  debug = symbol_value(siVgc_message) != ECL_NIL;
 
 #ifdef THREADS
   if (clwp != &main_lpd)  {
@@ -856,7 +856,7 @@ gc(enum type t)
 
   gc_time += (gc_start = runtime() - gc_start);
 
-  if (SYM_VAL(siVgc_verbose) != Cnil) {
+  if (SYM_VAL(siVgc_verbose) != ECL_NIL) {
     /* Don't use fprintf since on Linux it calls malloc() */
     printf(". finished in %.2f\"]", gc_start/60.0);
     fflush(stdout);
@@ -946,28 +946,28 @@ _mark_contblock(void *x, size_t s)
 	cl_object *tl;
 @
 	NValues = 8;
-	VALUES(0) = MAKE_FIXNUM(real_maxpage);
-	VALUES(1) = MAKE_FIXNUM(available_pages());
-	VALUES(2) = MAKE_FIXNUM(ncbpage);
-	VALUES(3) = MAKE_FIXNUM(maxcbpage);
-	VALUES(4) = MAKE_FIXNUM(ncb);
-	VALUES(5) = MAKE_FIXNUM(cbgccount);
-	VALUES(6) = MAKE_FIXNUM(holepage);
-	VALUES(7) = Cnil;
+	VALUES(0) = ecl_make_fixnum(real_maxpage);
+	VALUES(1) = ecl_make_fixnum(available_pages());
+	VALUES(2) = ecl_make_fixnum(ncbpage);
+	VALUES(3) = ecl_make_fixnum(maxcbpage);
+	VALUES(4) = ecl_make_fixnum(ncb);
+	VALUES(5) = ecl_make_fixnum(cbgccount);
+	VALUES(6) = ecl_make_fixnum(holepage);
+	VALUES(7) = ECL_NIL;
 	tl = &VALUES(7);
 	for (i = 0;  i < (int)t_end;  i++) {
 	  if (tm_table[i].tm_type == (enum type)i) {
-	    tl = &CDR(*tl = CONS(MAKE_FIXNUM(tm_table[i].tm_nused), Cnil));
-	    tl = &CDR(*tl = CONS(MAKE_FIXNUM(tm_table[i].tm_nfree), Cnil));
-	    tl = &CDR(*tl = CONS(MAKE_FIXNUM(tm_table[i].tm_npage), Cnil));
-	    tl = &CDR(*tl = CONS(MAKE_FIXNUM(tm_table[i].tm_maxpage), Cnil));
-	    tl = &CDR(*tl = CONS(MAKE_FIXNUM(tm_table[i].tm_gccount), Cnil));
+	    tl = &CDR(*tl = CONS(ecl_make_fixnum(tm_table[i].tm_nused), ECL_NIL));
+	    tl = &CDR(*tl = CONS(ecl_make_fixnum(tm_table[i].tm_nfree), ECL_NIL));
+	    tl = &CDR(*tl = CONS(ecl_make_fixnum(tm_table[i].tm_npage), ECL_NIL));
+	    tl = &CDR(*tl = CONS(ecl_make_fixnum(tm_table[i].tm_maxpage), ECL_NIL));
+	    tl = &CDR(*tl = CONS(ecl_make_fixnum(tm_table[i].tm_gccount), ECL_NIL));
 	  } else {
-	    tl = &CDR(*tl = CONS(Cnil, Cnil));
-	    tl = &CDR(*tl = CONS(MAKE_FIXNUM(tm_table[i].tm_type), Cnil));
-	    tl = &CDR(*tl = CONS(Cnil, Cnil));
-	    tl = &CDR(*tl = CONS(Cnil, Cnil));
-	    tl = &CDR(*tl = CONS(Cnil, Cnil));
+	    tl = &CDR(*tl = CONS(ECL_NIL, ECL_NIL));
+	    tl = &CDR(*tl = CONS(ecl_make_fixnum(tm_table[i].tm_type), ECL_NIL));
+	    tl = &CDR(*tl = CONS(ECL_NIL, ECL_NIL));
+	    tl = &CDR(*tl = CONS(ECL_NIL, ECL_NIL));
+	    tl = &CDR(*tl = CONS(ECL_NIL, ECL_NIL));
 	  }
 	}
 	return VALUES(0);
@@ -984,7 +984,7 @@ _mark_contblock(void *x, size_t s)
 
 @(defun si::gc-time ()
 @
-	@(return MAKE_FIXNUM(gc_time))
+	@(return ecl_make_fixnum(gc_time))
 @)
 
 void
@@ -992,8 +992,8 @@ init_GC(void)
 {
 	register_root(&siVgc_verbose);
 	register_root(&siVgc_message);
-	siVgc_verbose = make_si_special("*GC-VERBOSE*", Cnil);
-	siVgc_message = make_si_special("*GC-MESSAGE*", Cnil);
+	siVgc_verbose = make_si_special("*GC-VERBOSE*", ECL_NIL);
+	siVgc_message = make_si_special("*GC-MESSAGE*", ECL_NIL);
 	GC_enable();
 	gc_time = 0;
 }

@@ -171,8 +171,7 @@
     ))
 
 (defconstant +wt-loc-dispatch-alist+
-  '((call . wt-call)
-    (call-normal . wt-call-normal)
+  '((call-normal . wt-call-normal)
     (call-indirect . wt-call-indirect)
     (ffi:c-inline . wt-c-inline-loc)
     (coerce-loc . wt-coerce-loc)
@@ -194,12 +193,12 @@
 
     (structure-ref . wt-structure-ref)
 
-    (nil . "Cnil")
-    (t . "Ct")
+    (nil . "ECL_NIL")
+    (t . "ECL_T")
     (return . "value0")
     (values . "cl_env_copy->values[0]")
     (va-arg . "va_arg(args,cl_object)")
-    (cl-va-arg . "cl_va_arg(args)")
+    (cl-va-arg . "ecl_va_arg(args)")
     (value0 . "value0")
     ))
 

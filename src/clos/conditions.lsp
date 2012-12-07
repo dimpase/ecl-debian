@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 2001, Juan Jose Garcia-Ripoll
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -77,6 +78,26 @@
     (if fn
 	(funcall fn stream)
 	(format stream "~s" (or (restart-name restart) restart)))))
+
+(defun bind-simple-restarts (tag names)
+  (flet ((simple-restart-function (tag code)
+	   #'(lambda (&rest args) (throw tag (values code args)))))
+    (cons (loop for i from 1
+	     for n in (if (atom names) (list names) names)
+	     for f = (simple-restart-function tag i)
+	     collect (let ((v i))
+		       (make-restart :name n
+				     :function f)))
+	  *restart-clusters*)))
+
+(defun bind-simple-handlers (tag names)
+  (flet ((simple-handler-function (tag code)
+	   #'(lambda (c) (throw tag (values code c)))))
+    (cons (loop for i from 1
+	     for n in (if (atom names) (list names) names)
+	     for f = (simple-restart-function tag i)
+	     collect (cons name f))
+	  *handler-clusters*)))
 
 (defmacro restart-bind (bindings &body forms)
   `(let ((*restart-clusters*
@@ -510,6 +531,10 @@ or return to an outer frame, undoing all the function calls so far."
 (define-condition ext:storage-exhausted (storage-condition) ()
   (:REPORT "Memory limit reached. Please jump to an outer pointer, quit program and enlarge the
 memory limits before executing the program again."))
+
+(define-condition ext:illegal-instruction (serious-condition)
+  ()
+  (:REPORT "Illegal instruction."))
 
 (define-condition ext:unix-signal-received ()
   ((code :type fixnum

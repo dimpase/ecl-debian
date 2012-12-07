@@ -82,10 +82,12 @@
    ;; of a function.
    ((endp forms)
     (cond ((eq *destination* 'RETURN)
-	   (wt-nl "value0=Cnil; cl_env_copy->nvalues=0;")
+	   (wt-nl "value0 = ECL_NIL;")
+	   (wt-nl "cl_env_copy->nvalues = 0;")
 	   (unwind-exit 'RETURN))
 	  ((eq *destination* 'VALUES)
-	   (wt-nl "cl_env_copy->values[0]=Cnil; cl_env_copy->nvalues=0;")
+	   (wt-nl "cl_env_copy->values[0] = ECL_NIL;")
+	   (wt-nl "cl_env_copy->nvalues = 0;")
 	   (unwind-exit 'VALUES))
 	  (t
 	   (unwind-exit 'NIL))))
@@ -108,12 +110,12 @@
 	   (forms (nreverse (coerce-locs (inline-args forms)))))
       ;; By inlining arguments we make sure that VL has no call to funct.
       ;; Reverse args to avoid clobbering VALUES(0)
-      (wt-nl "cl_env_copy->nvalues=" nv ";")
+      (wt-nl "cl_env_copy->nvalues = " nv ";")
       (do ((vl forms (rest vl))
 	   (i (1- (length forms)) (1- i)))
 	  ((null vl))
 	(declare (fixnum i))
-	(wt-nl "cl_env_copy->values[" i "]=" (first vl) ";"))
+	(wt-nl "cl_env_copy->values[" i "] = " (first vl) ";"))
       (unwind-exit 'VALUES)
       (close-inline-blocks)))))
 
@@ -169,7 +171,7 @@
   (dolist (v vars)
     (if use-bind
 	(bind (c1form-arg 0 (default-init v)) v)
-	(set-var '(C-INLINE (:object) "Cnil" () t nil) v)))
+	(set-var '(C-INLINE (:object) "ECL_NIL" () t nil) v)))
   output)
 
 (defun do-m-v-setq-any (min-values max-values vars use-bind)
@@ -193,7 +195,8 @@
     ;; If there are more variables, we have to check whether there
     ;; are enough values left in the stack.
     (when vars
-      (wt-nl "{int " nr "=cl_env_copy->nvalues-" min-values ";")
+      (wt-nl-open-brace) ;; Brace [1]
+      (wt-nl "int " nr " = cl_env_copy->nvalues-" min-values ";")
       ;;
       ;; Loop for assigning values to variables
       ;;
@@ -214,14 +217,15 @@
       ;; Loop for setting default values when there are less output than vars.
       ;;
       (let ((label (next-label)))
-	(wt-nl) (wt-go label) (wt "}")
+	(wt-nl) (wt-go label)
+	(wt-nl-close-brace) ;; Matches [1]
 	(push label labels)
 	(setq labels (nreverse labels))
 	(dolist (v vars)
 	  (when labels (wt-label (pop labels)))
 	  (if use-bind
-	      (bind '(C-INLINE (:object) "Cnil" () t nil) v)
-	      (set-var '(C-INLINE (:object) "Cnil" () t nil) v)))
+	      (bind '(C-INLINE (:object) "ECL_NIL" () t nil) v)
+	      (set-var '(C-INLINE (:object) "ECL_NIL" () t nil) v)))
 	(when labels (wt-label label))))
     output))
 
@@ -273,7 +277,7 @@
 	 (nr (make-lcl-var :type :int))
 	 min-values max-values)
     ;; 1) Retrieve the number of output values
-    (wt-nl "{")
+    (wt-nl-open-brace)
     (multiple-value-setq (min-values max-values)
       (c1form-values-number init-form))
 
@@ -303,6 +307,5 @@
     (c2expr body)
 
     ;; 6) Close the C expression.
-    (wt "}"))
-  )
+    (wt-nl-close-brace)))
 

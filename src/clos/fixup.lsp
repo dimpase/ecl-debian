@@ -1,6 +1,7 @@
 ;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: CLOS -*-
 ;;;;
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -26,61 +27,37 @@
 (defclass standard-effective-slot-definition (standard-slot-definition direct-slot-definition))
 |#
 
-(defun convert-one-class (class)
-  (let* ((direct-slots (class-direct-slots class))
-	 (effective-slots (class-slots class))
-	 (new-direct-slots
-	  (loop for x in direct-slots
-		collect (if (consp x)
-			    (apply #'make-instance 'standard-direct-slot-definition
-				   (slot-definition-to-plist x))
-			    x)))
-	 (new-effective-slots
-	  (loop for x in effective-slots
-		collect (if (consp x)
-			    (apply #'make-instance 'standard-effective-slot-definition
-				   (slot-definition-to-plist x))
-			    x))))
-    (map-into direct-slots #'identity new-direct-slots)
-    (map-into effective-slots #'identity new-effective-slots)
-    (when (typep class 'std-class)
-      (std-create-slots-table class)))
-  (mapc #'convert-one-class (class-direct-subclasses class)))
-
-;;;
-;;; We cannot redefine the class for slot definitions because this
-;;; causes an infinite loop. Hence, we avoid evaluating the following
-;;; forms at compile time.
-;;;
-(eval-when (:load-toplevel :execute)
-  (eval
-   `(progn
-     (defclass slot-definition ()
-       ,(mapcar #'(lambda (x) (butlast x 2)) +slot-definition-slots+))
-     (defclass standard-slot-definition (slot-definition) ())
-     (defclass direct-slot-definition (slot-definition) ())
-     (defclass effective-slot-definition (slot-definition) ())
-     (defclass standard-direct-slot-definition (standard-slot-definition direct-slot-definition) ())
-     (defclass standard-effective-slot-definition (standard-slot-definition effective-slot-definition) ())))
-  (make-instances-obsolete (find-class 't))
-  (convert-one-class (find-class 't)))
-
 (defmethod reader-method-class ((class std-class)
 				(direct-slot direct-slot-definition)
 				&rest initargs)
   (declare (ignore class direct-slot initargs))
-  (find-class 'standard-reader-method))
+  (find-class (if (member (class-name (class-of class))
+			  '(standard-class
+			    funcallable-standard-class
+			    structure-class))
+		  'standard-optimized-reader-method
+		  'standard-reader-method)))
 
 (defmethod writer-method-class ((class std-class)
 				(direct-slot direct-slot-definition)
 				&rest initargs)
   (declare (ignore class direct-slot initargs))
-  (find-class 'standard-writer-method))
+  (find-class (if (member (class-name (class-of class))
+			  '(standard-class
+			    funcallable-standard-class
+			    structure-class))
+		  'standard-optimized-writer-method
+		  'standard-reader-method)))
 
 ;;; ----------------------------------------------------------------------
 ;;; Fixup
 
-(dolist (method-info *early-methods*)
+(defun register-method-with-specializers (method)
+  (declare (si::c-local))
+  (loop for spec in (method-specializers method)
+     do (add-direct-method spec method)))
+
+(dolist (method-info *early-methods* (makunbound '*EARLY-METHODS*))
   (let* ((method-name (car method-info))
 	 (gfun (fdefinition method-name))
 	 (standard-method-class (find-class 'standard-method)))
@@ -88,8 +65,8 @@
       ;; complete the generic function object
       (si:instance-class-set gfun (find-class 'STANDARD-GENERIC-FUNCTION))
       (si::instance-sig-set gfun)
-      (setf (generic-function-method-class gfun) standard-method-class)
-      (setf (slot-value gfun 'documentation) nil)
+      (setf (slot-value gfun 'method-class) standard-method-class)
+      (setf (slot-value gfun 'docstring) nil)
       )
     (dolist (method (cdr method-info))
       ;; complete the method object
@@ -102,8 +79,9 @@
 				      (t
 				       old-class))))
       (si::instance-sig-set gfun)
+      (register-method-with-specializers method)
       )
-    (makunbound '*EARLY-METHODS*)))
+    ))
 
 
 ;;; ----------------------------------------------------------------------
@@ -111,8 +89,7 @@
 
 (defun method-p (method) (typep method 'METHOD))
 
-(defun make-method (method-class qualifiers specializers arglist
-				 function plist options)
+(defun make-method (method-class qualifiers specializers arglist function options)
   (apply #'make-instance
 	 method-class
 	 :generic-function nil
@@ -120,7 +97,6 @@
 	 :lambda-list arglist
 	 :specializers specializers
 	 :function function
-	 :plist plist
 	 :allow-other-keys t
 	 options))
 
@@ -152,7 +128,8 @@
 	     t))))
 
 (defun add-method (gf method)
-  (declare (notinline method-qualifiers)) ; during boot it's a structure accessor
+  ;; during boot it's a structure accessor
+  (declare (notinline method-qualifiers remove-method))
   ;;
   ;; 1) The method must not be already installed in another generic function.
   ;;
@@ -181,8 +158,8 @@ their lambda lists ~A and ~A are not congruent."
   (when (generic-function-methods gf)
     (let* ((method-qualifiers (method-qualifiers method)) 
 	   (specializers (method-specializers method))
-	   found)
-      (when (setq found (find-method gf method-qualifiers specializers nil))
+	   (found (find-method gf method-qualifiers specializers nil)))
+      (when found
 	(remove-method gf found))))
   ;;
   ;; We install the method by:
@@ -200,31 +177,61 @@ their lambda lists ~A and ~A are not congruent."
   ;;  the same one, we just update the spec-how list of the generic function.
   (compute-g-f-spec-list gf)
   (set-generic-function-dispatch gf)
-  ;;
-  ;; Finally update the dependent objects
-  (map-dependents gf #'(lambda (dep) (update-dependents gf dep 'add-method method)))
-  ;;
+  ;;  iv) Update dependents.
+  (update-dependents gf (list 'add-method method))
+  ;;  v) Register with specializers
+  (register-method-with-specializers method)
   gf)
 
 (defun function-to-method (name signature)
   (let* ((aux-name 'temp-method)
          (method (eval `(defmethod ,aux-name ,signature)))
          (generic-function (fdefinition aux-name)))
-    (setf (method-function method) (fdefinition name))
+    (setf (method-function method) (wrapped-method-function (fdefinition name)))
     (setf (fdefinition name) generic-function)
     (setf (generic-function-name generic-function) name)
     (fmakunbound aux-name)))
-
-(function-to-method 'add-method '((gf standard-generic-function)
-                                  (method standard-method)))
 
 (defun remove-method (gf method)
   (setf (generic-function-methods gf)
 	(delete method (generic-function-methods gf))
 	(method-generic-function method) nil)
   (si:clear-gfun-hash gf)
-  (map-dependents gf #'(lambda (dep) (update-dependents gf dep 'remove-method method)))
+  (loop for spec in (method-specializers method)
+     do (remove-direct-method spec method))
+  (compute-g-f-spec-list gf)
+  (set-generic-function-dispatch gf)
+  (update-dependents gf (list 'remove-method method))
   gf)
+
+(function-to-method 'add-method '((gf standard-generic-function)
+                                  (method standard-method)))
+(function-to-method 'remove-method '((gf standard-generic-function)
+				     (method standard-method)))
+(function-to-method 'find-method '((gf standard-generic-function)
+				   qualifiers specializers &optional error))
+
+;;; COMPUTE-APPLICABLE-METHODS is used by the core in various places,
+;;; including instance initialization. This means we cannot just redefine it.
+;;; Instead, we create an auxiliary function and move definitions from one to
+;;; the other.
+#+(or)
+(defgeneric aux-compute-applicable-methods (gf args)
+  (:method ((gf standard-generic-function) args)
+    (std-compute-applicable-methods gf args)))
+
+(defmethod aux-compute-applicable-methods ((gf standard-generic-function) args)
+  (std-compute-applicable-methods gf args))
+(let ((aux #'aux-compute-applicable-methods))
+  (setf (generic-function-name aux) 'compute-applicable-methods
+	(fdefinition 'compute-applicable-methods) aux))
+
+(defmethod compute-applicable-methods-using-classes
+    ((gf standard-generic-function) classes)
+  (std-compute-applicable-methods-using-classes gf classes))
+
+(function-to-method 'compute-effective-method
+  '((gf standard-generic-function) method-combination applicable-methods))
 
 ;;; ----------------------------------------------------------------------
 ;;; Error messages
@@ -264,26 +271,32 @@ their lambda lists ~A and ~A are not congruent."
 ;;; DEPENDENT MAINTENANCE PROTOCOL
 ;;;
 
-(function-to-method 'map-dependents '((c standard-generic-function) function))
-
-(defmethod map-dependents ((c class) function)
-  (dolist (d (class-dependents c))
-    (funcall function c)))
-
-(function-to-method 'add-dependent '((c standard-generic-function) function))
-
 (defmethod add-dependent ((c class) dep)
   (pushnew dep (class-dependents c)))
 
-(defmethod remove-dependent ((c standard-generic-function) dep)
-  (setf (generic-function-dependents c)
-        (remove dep (generic-function-dependents c))))
+(defmethod add-dependent ((c generic-function) dependent)
+  (pushnew dependent (generic-function-dependents c)))
 
 (defmethod remove-dependent ((c class) dep)
   (setf (class-dependents c)
         (remove dep (class-dependents c))))
 
-(defgeneric update-dependents (object dependents &rest initargs))
+(defmethod remove-dependent ((c standard-generic-function) dep)
+  (setf (generic-function-dependents c)
+        (remove dep (generic-function-dependents c))))
+
+(defmethod map-dependents ((c class) function)
+  (dolist (d (class-dependents c))
+    (funcall function d)))
+
+(defmethod map-dependents ((c standard-generic-function) function)
+  (dolist (d (generic-function-dependents c))
+    (funcall function d)))
+
+(defgeneric update-dependent (object dependent &rest initargs))
+
+;; After this, update-dependents will work
+(setf *clos-booted* 'map-dependents)
 
 (defclass initargs-updater ()
   ())
@@ -292,14 +305,22 @@ their lambda lists ~A and ~A are not congruent."
   (slot-makunbound a-class 'valid-initargs)
   (mapc #'recursively-update-classes (class-direct-subclasses a-class)))
 
-(defmethod update-dependents ((object generic-function) (dep initargs-updater)
-                               &rest initargs)
+(defmethod update-dependent ((object generic-function) (dep initargs-updater)
+			     &rest initargs)
   (declare (ignore dep initargs object))
   (recursively-update-classes +the-class+))
-
-(setf *clos-booted* t)
 
 (let ((x (make-instance 'initargs-updater)))
   (add-dependent #'shared-initialize x)
   (add-dependent #'initialize-instance x)
   (add-dependent #'allocate-instance x))
+
+(function-to-method 'make-method-lambda
+  '((gf standard-generic-function) (method standard-method) lambda-form environment))
+(function-to-method 'compute-discriminating-function
+  '((gf standard-generic-function)))
+(function-to-method 'generic-function-method-class
+  '((gf standard-generic-function)))
+
+(function-to-method 'find-method-combination
+  '((gf standard-generic-function) method-combination-type-name method-combination-options))

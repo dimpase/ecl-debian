@@ -33,16 +33,25 @@
 
 (load "int-001.lsp")
 
+#-ecl-bytecmp
 (load "cmp-001.lsp")
 
 #+clos
-(load "mop-001.lsp")
+(progn
+ (load "mop-001.lsp")
+ (load "mop-dispatch.lsp")
+ (load "mop-dependents.lsp"))
 
 #+(and ffi (not ecl-bytecmp))
 (load "ffi-001.lsp")
 
 #+threads
-(load "mp-001.lsp")
+(progn
+ (load "mp-tools.lsp")
+ (load "mp-001.lsp")
+ (load "mutex-001.lsp")
+ (load "mailbox-001.lsp")
+ )
 
 #+unicode
 (progn
