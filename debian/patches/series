@@ -1,5 +1,3 @@
 autoconf-file-update.patch
-build-with-libatomic-ops.patch
 harden-configure.patch
-patch-typo-alloc_2.patch
 patch-hurd.patch

@@ -1,3 +1,9 @@
+ecl (12.12.1-1) UNRELEASED; urgency=low
+
+  * New upstream releasse
+
+ -- Christoph Egger <christoph@debian.org>  Fri, 07 Dec 2012 15:19:14 -0800
+
 ecl (12.2.1-1) experimental; urgency=low
 
   * New upstream release

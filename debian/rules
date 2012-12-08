@@ -131,7 +131,7 @@ install: build-arch
 #	this is a workaround until upstream properly fixes it
 	find $(CURDIR)/debian/ecl/usr/lib/ -name "*.fas" -print0 | \
 	   xargs -0 chrpath -d
-	chrpath -d $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/libecl.so.12.2.1
+	chrpath -d $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/libecl.so.*
 
 	cp debian/overrides.ecl $(CURDIR)/debian/ecl/usr/share/lintian/overrides/ecl
 
