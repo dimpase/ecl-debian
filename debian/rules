@@ -30,9 +30,10 @@ endif
 DEB_HOST_ARCH := $(shell dpkg-architecture -qDEB_HOST_ARCH)
 
 # gengc doesn't work on ia64 right now -- check again for next version
-ifneq ($(DEB_HOST_ARCH),ia64)
-  confflags += --enable-gengc
-endif
+# actually gengc and threads don't work together accoding to upstream
+#ifneq ($(DEB_HOST_ARCH),ia64)
+#  confflags += --enable-gengc
+#endif
 
 # force to use ginstall-info:
 export INSTALL_INFO=/usr/bin/ginstall-info

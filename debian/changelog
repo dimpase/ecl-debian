@@ -1,4 +1,11 @@
-ecl (12.12.1-1) UNRELEASED; urgency=low
+ecl (12.12.1-2) experimental; urgency=low
+
+  * Disable gengc which conflicts with threading. Should fix some of the
+    build failures we're seeing
+
+ -- Christoph Egger <christoph@debian.org>  Fri, 14 Dec 2012 14:35:47 -0800
+
+ecl (12.12.1-1) experimental; urgency=low
 
   * New upstream releasse
 
