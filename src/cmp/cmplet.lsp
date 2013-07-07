@@ -28,7 +28,7 @@
 	      for b in bindings
 	      if (atom b)
 	      collect b into real-bindings
-	      else collect (setf temp (gentemp "LET")) into temp-names and
+	      else collect (setf temp (gensym "LET")) into temp-names and
 	      collect (cons temp (cdr b)) into temp-bindings and
 	      collect (list (car b) temp) into real-bindings
 	      finally
@@ -95,14 +95,20 @@
 			   (t
 			    (c1expr `(checked-value ,type ,(first form)))))))
           ;; :read-only variable handling. Beppe
-          (if (read-only-variable-p name other-decls)
-	      (if (global-var-p var)
-		  (cmpwarn "Found :READ-ONLY declaration for global var ~A"
-			   name)
-		  (setf (var-type var) (c1form-primary-type init))))
-          (push var vars)
-          (push init forms)
-          (when (eq let/let* 'LET*) (push-vars var))))
+          (when (read-only-variable-p name other-decls)
+	    (if (global-var-p var)
+		(cmpwarn "Found :READ-ONLY declaration for global var ~A"
+			 name)
+		(setf (var-type var) (c1form-primary-type init)))
+	    (multiple-value-bind (constantp value)
+		(c1form-constant-p init)
+	      (when constantp
+		(cmp-env-register-symbol-macro name (si::maybe-quote value))
+		(setf var nil))))
+	  (when var
+	    (push var vars)
+	    (push init forms)
+	    (when (eq let/let* 'LET*) (push-vars var)))))
       (setf vars (nreverse vars)
             forms (nreverse forms))
       (when (eq let/let* 'LET)
@@ -170,8 +176,7 @@
   ;;  - the value of e2 is not modified in e3 nor in following expressions
   (when (eq (c1form-name form) 'VAR)
     (let ((other-var (c1form-arg 0 form)))
-      (unless (or (and (global-var-p other-var)
-		       (> (var-ref var) 1))
+      (unless (or (global-var-p other-var)
 		  (member other-var rest-vars)
                   (var-changed-in-form-list other-var rest-forms))
         (cmpdebug "Replacing variable ~A by its value ~A" (var-name var) form)
@@ -264,12 +269,10 @@
   ;; Emit C definitions of local variables
   (loop for var in vars
      for kind = (local var)
-     when kind
-     do (progn
+     do (when kind
 	  (maybe-open-inline-block)
-	  (bind (next-lcl) var)
-	  (wt-nl *volatile* (rep-type-name kind) " " var ";")
-	  (wt-comment (var-name var))))
+	  (bind (next-lcl (var-name var)) var)
+	  (wt-nl *volatile* (rep-type-name kind) " " var ";")))
 
   ;; Create closure bindings for closed-over variables
   (when (some #'var-ref-ccb vars)

@@ -153,28 +153,17 @@
 	   (add-to-set-nodes-of-var-list
 	    vars (make-c1form* 'MULTIPLE-VALUE-SETQ :args vars value))))))
 
-(defun do-m-v-setq-fixed (nvalues vars form use-bind &aux (output (first vars)))
-  ;; This routine should evaluate FORM and store the values (whose amount
-  ;; is known to be NVALUES) into the variables VARS. The output is a
-  ;; place from where the first value can be retreived.
-  ;; INV: There is at least one variable.
-  ;;
-  (if (or (> nvalues 1) use-bind)
-      (let ((*destination* 'VALUES))
-	(c2expr* form)
-	(loop for i from 0 below nvalues
-	   while vars
-	   do (funcall (if use-bind #'bind-var #'set-var)
-		       (values-loc i) (pop vars))))
-      (let ((*destination* (pop vars)))
-	(c2expr* form)))
-  (dolist (v vars)
-    (if use-bind
-	(bind (c1form-arg 0 (default-init v)) v)
-	(set-var '(C-INLINE (:object) "ECL_NIL" () t nil) v)))
-  output)
+(defun bind-or-set (loc v use-bind)
+  (cond ((not use-bind)
+	 (set-var loc v))
+	((or (plusp (var-ref v))
+	     (member (var-kind v) '(SPECIAL GLOBAL)))
+	 (bind loc v))))
 
-(defun do-m-v-setq-any (min-values max-values vars use-bind)
+(defun values-loc-or-value0 (i)
+  (if (plusp i) (values-loc i) 'VALUE0))
+
+(defun do-m-v-setq (vars form use-bind &aux min-values max-values)
   ;; This routine moves values from the multiple-value stack into the
   ;; variables VARS. The amount of values is not known (or at least we only
   ;; know that there is some number between MIN-VALUES and MAX-VALUES).  If
@@ -182,63 +171,49 @@
   ;; this routine is a location containing the first value (typically, the
   ;; name of the first variable).
   ;;
-  (let* ((*lcl* *lcl*)
-         (nr (make-lcl-var :type :int))
-	 (output (first vars))
-	 (labels '()))
+  (when (= (length vars) 1)
+    (let ((*destination* (first vars)))
+      (c2expr* form)
+      (return-from do-m-v-setq *destination*)))
+
+  ;; Store the values in the values stack + value0. Try guessing how
+  ;; many they are.
+  (multiple-value-bind (min-values max-values)
+      (c1form-values-number form)
+
+    ;; We save the values in the value stack + value0
+    (let ((*destination* 'RETURN))
+      (c2expr* form))
+
+    ;; At least we always have NIL value0
+    (setf min-values (max 1 min-values))
+
     ;; We know that at least MIN-VALUES variables will get a value
     (dotimes (i min-values)
       (when vars
 	(let ((v (pop vars))
-	      (loc (values-loc i)))
-	  (if use-bind (bind loc v) (set-var loc v)))))
-    ;; If there are more variables, we have to check whether there
-    ;; are enough values left in the stack.
-    (when vars
-      (wt-nl-open-brace) ;; Brace [1]
-      (wt-nl "int " nr " = cl_env_copy->nvalues-" min-values ";")
-      ;;
-      ;; Loop for assigning values to variables
-      ;;
-      (do (;; We call BIND twice for each variable. Hence, we need to
-	   ;; remove spurious BDS-BIND from the list. See also C2LAMBDA.
-	   (*unwind-exit* *unwind-exit*)
-	   (vs vars (rest vs))
-	   (i min-values (1+ i)))
-	  ((or (endp vs) (= i max-values)))
-	(declare (fixnum i))
-	(let ((loc (values-loc i))
-	      (v (first vs))
-	      (label (next-label)))
-	  (wt-nl "if (" nr "--<=0) ") (wt-go label)
-	  (push label labels)
-	  (if use-bind (bind loc v) (set-var loc v))))
-      ;;
-      ;; Loop for setting default values when there are less output than vars.
-      ;;
-      (let ((label (next-label)))
-	(wt-nl) (wt-go label)
-	(wt-nl-close-brace) ;; Matches [1]
-	(push label labels)
-	(setq labels (nreverse labels))
-	(dolist (v vars)
-	  (when labels (wt-label (pop labels)))
-	  (if use-bind
-	      (bind '(C-INLINE (:object) "ECL_NIL" () t nil) v)
-	      (set-var '(C-INLINE (:object) "ECL_NIL" () t nil) v)))
-	(when labels (wt-label label))))
-    output))
+	      (loc (values-loc-or-value0 i)))
+	  (bind-or-set loc v use-bind))))
+
+    (when (some #'useful-var-p vars)
+      (let* ((*lcl* *lcl*)
+	     (nr (make-lcl-var :type :int))
+	     (tmp (make-lcl-var)))
+	(wt-nl-open-brace)
+	(wt-nl "const int " nr " = cl_env_copy->nvalues;")
+	(wt-nl "cl_object " tmp ";")
+	(loop for v in vars
+	   for i from min-values
+	   for loc = (values-loc-or-value0 i)
+	   do (when (useful-var-p v)
+		(wt-nl tmp " = (" nr "<=" i ")? ECL_NIL : " loc ";")
+		(bind-or-set tmp v use-bind)))
+	(wt-nl-close-brace)))
+    'VALUE0))
 
 (defun c2multiple-value-setq (c1form vars form)
   (declare (ignore c1form))
-  (multiple-value-bind (min-values max-values)
-      (c1form-values-number form)
-    (unwind-exit 
-     (if (= min-values max-values)
-	 (do-m-v-setq-fixed min-values vars form nil)
-	 (let ((*destination* 'VALUES))
-	   (c2expr* form)
-	   (do-m-v-setq-any min-values max-values vars nil))))))
+  (unwind-exit (do-m-v-setq vars form nil)))
 
 (defun c1multiple-value-bind (args)
   (check-args-number 'MULTIPLE-VALUE-BIND args 2)
@@ -265,9 +240,6 @@
 
 (defun c2multiple-value-bind (c1form vars init-form body)
   (declare (ignore c1form))
-  ;; 0) Compile the form which is going to give us the values
-  (let ((*destination* 'VALUES)) (c2expr* init-form))
-
   (let* ((*unwind-exit* *unwind-exit*)
 	 (*env-lvl* *env-lvl*)
 	 (*env* *env*)
@@ -275,9 +247,9 @@
 	 (labels nil)
 	 (env-grows nil)
 	 (nr (make-lcl-var :type :int))
+	 (*inline-blocks* 0)
 	 min-values max-values)
     ;; 1) Retrieve the number of output values
-    (wt-nl-open-brace)
     (multiple-value-setq (min-values max-values)
       (c1form-values-number init-form))
 
@@ -287,25 +259,28 @@
       (declare (type var var))
       (let ((kind (local var)))
 	(if kind
-	  (progn
-	    (bind (next-lcl) var)
-	    (wt-nl *volatile* (rep-type-name kind) " " var ";")
-	    (wt-comment (var-name var)))
-	  (unless env-grows (setq env-grows (var-ref-ccb var))))))
+	    (when (useful-var-p var)
+	      (maybe-open-inline-block)
+	      (bind (next-lcl) var)
+	      (wt-nl (rep-type-name kind) " " *volatile* var ";")
+	      (wt-comment (var-name var)))
+	    (unless env-grows (setq env-grows (var-ref-ccb var))))))
 
     ;; 3) If there are closure variables, set up an environment.
     (when (setq env-grows (env-grows env-grows))
       (let ((env-lvl *env-lvl*))
+	(maybe-open-inline-block)
 	(wt-nl "volatile cl_object env" (incf *env-lvl*)
 	       " = env" env-lvl ";")))
 
-    ;; 4) Assign the values to the variables
-    (do-m-v-setq-any min-values max-values vars t)
+    ;; 4) Assign the values to the variables, compiling the form
+    ;;    and binding the variables in the process.
+    (do-m-v-setq vars init-form t)
 
     ;; 5) Compile the body. If there are bindings of special variables,
     ;;    these bindings are undone here.
     (c2expr body)
 
     ;; 6) Close the C expression.
-    (wt-nl-close-brace)))
+    (close-inline-blocks)))
 

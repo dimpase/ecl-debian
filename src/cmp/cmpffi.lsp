@@ -17,29 +17,32 @@
 ;; REPRESENTATION TYPES
 ;;
 
+;; All known integer C types, sorted by bit size.
 (defconstant +all-integer-rep-type-pairs+
-  '((:byte . -8)
-    (:unsigned-byte . 8)
-    (:unsigned-short . #.(logcount ffi:c-ushort-max))
-    (:short . #.(- (logcount ffi:c-ushort-max)))
-    (:unsigned-int . #.(logcount ffi:c-uint-max))
-    (:int . #.(logcount ffi:c-uint-max))
-    (:unsigned-long . #.(logcount ffi:c-ulong-max))
-    (:long . #.(logcount ffi:c-ulong-max))
-    #+long-long
-    (:unsigned-long-long . #.(logcount ffi:c-ulong-long-max))
-    #+long-long
-    (:long-long . #.(logcount ffi:c-ulong-long-max))
-    (:cl-index . #.si::cl-fixnum-bits)
-    (:fixnum . #.(- si::cl-fixnum-bits))
-    (:uint8-t . 8)
-    (:int8-t . -8)
-    (:uint16-t . 16)
-    (:int16-t . -16)
-    (:uint32-t . 32)
-    (:int32-t . -32)
-    (:uint64-t . 64)
-    (:int64-t . -64)))
+  '#.(stable-sort
+      '((:byte . -8)
+	(:unsigned-byte . 8)
+	(:unsigned-short . #.(logcount ffi:c-ushort-max))
+	(:short . #.(- (logcount ffi:c-ushort-max)))
+	(:unsigned-int . #.(logcount ffi:c-uint-max))
+	(:int . #.(logcount ffi:c-uint-max))
+	(:unsigned-long . #.(logcount ffi:c-ulong-max))
+	(:long . #.(logcount ffi:c-ulong-max))
+	#+long-long
+	(:unsigned-long-long . #.(logcount ffi:c-ulong-long-max))
+	#+long-long
+	(:long-long . #.(logcount ffi:c-ulong-long-max))
+	(:cl-index . #.(logcount most-positive-fixnum))
+	(:fixnum . #.(- (logcount most-positive-fixnum)))
+	(:uint8-t . 8)
+	(:int8-t . -8)
+	(:uint16-t . 16)
+	(:int16-t . -16)
+	(:uint32-t . 32)
+	(:int32-t . -32)
+	(:uint64-t . 64)
+	(:int64-t . -64))
+      #'< :key #'(lambda (pair) (abs (cdr pair)))))
 
 (defconstant +all-integer-rep-types+
   (mapcar #'car +all-integer-rep-type-pairs+))
@@ -70,7 +73,7 @@
     :unsigned-long
     ((integer 0 #.ffi:c-ulong-max) "unsigned long"
      "ecl_make_ulong" "ecl_to_ulong"
-     #.(if (<= most-positive-fixnum ffi:c-long-max) "ecl_fixnum" "ecl_to_ulong"))
+     #.(if (<= ffi:c-long-max most-positive-fixnum) "ecl_fixnum" "ecl_to_ulong"))
     :cl-index
     ((integer 0 #.most-positive-fixnum) "cl_index"
      "ecl_make_unsigned_integer" "ecl_to_cl_index" "ecl_fixnum")
@@ -556,7 +559,7 @@
 	    (wt-nl)
 	    (wt-c-inline-loc output-rep-type c-expression coerced-arguments t nil)
 	    (when one-liner (wt ";")))
-	  (cmpwarn "Ignoring form ~S" c-expression))
+	  (cmpnote "Ignoring form ~S" c-expression))
       (return-from produce-inline-loc NIL))
 
     ;; If the form is a one-liner, we can simply propagate this expression until the

@@ -48,12 +48,11 @@
   (let* ((orig-type type)
 	 aux function
 	 first rest function)
-    (cond ((not (and (constantp type) (setf type (cmp-eval type)) t))
-	   form)
-	  ;; Type is not known
-	  ((not (known-type-p type))
-	   form)
-	  ;; Variable declared with a given type
+    ;; Type must be constant to optimize
+    (if (constantp type env)
+	(setf type (ext:constant-form-value type env))
+	(return-from expand-typep form))
+    (cond ;; Variable declared with a given type
 	  ((and (symbolp object)
 		(setf aux (cmp-env-search-var object env))
 		(subtypep (var-type aux) type))
@@ -77,14 +76,6 @@
 	  ((loop for (a-type . function-name) in si::+known-typep-predicates+
 	      when (si::type= type a-type)
 	      do (return `(,function-name ,object))))
-	  ;;
-	  ;; The following are not real functions, but are expanded by the
-	  ;; compiler into C forms.
-	  ((setf function (assoc type '((SINGLE-FLOAT . SINGLE-FLOAT-P)
-					(SHORT-FLOAT . SHORT-FLOAT-P)
-					(DOUBLE-FLOAT . DOUBLE-FLOAT-P)
-					(LONG-FLOAT . LONG-FLOAT-P))))
-	   `(,(cdr function) ,object))
 	  ;;
 	  ;; Complex types defined with DEFTYPE.
 	  ((and (atom type)
@@ -221,10 +212,11 @@
   ;; step. Otherwise the compiler macro will enter an infinite loop.
   (let* ((orig-type type)
 	 first rest)
-    (cond ((not (and (constantp type) (setf type (cmp-eval type))))
-	   form)
-	  ;;
-	  ;; Trivial case
+    ;; Type must be constant to optimize
+    (if (constantp type env)
+	(setf type (ext:constant-form-value type env))
+	(return-from expand-coerce form))
+    (cond ;; Trivial case
 	  ((subtypep 't type)
 	   value)
 	  ;;

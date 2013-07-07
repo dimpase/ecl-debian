@@ -121,6 +121,22 @@
                     (list instance added-slots))))
   (apply #'shared-initialize instance added-slots initargs))
 
+(defmethod update-instance-for-redefined-class
+    ((instance std-class) added-slots discarded-slots property-list
+     &rest initargs)
+  ;; If the metaclass of this class changed, so did probably that of its
+  ;; subclasses. We need those subclasses to be up-to-date. This prevents
+  ;; errors when loading twice the following
+  ;;   (defclass metaclas ...)
+  ;;   (defclass x () ... (:metaclas metaclas))
+  ;;   (defclass y (y) ...)
+  ;; because X might be redefined with Y not being up-to-date on the second
+  ;; pass.
+  (prog1
+      (call-next-method)
+    (dolist (class (class-direct-subclasses instance))
+      (ensure-up-to-date-instance class))))
+
 (defun update-instance (instance)
   (let* ((class (class-of instance))
 	 (old-slotds (si::instance-sig instance))
@@ -142,8 +158,8 @@
                             (mapcar #'slot-definition-name new-local-slotds)))
       (dolist (slot-name discarded-slots)
         (let* ((ndx (position slot-name old-local-slotds :key #'slot-definition-name)))
-          (push (cons slot-name (si::instance-ref old-instance ndx))
-                property-list)))
+          (setf property-list
+		(list* slot-name (si::instance-ref old-instance ndx) property-list))))
       (dolist (new-slot new-local-slotds)
         (let* ((name (slot-definition-name new-slot))
                (old-i (position name old-local-slotds :key #'slot-definition-name)))

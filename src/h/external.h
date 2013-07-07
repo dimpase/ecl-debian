@@ -601,7 +601,7 @@ extern ECL_API cl_object si_safe_eval _ECL_ARGS((cl_narg narg, cl_object form, c
 extern ECL_API cl_object *_ecl_va_sp(cl_narg narg);
 extern ECL_API cl_object si_unlink_symbol(cl_object s);
 extern ECL_API cl_object cl_eval(cl_object form);
-extern ECL_API cl_object cl_constantp(cl_narg narg, cl_object arg, ...);
+extern ECL_API cl_object cl_constantp _ECL_ARGS((cl_narg narg, cl_object arg, ...));
 
 #define funcall cl_funcall
 extern ECL_API cl_object cl_apply_from_stack(cl_index narg, cl_object fun);
@@ -817,6 +817,7 @@ extern ECL_API cl_object ecl_gethash(cl_object key, cl_object hash);
 extern ECL_API cl_object ecl_gethash_safe(cl_object key, cl_object hash, cl_object def);
 extern ECL_API bool ecl_remhash(cl_object key, cl_object hash);
 extern ECL_API cl_object _ecl_sethash(cl_object key, cl_object hashtable, cl_object value);
+extern ECL_API cl_index ecl_hash_table_count(cl_object hash);
 
 /* instance.c */
 
@@ -1901,6 +1902,10 @@ extern ECL_API cl_object si_coerce_to_base_string(cl_object x);
 extern ECL_API cl_object si_coerce_to_extended_string(cl_object x);
 #define ecl_alloc_simple_extended_string(l) ecl_alloc_simple_vector((l),ecl_aet_ch)
 extern ECL_API cl_object ecl_alloc_adjustable_extended_string(cl_index l);
+# ifdef ECL_UNICODE_NAMES
+extern ECL_API cl_object _ecl_ucd_code_to_name(ecl_character c);
+extern ECL_API cl_object _ecl_ucd_name_to_code(cl_object name);
+# endif
 #else
 #define si_base_char_p cl_characterp
 #define si_base_string_p cl_stringp
@@ -1942,6 +1947,19 @@ extern ECL_API cl_object cl_bit_not _ECL_ARGS((cl_narg narg, cl_object V1, ...))
 extern ECL_API cl_object cl_vector_pop(cl_object V1);
 extern ECL_API cl_object cl_adjust_array _ECL_ARGS((cl_narg narg, cl_object V1, cl_object V2, ...));
 
+/* config.lsp */
+
+extern ECL_API cl_object cl_short_site_name();
+extern ECL_API cl_object cl_long_site_name();
+extern ECL_API cl_object cl_lisp_implementation_type();
+extern ECL_API cl_object cl_lisp_implementation_version();
+extern ECL_API cl_object si_lisp_implementation_vcs_id();
+extern ECL_API cl_object cl_machine_type();
+extern ECL_API cl_object cl_machine_instance();
+extern ECL_API cl_object cl_machine_version();
+extern ECL_API cl_object cl_software_type();
+extern ECL_API cl_object cl_software_version();
+
 /* describe.lsp */
 
 extern ECL_API cl_object cl_inspect(cl_object o);
@@ -1956,6 +1974,9 @@ extern ECL_API cl_object cl_princ_to_string(cl_object V1);
 extern ECL_API cl_object cl_y_or_n_p _ECL_ARGS((cl_narg narg, ...));
 extern ECL_API cl_object cl_yes_or_no_p _ECL_ARGS((cl_narg narg, ...));
 extern ECL_API cl_object si_string_to_object _ECL_ARGS((cl_narg narg, cl_object str, ...));
+extern ECL_API cl_object cl_dribble _ECL_ARGS((cl_narg narg, ...));
+extern ECL_API cl_object si_load_encoding(cl_object name);
+extern ECL_API cl_object si_make_encoding(cl_object mapping);
 
 /* listlib.lsp */
 
@@ -2037,6 +2058,11 @@ extern ECL_API cl_object cl_upgraded_complex_part_type _ECL_ARGS((cl_narg narg, 
 extern ECL_API cl_object cl_typep _ECL_ARGS((cl_narg narg, cl_object V1, cl_object V2, ...));
 extern ECL_API cl_object cl_coerce(cl_object V1, cl_object V2);
 extern ECL_API cl_object cl_subtypep _ECL_ARGS((cl_narg narg, cl_object V1, cl_object V2, ...));
+extern ECL_API cl_object si_short_float_p(cl_object t);
+extern ECL_API cl_object si_single_float_p(cl_object t);
+extern ECL_API cl_object si_double_float_p(cl_object t);
+extern ECL_API cl_object si_long_float_p(cl_object t);
+extern ECL_API cl_object si_ratiop(cl_object t);
 
 /* setf.lsp */
 
@@ -2088,6 +2114,7 @@ extern ECL_API cl_object cl_sort _ECL_ARGS((cl_narg narg, cl_object V1, cl_objec
 extern ECL_API cl_object cl_stable_sort _ECL_ARGS((cl_narg narg, cl_object V1, cl_object V2, ...));
 extern ECL_API cl_object cl_merge _ECL_ARGS((cl_narg narg, cl_object V1, cl_object V2, cl_object V3, cl_object V4, ...));
 extern ECL_API cl_object cl_constantly(cl_object V1);
+extern ECL_API cl_object cl_complement(cl_object V1);
 
 /* trace.lsp */
 
@@ -2117,7 +2144,6 @@ extern ECL_API cl_object clos_compute_effective_method_function(cl_object gf, cl
 /* boot.lsp */
 extern ECL_API cl_object cl_slot_boundp(cl_object object, cl_object slot);
 extern ECL_API cl_object cl_slot_makunbound(cl_object object, cl_object slot);
-extern ECL_API cl_object cl_slot_value(cl_object object, cl_object slot);
 extern ECL_API cl_object cl_slot_exists_p(cl_object object, cl_object slot);
 
 /* print.lsp */
@@ -2152,20 +2178,44 @@ extern ECL_API cl_object clos_method_function _ECL_ARGS((cl_narg narg, cl_object
 extern ECL_API cl_object clos_method_plist _ECL_ARGS((cl_narg narg, cl_object V1, ...));
 extern ECL_API cl_object clos_install_method _ECL_ARGS((cl_narg narg, cl_object V1, cl_object V2, cl_object V3, cl_object V4, cl_object V5, cl_object V6, cl_object V7, ...));
 
-/* standard.lsp */
-extern ECL_API cl_object clos_standard_instance_set _ECL_ARGS((cl_narg narg, cl_object V1, cl_object V2, cl_object V3, ...));
 #endif
+
+/* std-slot-value */
+extern ECL_API cl_object cl_slot_value(cl_object object, cl_object slot);
+extern ECL_API cl_object clos_slot_value_set(cl_object value, cl_object instance, cl_object name);
+extern ECL_API cl_object clos_standard_instance_access(cl_object object, cl_object location);
+#define clos_funcallable_standard_instance_access clos_standard_instance_access
+extern ECL_API cl_object clos_standard_instance_set(cl_object object, cl_object location, cl_object value);
+#define clos_funcallable_standard_instance_set clos_standard_instance_access
+
+/* method.lsp */
+extern ECL_API cl_object clos_extract_lambda_list(cl_object object);
+extern ECL_API cl_object clos_extract_specializer_names(cl_object object);
 
 #endif
 
 /* conditions.lsp */
 extern ECL_API cl_object cl_abort _ECL_ARGS((cl_narg narg, ...));
 extern ECL_API cl_object cl_continue _ECL_ARGS((cl_narg narg, ...));
+extern ECL_API cl_object cl_compute_restarts _ECL_ARGS((cl_narg narg, ...));
+extern ECL_API cl_object cl_find_restart _ECL_ARGS((cl_narg narg, cl_object name, ...));
+extern ECL_API cl_object cl_invoke_restart _ECL_ARGS((cl_narg narg, cl_object restart, ...));
+extern ECL_API cl_object cl_invoke_restart_interactively(cl_object restart);
+extern ECL_API cl_object cl_make_condition _ECL_ARGS((cl_narg narg, cl_object type, ...));
 extern ECL_API cl_object cl_muffle_warning _ECL_ARGS((cl_narg narg, ...));
 extern ECL_API cl_object cl_store_value _ECL_ARGS((cl_narg narg, cl_object value, ...));
 extern ECL_API cl_object cl_use_value _ECL_ARGS((cl_narg narg, cl_object value, ...));
 extern ECL_API cl_object si_bind_simple_restarts(cl_object tag, cl_object names);
 extern ECL_API cl_object si_bind_simple_handlers(cl_object tag, cl_object names);
+extern ECL_API cl_object si_assert_failure _ECL_ARGS((cl_narg narg, cl_object V1, ...));
+
+/* assert.lsp */
+extern ECL_API cl_object si_wrong_type_argument _ECL_ARGS((cl_narg narg, cl_object value, cl_object type, ...));
+extern ECL_API cl_object si_ccase_error(cl_object keyform, cl_object key, cl_object values);
+extern ECL_API cl_object si_ecase_error(cl_object value, cl_object values) ecl_attr_noreturn;
+extern ECL_API cl_object si_etypecase_error(cl_object value, cl_object type) ecl_attr_noreturn;
+extern ECL_API cl_object si_ctypecase_error(cl_object keyplace, cl_object value, cl_object type);
+extern ECL_API cl_object si_do_check_type(cl_object value, cl_object type, cl_object type_string, cl_object place);
 
 /*
  * CDR-5

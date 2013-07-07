@@ -163,7 +163,7 @@
 ;;; Specific functions for slot reading, writing, boundness checking, etc.
 ;;;
 
-(defun standard-instance-get (instance location)
+(defun standard-instance-access (instance location)
   (with-early-accessors (+standard-class-slots+
 			 +slot-definition-slots+)
     (ensure-up-to-date-instance instance)
@@ -176,7 +176,7 @@
 	  (t
 	   (invalid-slot-location instance location)))))
 
-(defun standard-instance-set (val instance location)
+(defun standard-instance-set (instance location val)
   (with-early-accessors (+standard-class-slots+
 			 +slot-definition-slots+)
     (ensure-up-to-date-instance instance)
@@ -190,6 +190,9 @@
 	   (invalid-slot-location instance location)))
     val))
 
+(defsetf standard-instance-access standard-instance-set)
+(defsetf funcallable-standard-instance-access standard-instance-set)
+
 (defun slot-value (self slot-name)
   (with-early-accessors (+standard-class-slots+
 			 +slot-definition-slots+)
@@ -198,7 +201,7 @@
       (if location-table
 	  (let ((location (gethash slot-name location-table nil)))
 	    (if location
-		(let ((value (standard-instance-get self location)))
+		(let ((value (standard-instance-access self location)))
 		  (if (si:sl-boundp value)
 		      value
 		      (values (slot-unbound class self slot-name))))
@@ -220,14 +223,14 @@
       (if location-table
 	  (let ((location (gethash slot-name location-table nil)))
 	    (if location
-		(si:sl-boundp (standard-instance-get self location))
+		(si:sl-boundp (standard-instance-access self location))
 		(values (slot-missing class self slot-name 'SLOT-BOUNDP))))
 	  (let ((slotd (find slot-name (class-slots class) :key #'slot-definition-name)))
 	    (if slotd
 		(slot-boundp-using-class class self slotd)
 		(values (slot-missing class self slot-name 'SLOT-BOUNDP))))))))
 
-(defun (setf slot-value) (value self slot-name)
+(defun clos::slot-value-set (value self slot-name)
   (with-early-accessors (+standard-class-slots+
 			 +slot-definition-slots+)
     (let* ((class (class-of self))
@@ -235,13 +238,15 @@
       (if location-table
 	  (let ((location (gethash slot-name location-table nil)))
 	    (if location
-		(standard-instance-set value self location)
+		(setf (standard-instance-access self location) value)
 		(slot-missing class self slot-name 'SETF value)))
 	  (let ((slotd (find slot-name (class-slots class) :key #'slot-definition-name)))
 	    (if slotd
 		(setf (slot-value-using-class class self slotd) value)
 		(slot-missing class self slot-name 'SETF value))))))
   value)
+
+(setf (fdefinition '(setf slot-value)) #'clos::slot-value-set)
 
 ;;;
 ;;; 2) Overloadable methods on which the previous functions are based

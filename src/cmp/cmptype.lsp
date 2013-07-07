@@ -59,7 +59,7 @@
 
 (defun lambda-type-check-associate (fname requireds optionals keywords global-fun-p)
   (multiple-value-bind (arg-types found)
-      (get-arg-types fname *cmp-env* global-fun-p)
+      (and global-fun-p (get-arg-types fname *cmp-env* global-fun-p))
     (if found
         (multiple-value-bind (req-types opt-types rest-flag key-flag
                                         key-types allow-other-keys)
@@ -172,12 +172,15 @@
   "Generates a type check on an expression, ensuring that it is satisfied."
   (multiple-value-bind (trivial valid)
       (subtypep 't type)
-    (if (and trivial valid)
-        value
-        (with-clean-symbols (%value)
-          `(let* ((%value ,value))
-             ,(type-error-check '%value (replace-invalid-types type))
-             (truly-the ,type %value))))))
+    (cond ((and trivial valid)
+	   value)
+	  ((multiple-value-setq (valid value) (constant-value-p value env))
+	   (si::maybe-quote value))
+	  (t
+	   (with-clean-symbols (%value)
+	     `(let* ((%value ,value))
+		,(type-error-check '%value (replace-invalid-types type))
+		(truly-the ,type %value)))))))
 
 (defun replace-invalid-types (type)
   ;; Some types which are acceptable in DECLARE are not
@@ -199,4 +202,10 @@
   (if (policy-assume-right-type)
       value
       `(assert-type-if-known ,value ,type)))
+
+(defmacro with-let*-type-check (triplets &body body)
+  `(let* ,(loop for (var value type) in triplets
+	     collect `(,var (assert-type-if-known ,value ,type)))
+     (declare (:read-only ,@(mapcar #'car triplets)))
+     ,@body))
 

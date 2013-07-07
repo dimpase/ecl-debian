@@ -105,7 +105,7 @@ si_put_buffer_string(cl_object string)
 }
 
 static void extra_argument (int c, cl_object stream, cl_object d);
-static cl_object patch_sharp(cl_object x);
+static cl_object patch_sharp(const cl_env_ptr env, cl_object x);
 static cl_object do_read_delimited_list(int d, cl_object strm, bool proper_list);
 
 cl_object
@@ -117,8 +117,7 @@ ecl_read_object_non_recursive(cl_object in)
 	ecl_bds_bind(env, @'si::*sharp-eq-context*', ECL_NIL);
 	ecl_bds_bind(env, @'si::*backq-level*', ecl_make_fixnum(0));
 	x = ecl_read_object(in);
-	if (!Null(ECL_SYM_VAL(env, @'si::*sharp-eq-context*')))
-		x = patch_sharp(x);
+	x = patch_sharp(env, x);
 	ecl_bds_unwind_n(env, 2);
 	return x;
 }
@@ -424,8 +423,7 @@ si_read_object_or_ignore(cl_object in, cl_object eof)
                 env->nvalues = 1;
                 x = eof;
         } else if (env->nvalues) {
-                if (!Null(ECL_SYM_VAL(env, @'si::*sharp-eq-context*')))
-                        x = patch_sharp(x);
+		x = patch_sharp(env, x);
         }
 	ecl_bds_unwind_n(env, 2);
 	return x;
@@ -787,29 +785,63 @@ sharp_Y_reader(cl_object in, cl_object c, cl_object d)
  *----------------------------------------------------------------------
  */
 
+cl_object
+si_make_backq_vector(cl_object d, cl_object data, cl_object in)
+{
+	const cl_env_ptr the_env = ecl_process_env();
+	cl_object v, last;
+	cl_index dim, i;
+	if (Null(d)) {
+		dim = ecl_length(data);
+	} else {
+		dim = ecl_fixnum(d);
+	}
+	v = ecl_alloc_simple_vector(dim, ecl_aet_object);
+	for (i = 0, last = ECL_NIL; i < dim; i++) {
+		if (data == ECL_NIL) {
+			/* ... we fill the vector with the last element read (or NIL). */
+			for (; i < dim; i++) {
+				ecl_aset_unsafe(v, i, last);
+			}
+			break;
+		}
+		ecl_aset_unsafe(v, i, last = ecl_car(data));
+		data = ECL_CONS_CDR(data);
+	}
+	unlikely_if (data != ECL_NIL) {
+		if (in != ECL_NIL) {
+			FEreader_error("Vector larger than specified length,"
+				       "~D.", in, 1, d);
+		} else {
+			FEerror("Vector larger than specified length, ~D", 1, d);
+		}
+	}
+	ecl_return1(the_env, v);
+}
+
 static cl_object
 sharp_left_parenthesis_reader(cl_object in, cl_object c, cl_object d)
 {
 	extern int _cl_backq_car(cl_object *);
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object v;
-	if (ecl_fixnum(ECL_SYM_VAL(the_env, @'si::*backq-level*')) > 0) {
+	unlikely_if (!Null(d) &&
+		     (!ECL_FIXNUMP(d) || ecl_fixnum_minusp(d) ||
+		      ecl_fixnum_greater(d, ecl_make_fixnum(ECL_ARRAY_DIMENSION_LIMIT))))
+	{
+		FEreader_error("Invalid dimension size ~D in #()", in, 1, d);
+	}
+	if (ecl_fixnum_plusp(ECL_SYM_VAL(the_env, @'si::*backq-level*'))) {
 		/* First case: ther might be unquoted elements in the vector.
 		 * Then we just create a form that generates the vector.
 		 */
 		cl_object x = do_read_delimited_list(')', in, 1);
 		cl_index a = _cl_backq_car(&x);
-		unlikely_if (a == APPEND || a == NCONC) {
-			FEreader_error("A ,@ or ,. appeared in an illegal position.",
-				       in, 0);
-                }
-		if (a == QUOTE) {
-			v = _ecl_funcall4(@'make-array', cl_list(1, cl_length(x)),
-				    @':initial-contents', x);
-		} else {
+		if (a != QUOTE) {
 			v = cl_list(2, @'si::unquote', 
-				    cl_list(3, @'apply',
-					    cl_list(2, @'quote', @'vector'), x));
+				    cl_list(4, @'si::make-backq-vector', d, x, ECL_NIL));
+		} else {
+			return si_make_backq_vector(d, x, in);
 		}
 	} else if (read_suppress) {
 		/* Second case: *read-suppress* = t, we ignore the data */
@@ -818,19 +850,13 @@ sharp_left_parenthesis_reader(cl_object in, cl_object c, cl_object d)
 	} else if (Null(d)) {
 		/* Third case: no dimension provided. Read a list and
 		   coerce it to vector. */
-		cl_object x = do_read_delimited_list(')', in, 1);
-		v = _ecl_funcall4(@'make-array', cl_list(1, cl_length(x)),
-			    @':initial-contents', x);
+		return si_make_backq_vector(d, do_read_delimited_list(')', in, 1), in);
 	} else {
 		/* Finally: Both dimension and data are provided. The
 		   amount of data cannot exceed the length, but it may
 		   be smaller, and in that case...*/
 		cl_object last;
-		cl_index dim, i;
-                unlikely_if (!ECL_FIXNUMP(d) || ((dim = ecl_fixnum(d)) < 0) ||
-                             (dim > ECL_ARRAY_DIMENSION_LIMIT)) {
-                        FEreader_error("Invalid dimension size ~D in #()", in, 1, d);
-                }
+		cl_index dim = ecl_fixnum(d), i;
 		v = ecl_alloc_simple_vector(dim, ecl_aet_object);
 		for (i = 0, last = ECL_NIL;; i++) {
 			cl_object aux = ecl_read_object_with_delimiter(in, ')', 0,
@@ -970,6 +996,7 @@ M:
 static cl_object
 sharp_dot_reader(cl_object in, cl_object c, cl_object d)
 {
+	const cl_env_ptr env = ecl_process_env();
 	if (d != ECL_NIL && !read_suppress)
 		extra_argument('.', in, d);
 	c = ecl_read_object(in);
@@ -981,7 +1008,7 @@ sharp_dot_reader(cl_object in, cl_object c, cl_object d)
 		FEreader_error("Cannot evaluate the form #.~A", in, 1, c);
         /* FIXME! We should do something here to ensure that the #.
          * only uses the #n# that have been defined */
-        c = patch_sharp(c);
+        c = patch_sharp(env, c);
 	c = si_eval_with_env(1, c);
 	@(return c)
 }
@@ -1069,7 +1096,7 @@ sharp_eq_reader(cl_object in, cl_object c, cl_object d)
 	unlikely_if (ecl_assq(d, sharp_eq_context) != ECL_NIL) {
 		FEreader_error("Duplicate definitions for #~D=.", in, 1, d);
         }
-        pair = CONS(d, ECL_NIL);
+        pair = CONS(d, OBJNULL);
 	ECL_SETQ(the_env, @'si::*sharp-eq-context*', CONS(pair, sharp_eq_context));
 	value = ecl_read_object(in);
 	unlikely_if (value == pair) {
@@ -1086,15 +1113,17 @@ sharp_sharp_reader(cl_object in, cl_object c, cl_object d)
 	cl_object pair;
 
 	if (read_suppress)
-                @(return ECL_NIL);
+                ecl_return1(the_env, ECL_NIL);
 	unlikely_if (Null(d)) {
 		FEreader_error("The ## readmacro requires an argument.", in, 0);
         }
 	pair = ecl_assq(d, ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*'));
 	unlikely_if (pair == ECL_NIL) {
                 FEreader_error("#~D# is undefined.", in, 1, d);
-        }
-        @(return pair)
+        } else {
+		cl_object value = ECL_CONS_CDR(pair);
+		ecl_return1(the_env, (value == OBJNULL)? pair : value);
+	}
 }
 
 static cl_object
@@ -1261,22 +1290,23 @@ do_patch_sharp(cl_object x, cl_object table)
 #endif
 
 static cl_object
-patch_sharp(cl_object x)
+patch_sharp(const cl_env_ptr the_env, cl_object x)
 {
-	const cl_env_ptr the_env = ecl_process_env();
-	cl_object pairs;
-        cl_object table = 
-                cl__make_hash_table(@'eq', ecl_make_fixnum(20), /* size */
-                                    cl_core.rehash_size,
+	cl_object pairs = ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*');
+	if (pairs == ECL_NIL) {
+		return x;
+	} else {
+		cl_object table = 
+			cl__make_hash_table(@'eq', ecl_make_fixnum(20), /* size */
+					    cl_core.rehash_size,
                                     cl_core.rehash_threshold);
-
-        pairs = ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*');
-        loop_for_in(pairs) {
-                cl_object pair = ECL_CONS_CAR(pairs);
-                _ecl_sethash(pair, table, ECL_CONS_CDR(pair));
-        } end_loop_for_in;
-	x = do_patch_sharp(x, table);
-	return x;
+		do {
+			cl_object pair = ECL_CONS_CAR(pairs);
+			_ecl_sethash(pair, table, ECL_CONS_CDR(pair));
+			pairs = ECL_CONS_CDR(pairs);
+		} while (pairs != ECL_NIL);
+		return do_patch_sharp(x, table);
+	}
 }
 
 #define sharp_plus_reader void_reader
@@ -1581,8 +1611,7 @@ do_read_delimited_list(int d, cl_object in, bool proper_list)
 		ecl_bds_bind(the_env, @'si::*sharp-eq-context*', ECL_NIL);
 		ecl_bds_bind(the_env, @'si::*backq-level*', ecl_make_fixnum(0));
 		l = do_read_delimited_list(delimiter, strm, 1);
-		if (!Null(ECL_SYM_VAL(the_env, @'si::*sharp-eq-context*')))
-			l = patch_sharp(l);
+		l = patch_sharp(the_env, l);
 		ecl_bds_unwind_n(the_env, 2);
 	}
 	@(return l)
@@ -1789,9 +1818,8 @@ cl_readtable_case(cl_object r)
 static void
 error_locked_readtable(cl_object r)
 {
-        cl_error(3,
-                 make_constant_base_string("Change readtable"),
-                 make_constant_base_string("Cannot modify locked readtable ~A."),
+        cl_error(2,
+		 make_constant_base_string("Cannot modify locked readtable ~A."),
                  r);
 }
 
@@ -2261,6 +2289,37 @@ init_read(void)
  *
  *----------------------------------------------------------------------
  */
+static cl_object
+make_one_data_stream(const cl_object string)
+{
+#ifdef ECL_UNICODE
+	return si_make_sequence_input_stream(3, string, @':external-format',
+					     @':utf-8');
+#else
+	return ecl_make_string_input_stream(string, 0, ecl_length(string));
+#endif
+}
+
+static cl_object
+make_data_stream(const cl_object *data)
+{
+	if (data == 0 || data[0] == NULL) {
+		return cl_core.null_stream;
+	}
+	if (data[1] == NULL) {
+		return make_one_data_stream(data[0]);
+	} else {
+		cl_object stream_list = ECL_NIL;
+		cl_index i;
+		for (i = 0; data[i]; i++) {
+			cl_object s = make_one_data_stream(data[i]);
+			stream_list = ecl_cons(s, stream_list);
+		}
+		return cl_apply(2, @'make-concatenated-stream',
+				cl_nreverse(stream_list));
+	}
+}
+
 cl_object
 ecl_init_module(cl_object block, void (*entry_point)(cl_object))
 {
@@ -2291,7 +2350,7 @@ ecl_init_module(cl_object block, void (*entry_point)(cl_object))
 		temp_len = block->cblock.temp_data_size;
 		len = perm_len + temp_len;
 
-                if (block->cblock.data_text == 0 || block->cblock.data_text_size == 0) {
+                if (block->cblock.data_text == 0) {
                         if (len) {
                                 /* Code from COMPILE uses data in *compiler-constants* */
                                 cl_object v = ECL_SYM_VAL(env,@'si::*compiler-constants*');
@@ -2329,14 +2388,7 @@ ecl_init_module(cl_object block, void (*entry_point)(cl_object))
                         memcpy(VV, v->vector.self.t, len * sizeof(cl_object));
                 }
 #else
-		in = ecl_make_simple_base_string((char *)block->cblock.data_text,
-						 block->cblock.data_text_size);
-# ifdef ECL_UNICODE
-		in = si_make_sequence_input_stream(3, in, @':external-format',
-						   @':utf-8');
-# else
-		in=ecl_make_string_input_stream(in, 0, block->cblock.data_text_size);
-# endif
+		in = make_data_stream(block->cblock.data_text);
                 progv_list = ECL_SYM_VAL(env, @'si::+ecl-syntax-progv-list+');
                 bds_ndx = ecl_progv(env, ECL_CONS_CAR(progv_list),
                                     ECL_CONS_CDR(progv_list));
@@ -2352,9 +2404,9 @@ ecl_init_module(cl_object block, void (*entry_point)(cl_object))
 		if (!Null(ECL_SYM_VAL(env, @'si::*sharp-eq-context*'))) {
 			while (i--) {
 				if (i < perm_len) {
-					VV[i] = patch_sharp(VV[i]);
+					VV[i] = patch_sharp(env, VV[i]);
 				} else {
-					VVtemp[i-perm_len] = patch_sharp(VVtemp[i-perm_len]);
+					VVtemp[i-perm_len] = patch_sharp(env, VVtemp[i-perm_len]);
 				}
 			}
 		}

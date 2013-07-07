@@ -105,7 +105,7 @@
 
 (defun ctop-write (name h-pathname data-pathname
 			&aux def top-output-string
-			(*volatile* " volatile "))
+			(*volatile* "volatile "))
 
   (setq *top-level-forms* (nreverse *top-level-forms*))
   (wt-nl "#include \"" (brief-namestring h-pathname) "\"")
@@ -147,9 +147,7 @@
       (wt-nl "flag->cblock.self_destruct=1;"))
     (wt-nl "flag->cblock.data_size = VM;")
     (wt-nl "flag->cblock.temp_data_size = VMtemp;")
-    (when (or *compile-in-constants* si::*compiler-constants*)
-      (wt-nl "flag->cblock.data_text = compiler_data_text;")
-      (wt-nl "flag->cblock.data_text_size = compiler_data_text_size;"))
+    (wt-nl "flag->cblock.data_text = compiler_data_text;")
     (wt-nl "flag->cblock.cfuns_size = compiler_cfuns_size;")
     (wt-nl "flag->cblock.cfuns = compiler_cfuns;")
     (when ext:*source-location*
@@ -161,7 +159,7 @@
     (wt-nl "#endif")
     ;; With this we ensure creating a constant with the tag
     ;; and the initialization file
-    (wt-nl "Cblock->cblock.data_text = \"" (init-name-tag name) "\";")
+    (wt-nl "Cblock->cblock.data_text = (const cl_object *)\"" (init-name-tag name) "\";")
 
     (wt-nl "VVtemp = Cblock->cblock.temp_data;")
 
@@ -190,8 +188,7 @@
     (if (zerop num-objects)
 	(progn
 	  (wt-nl-h "#undef ECL_DYNAMIC_VV")
-	  (wt-nl-h "#define compiler_data_text \"\"")
-	  (wt-nl-h "#define compiler_data_text_size 0")
+	  (wt-nl-h "#define compiler_data_text 0")
 	  (wt-nl-h "#define VM 0")
 	  (wt-nl-h "#define VMtemp 0")
 	  (wt-nl-h "#define VV NULL"))
@@ -263,14 +260,18 @@
 	(*max-temp* 0)
 	(*lcl* 0)
 	(*lex* 0)
-	(*env* 0)
 	(*level* 0)
+	(*env* 0)
+	(*env-lvl* 0)
 	(*temp* 0)
 	(*compile-to-linking-call* nil)
 	(*compile-file-truename* (and form (c1form-file form)))
 	(*compile-file-position* (and form (c1form-file-position form))))
-    (let ((body (with-output-to-string (*compiler-output1*)
-		  (t2expr form))))
+    ;; We save the C body of the statement, indented, just in case
+    ;; we need to add a {} section with the environment variables.
+    (let ((body (let ((*opened-c-braces* (1+ *opened-c-braces*)))
+		  (with-output-to-string (*compiler-output1*)
+		    (t2expr form)))))
       (if (or (plusp *max-lex*)
 	      (plusp *max-temp*)
 	      (plusp *max-env*)
@@ -442,10 +443,10 @@
     (when *aux-closure*
       (wt-nl "volatile struct ecl_cclosure aux_closure;"))
     (wt-nl "cl_object " *volatile*)
-    (dotimes (i *max-env*)
-      (wt "CLV" i)
-      (unless (= (1+ i) *max-env*) (wt ", ")))
-    (wt-nl ";")))
+    (loop for i from 0 below *max-env*
+       for comma = "" then ", "
+       do (wt comma "CLV" i)
+       finally (wt ";"))))
 
 (defun wt-global-entry (fname cfun arg-types return-type)
     (when (and (symbolp fname) (get-sysprop fname 'NO-GLOBAL-ENTRY))
@@ -618,7 +619,7 @@
           when (and code (consp loc) (eq (first loc) 'LCL))
           do (progn
                (push (cons name code) filtered-codes)
-               (push (second loc) filtered-locations)))
+               (push loc filtered-locations)))
     ;; Generate two tables, a static one with information about the
     ;; variables, including name and type, and dynamic one, which is
     ;; a vector of pointer to the variables.
@@ -633,7 +634,7 @@
       (wt-nl (if first "(cl_index)(ECL_NIL)," "(cl_index)(_ecl_debug_env),")
              "(cl_index)(_ecl_descriptors)")
       (loop for var-loc in filtered-locations
-            do (wt ",(cl_index)(&" (lcl-name var-loc) ")"))
+            do (wt ",(cl_index)(&" var-loc ")"))
       (wt "};")
       (wt-nl "ecl_def_ct_vector(_ecl_debug_env,ecl_aet_index,_ecl_debug_info_raw,"
              (+ 2 (length filtered-locations))
@@ -674,8 +675,8 @@
 	(wt-function-locals (fun-closure fun))
 	(wt-nl "const cl_env_ptr cl_env_copy = ecl_process_env();")
 	(when (eq (fun-closure fun) 'CLOSURE)
-	  (wt "cl_object " *volatile* "env0 = cl_env_copy->function->cclosure.env;"))
-	(wt-nl *volatile* "cl_object value0;")
+	  (wt-nl "cl_object " *volatile* "env0 = cl_env_copy->function->cclosure.env;"))
+	(wt-nl "cl_object " *volatile* "value0;")
 	(when (policy-check-stack-overflow)
 	  (wt-nl "ecl_cs_check(cl_env_copy,value0);"))
 	(when (eq (fun-closure fun) 'CLOSURE)
@@ -694,6 +695,7 @@
 		       (fun-cfun fun)
 		       (fun-name fun)
 		       (fun-needs-narg fun)
+		       (fun-required-lcls fun)
 		       (fun-closure fun))))
     string))
 
@@ -710,7 +712,8 @@
 	 (lambda-expr (fun-lambda fun))
 	 (volatile (c1form-volatile* lambda-expr))
 	 (lambda-list (c1form-arg 0 lambda-expr))
-	 (requireds (car lambda-list))
+	 (requireds (mapcar #'(lambda (v) (next-lcl (var-name v)))
+			    (car lambda-list)))
 	 (narg (fun-needs-narg fun)))
     (let ((cmp-env (c1form-env lambda-expr)))
       (wt-comment-nl "optimize speed ~D, debug ~D, space ~D, safety ~D "
@@ -733,11 +736,9 @@
       (wt-h comma "volatile cl_object  *")
       (wt comma "volatile cl_object *lex" n)
       (setf comma ", "))
-    (loop for lcl from 1 upto si:c-arguments-limit
-       for var in requireds
-       do
-	 (wt-h comma "cl_object " volatile)
-	 (wt comma "cl_object " volatile) (wt-lcl lcl)
+    (loop for lcl in (setf (fun-required-lcls fun) requireds)
+       do (wt-h comma "cl_object " volatile)
+	 (wt comma "cl_object " volatile lcl)
 	 (setf comma ", "))
     (when narg
       (wt-h ", ...")
@@ -832,7 +833,12 @@
 	      (return-from c1fset
 		(make-c1form* 'SI:FSET :args
 			      fun-object ;; Function object
-			      (add-object (second fname) :permanent t :duplicate t)
+			      (let* ((fname (second fname))
+				     (in-cl-symbols-p (and (symbolp fname)
+							   (si::mangle-name fname))))
+				(add-object fname :permanent t
+					    :duplicate in-cl-symbols-p
+					    :used-p t))
 			      macro
 			      pprint
 			      ;; The c1form, when we do not optimize

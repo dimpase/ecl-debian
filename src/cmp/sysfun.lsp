@@ -284,6 +284,7 @@
 
 (def-inline gethash :always (t t t) t "ecl_gethash_safe(#0,#1,#2)" :multiple-values nil)
 (def-inline gethash :always (t t) t "ecl_gethash_safe(#0,#1,ECL_NIL)" :multiple-values nil)
+(def-inline hash-table-count :unsafe (hash-table) ext:array-index "ecl_hash_table_count(#0)")
 
 ;; file list.d
 
@@ -784,24 +785,19 @@
 
 (def-inline shift<< :always (fixnum fixnum) :fixnum "((#0) << (#1))")
 
-(def-inline short-float-p :always (t) :bool "@0;ECL_SINGLE_FLOAT_P(#0)")
+(def-inline si:short-float-p :always (t) :bool "@0;ECL_SINGLE_FLOAT_P(#0)")
 
-(def-inline single-float-p :always (t) :bool "@0;ECL_SINGLE_FLOAT_P(#0)")
+(def-inline si:single-float-p :always (t) :bool "@0;ECL_SINGLE_FLOAT_P(#0)")
 
-(def-inline double-float-p :always (t) :bool "@0;ECL_DOUBLE_FLOAT_P(#0)")
+(def-inline si:double-float-p :always (t) :bool "@0;ECL_DOUBLE_FLOAT_P(#0)")
 
 #-long-float
-(def-inline long-float-p :always (t) :bool "@0;ECL_DOUBLE_FLOAT_P(#0)")
+(def-inline si:long-float-p :always (t) :bool "@0;ECL_DOUBLE_FLOAT_P(#0)")
 #+long-float
-(def-inline long-float-p :always (t) :bool "@0;ECL_LONG_FLOAT_P(#0)")
+(def-inline si:long-float-p :always (t) :bool "@0;ECL_LONG_FLOAT_P(#0)")
 
 (def-inline ext:fixnump :always (t) :bool "ECL_FIXNUMP(#0)")
 (def-inline ext:fixnump :always (fixnum) :bool "1")
-
-(def-inline c::ldb1 :always (fixnum fixnum fixnum) :fixnum
- "((((~((cl_fixnum)-1 << (#0))) << (#1)) & (cl_fixnum)(#2)) >> (#1))")
-(def-inline c::ldb1 :always (fixnum fixnum fixnum) t
- "ecl_make_fixnum((((~((cl_fixnum)-1 << (#0))) << (#1)) & (cl_fixnum)(#2)) >> (#1))")
 
 ;; Functions only available with threads
 #+threads
@@ -840,15 +836,11 @@
 (def-inline si:sl-boundp :always (t) :bool "(#0)!=ECL_UNBOUND")
 
 #+clos
-(def-inline clos:standard-instance-access :always (t t) t "ecl_instance_ref((#0),ecl_to_size(#1))")
-#+clos
 (def-inline clos:standard-instance-access :always (t fixnum) t "ecl_instance_ref((#0),(#1))")
 #+clos
 (def-inline clos:standard-instance-access :unsafe (standard-object fixnum) t
  "(#0)->instance.slots[#1]")
 
-#+clos
-(def-inline clos:funcallable-standard-instance-access :always (t t) t "ecl_instance_ref((#0),ecl_to_size(#1))")
 #+clos
 (def-inline clos:funcallable-standard-instance-access :always (t fixnum) t "ecl_instance_ref((#0),(#1))")
 #+clos
@@ -878,16 +870,26 @@
     bit sbit bit-and bit-ior bit-xor bit-eqv bit-nand bit-nor bit-andc1
     bit-andc2 bit-orc1 bit-orc2 bit-not
     vector-pop adjust-array
+    ;; assert.lsp
+    si::do-check-type si::ecase-error si::etypecase-error
+    si::wrong-type-argument si::ccase-error si::ctypecase-error
+    ;; config.lsp
+    short-site-name long-site-name machine-type machine-instance machine-version
+    software-type software-version lisp-implementation-type lisp-implementation-version
+    si::lisp-implementation-vcs-id
     ;; assignment.lsp
     si::setf-definition
     ;; conditions.lsp
     si::safe-eval abort continue muffle-warning store-value use-value
     si::bind-simple-restarts si::bind-simple-handlers
+    si::assert-failure compute-restarts find-restart invoke-restart
+    invoke-restart-interactively make-condition
     ;; describe.lsp
     describe inspect
     ;; iolib.lsp
     read-from-string write-to-string prin1-to-string princ-to-string
-    y-or-n-p yes-or-no-p string-to-object
+    y-or-n-p yes-or-no-p string-to-object dribble ext:make-encoding
+    ext:load-encoding
     ;; listlib.lsp
     union nunion intersection nintersection set-difference nset-difference
     set-exclusive-or nset-exclusive-or subsetp rassoc-if rassoc-if-not
@@ -909,9 +911,11 @@
     find-relative-package package-parent package-children
     ;; predlib.lsp
     upgraded-array-element-type upgraded-complex-part-type typep subtypep coerce
-    do-deftype
+    do-deftype si::ratiop si::single-float-p si::short-float-p si::double-float-p
+    si::long-float-p
     ;; seq.lsp
     make-sequence concatenate map some every notany notevery map-into
+    complement
     ;; seqlib.lsp
     reduce fill replace
     remove remove-if remove-if-not delete delete-if delete-if-not
@@ -926,7 +930,8 @@
     ;; pprint.lsp
     pprint-fill copy-pprint-dispatch pprint-dispatch
     pprint-linear pprint-newline pprint-tab pprint-tabular
-    set-pprint-dispatch pprint-indent 
+    set-pprint-dispatch pprint-indent
+
     #+clos
     ,@'(;; combin.lsp
      method-combination-error
@@ -934,17 +939,22 @@
      clos:std-compute-applicable-methods
      clos:std-compute-effective-method
      clos:compute-effective-method-function
-     ;; standard-instance-access ; this function is a synonym for si:instance-ref
-     ;; funcallable-standard-instance-access ; same for this one
+     ;; std-slot-value.lsp
+     clos::standard-instance-access ;; alias clos:funcallable-standard-instance-access
+     clos::standard-instance-set
      subclassp of-class-p
      ;; boot.lsp
      slot-boundp
      slot-makunbound
      slot-value
+     clos::slot-value-set
      slot-exists-p
      clos::need-to-make-load-form-p
      ;; defclass
      clos:load-defclass
+     ;; method
+     clos:extract-lambda-list
+     clos:extract-specializer-names
      )
 
     ;; cdr-5
@@ -973,8 +983,7 @@
 
 (proclaim
   `(si::c-export-fname #+ecl-min ,@c::*in-all-symbols-functions*
-    si::ecase-error si::etypecase-error si::do-check-type
-    ccase-error typecase-error-string find-documentation find-declarations
+    typecase-error-string find-documentation find-declarations
     si::search-keyword si::check-keyword
     si::dm-too-many-arguments si::dm-too-few-arguments
     remove-documentation si::get-documentation
@@ -986,8 +995,6 @@
     si::sequence-count
     si::structure-type-error si::define-structure
     si::coerce-to-list si::coerce-to-vector
-    si::assert-failure
-    si::ecase-error si::etypecase-error
     si::traced-old-definition
 
     #+formatter
@@ -1003,14 +1010,9 @@
     #+clos
     ,@'(;; defclass.lsp
      clos::ensure-class
-     ;; std-slot-value.lsp
-     clos::standard-instance-get
-     clos::standard-instance-set
      clos::find-slot-definition
      ;; combin.lsp
      clos::simple-code-walker
-     ;; standard.lsp
-     clos::standard-instance-set
      ;; kernel.lsp
      clos::install-method
      clos::default-initargs-of

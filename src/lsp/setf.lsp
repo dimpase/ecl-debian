@@ -358,9 +358,12 @@ Does not check if the third gang is a single-element list."
 	  ((try-simpler-expansion place vars vals stores newvalue store-form))
 	  (t
 	   `(let* ,(mapcar #'list vars vals)
-	      (declare (:read-only ,@vars))
+	      ;; Unfortunately we cannot do this because there is code out
+	      ;; there that changes the variables and values
+	      ;; (declare (:read-only ,@vars))
 	      (multiple-value-bind ,stores ,newvalue
-		(declare (:read-only ,@stores))
+		;; Same here
+		;; (declare (:read-only ,@stores))
 		,store-form))))))
 
 (defun setf-expand (l env)
@@ -629,7 +632,7 @@ makes it the new value of PLACE.  Returns the new value of PLACE."
     (when (trivial-setf-form place vars stores store-form access-form)
       (return-from push `(setq ,place (cons ,item ,place))))
     ;; The item to be pushed has to be evaluated before the destination
-    (unless (constantp item)
+    (unless (constantp item env)
       (setq vals (cons item vals)
 	    item (gensym)
 	    vars (cons item vars)))
@@ -652,7 +655,7 @@ to MEMBER."
     (when (trivial-setf-form place vars stores store-form access-form)
       (return-from pushnew `(setq ,place (adjoin ,item ,place ,@rest))))
     ;; The item to be pushed has to be evaluated before the destination
-    (unless (constantp item)
+    (unless (constantp item env)
       (setq vals (cons item vals)
 	    item (gensym)
 	    vars (cons item vars)))
