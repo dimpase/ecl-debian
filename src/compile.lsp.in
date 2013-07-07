@@ -19,6 +19,22 @@
 (load "bare.lsp" :verbose nil)
 
 ;;;
+;;; * Complain about functions which are not in the core
+;;;
+#+(or)
+(let ((wrong-symbols '()))
+  (let ((*standard-output* (make-broadcast-stream)))
+    (dolist (p '("CL" "SI" "EXT" "CLOS"))
+      (do-symbols (s (find-package p))
+	(when (and (fboundp s)
+		   (not (typep (fdefinition s) '(or list generic-function)))
+		   (si::mangle-name s)
+		   (si::bc-disassemble (fdefinition s)))
+	  (pushnew s wrong-symbols)))))
+  (format t "~%;;; Functions that can be made into the core:~%")
+  (pprint (set-difference wrong-symbols c::*in-all-symbols-functions*)))
+
+;;;
 ;;; * Force compiler constants only for the core library
 ;;;
 (setf *use-static-constants-p* t)
@@ -52,22 +68,22 @@
       c::*ecl-library-directory* "@true_builddir@/")
 #-:wants-dlopen 
 (setf c::*ld-flags*
-      "@LDFLAGS@ @LIBPREFIX@ecl.@LIBEXT@ @CORE_LIBS@ @LIBS@ @FASL_LIBS@")
+      "@LDFLAGS@ @LIBPREFIX@ecl.@LIBEXT@ @CORE_LIBS@ @FASL_LIBS@ @LIBS@")
 #+(and :wants-dlopen (not nonstop))
 (setf c::*ld-flags*
       "@LDFLAGS@ @SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@"
       c::*ld-shared-flags*
-      "@SHARED_LDFLAGS@ @LDFLAGS@ @SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@ @FASL_LIBS@"
+      "@SHARED_LDFLAGS@ @LDFLAGS@ @SHAREDPREFIX@ecl.@SHAREDEXT@ @FASL_LIBS@ @LIBS@"
       c::*ld-bundle-flags*
-      "@BUNDLE_LDFLAGS@ @LDFLAGS@ @SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@ @FASL_LIBS@")
+      "@BUNDLE_LDFLAGS@ @LDFLAGS@ @SHAREDPREFIX@ecl.@SHAREDEXT@ @FASL_LIBS@ @LIBS@")
 ;;; FIXME: The nonstop platform does not support soname
 #+(and :wants-dlopen nonstop)
 (setf c::*ld-flags*
       "@LDFLAGS@ -Wld=-l@SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@"
       c::*ld-shared-flags*
-      "@SHARED_LDFLAGS@ @LDFLAGS@ -Wld=-l@SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@ @FASL_LIBS@"
+      "@SHARED_LDFLAGS@ @LDFLAGS@ -Wld=-l@SHAREDPREFIX@ecl.@SHAREDEXT@ @FASL_LIBS@ @LIBS@"
       c::*ld-bundle-flags*
-      "@BUNDLE_LDFLAGS@ @LDFLAGS@ -Wld=-l@SHAREDPREFIX@ecl.@SHAREDEXT@ @LIBS@ @FASL_LIBS@")
+      "@BUNDLE_LDFLAGS@ @LDFLAGS@ -Wld=-l@SHAREDPREFIX@ecl.@SHAREDEXT@ @FASL_LIBS@ @LIBS@")
 
 ;;;
 ;;; * Avoid name clashes with user supplied code.
@@ -124,7 +140,7 @@
 ;;;
 ;;; We do not need the -rpath flag for the library, nor -lecl.
 ;;;
-(let* ((c::*ld-shared-flags* #-msvc "@SHARED_LDFLAGS@ @LDFLAGS@ @SONAME_LDFLAGS@ @CORE_LIBS@ @LIBS@ @FASL_LIBS@"
+(let* ((c::*ld-shared-flags* #-msvc "@SHARED_LDFLAGS@ @LDFLAGS@ @SONAME_LDFLAGS@ @CORE_LIBS@ @FASL_LIBS@ @LIBS@"
 			     #+msvc "@SHARED_LDFLAGS@ @LDFLAGS@ @STATICLIBS@ @CLIBS@")
        (c::*cc-flags* (concatenate 'string "-DECL_API -I@true_builddir@/c " c::*cc-flags*))
        (extra-args nil))
@@ -205,8 +221,7 @@
 ;;;
 #+WANTS-ASDF
 (build-module "asdf"
-              '("ext:asdf;asdf.lisp"
-		"ext:asdf;asdf-bundle.lisp")
+              '("ext:asdf;asdf.lisp")
               :dir "build:ext;"
               :prefix "EXT"
               :builtin #+:BUILTIN-ASDF t #-:BUILTIN-ASDF nil)

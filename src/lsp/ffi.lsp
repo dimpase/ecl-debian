@@ -619,12 +619,12 @@
    t))
 
 (defmacro load-foreign-library (filename &key module supporting-libraries force-load
-				system-library)
+				system-library &environment env)
  (declare (ignore module force-load supporting-libraries))
- (let ((compile-form (and (constantp filename)
+ (let ((compile-form (and (constantp filename env)
                           `((eval-when (:compile-toplevel)
                               (do-load-foreign-library ,filename
-				,system-library)))))
+				,(ext:constant-form-value system-library))))))
        (dyn-form #+dffi (when (and (not system-library) *use-dffi*)
                           `((si:load-foreign-module ,filename)))
                  #-dffi nil))
@@ -681,7 +681,7 @@ the actual arguments are of the specified type."
               ;; defCbody must go first, because it clears symbol-plist of fun
               (defCbody ,fun ,arg-types ,type ,code)
               (declaim (ftype (function ,arg-types ,type) ,fun))
-	      (def-inline ,fun :always ,arg-types ,type ,code)))
+	      (c::def-inline ,fun :always ,arg-types ,type ,code)))
 
 (defmacro defla (&rest body)
 "Syntax: (defla name lambda-list &body body)" "

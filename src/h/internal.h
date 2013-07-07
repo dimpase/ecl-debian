@@ -148,6 +148,9 @@ extern cl_object _ecl_strerror(int code);
 #define _ecl_funcall1(fun) \
 	ecl_function_dispatch(ecl_process_env(), (fun))(0)
 
+extern cl_object si_constantp_inner _ECL_ARGS((cl_narg narg, cl_object form, ...));
+extern cl_object si_constant_form_value _ECL_ARGS((cl_narg narg, cl_object form, ...));
+
 /* interpreter.d */
 
 #define ECL_BUILD_STACK_FRAME(env,name,frame)	\
@@ -184,10 +187,10 @@ extern cl_object _ecl_strerror(int code);
         frame->frame.stack = 0;                                         \
         frame->frame.env = env;                                         \
         frame->frame.size = narg;                                       \
-        if (narg < ECL_C_ARGUMENTS_LIMIT) {                                 \
+        if (narg < ECL_C_ARGUMENTS_LIMIT) {                             \
                 va_list args;                                           \
                 va_start(args, lastarg);                                \
-                frame->frame.base = (void*)args;                        \
+                frame->frame.base = (cl_object*)args;                   \
         } else {                                                        \
                 frame->frame.base = env->stack_top - narg;              \
         }
@@ -209,7 +212,7 @@ extern cl_object _ecl_strerror(int code);
                         *p = va_arg(args, cl_object);                   \
                         ++p;                                            \
                 }                                                       \
-                frame->frame.stack = (void*)0x1;                        \
+                frame->frame.stack = (cl_object*)0x1;                   \
         } else {                                                        \
                 frame->frame.base = env->stack_top - narg;              \
                 frame->frame.stack = 0;                                 \
@@ -435,6 +438,7 @@ extern void cl_write_object(cl_object x, cl_object stream);
 #else
 #define	RTABSIZE	ECL_CHAR_CODE_LIMIT	/*  read table size  */
 #endif
+extern cl_object si_make_backq_vector(cl_object dim, cl_object data, cl_object stream);
 
 /* package.d */
 

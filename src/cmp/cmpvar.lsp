@@ -81,8 +81,8 @@
 
 (defun assert-var-not-ignored (var)
   (when (let ((x (var-ignorable var))) (and x (minusp x)))
-    (cmpwarn "Variable ~A, declared as IGNORE, found in a lisp form."
-	     (var-name var))
+    (cmpwarn-style "Variable ~A, declared as IGNORE, found in a lisp form."
+		   (var-name var))
     (setf (var-ignorable var) nil)))
 
 (defun delete-from-read-nodes (var form)
@@ -124,18 +124,12 @@
 ;;; that the variable has a value.
 
 ;;;  Bootstrap problem: proclaim needs this function:
-(defun sch-global (name)
-  (dolist (var *undefined-vars*)
-    (declare (type var var))
-    (when (eq (var-name var) name)
-      (return-from sch-global var))))
-
 ;;;
 ;;; Check if a variable has been declared as a special variable with a global
 ;;; value.
 
 (defun check-global (name)
-  (member name *global-vars* :test #'eq :key #'var-name))
+  (member name *global-vars*))
 
 (defun special-variable-p (name)
   "Return true if NAME is associated to a special variable in the lexical environment."
@@ -196,7 +190,7 @@
   (when (eq (var-kind var) 'LEXICAL)
     (when (and (zerop (var-ref var)) ;;; This field may be -1 (IGNORE). Beppe
                (not (var-ignorable var)))
-        (cmpwarn "The variable ~s is not used." (var-name var)))
+        (cmpwarn-style "The variable ~s is not used." (var-name var)))
     (when (not (var-ref-clb var))
       ;; if the variable can be stored locally, set it var-kind to its type
       (setf (var-kind var)
@@ -262,6 +256,10 @@
     (or (eq kind 'global)
         (eq kind 'special))))
 
+(defun useful-var-p (var)
+  (or (plusp (var-ref var))
+      (global-var-p var)))
+
 (defun c2var/location (c1form loc)
   #+(or)
   (unwind-exit loc)
@@ -311,33 +309,32 @@
 
 (defun wt-lex (lex)
   (if (consp lex)
-    (wt "lex" (car lex) "[" (cdr lex) "]")
-    (wt-lcl lex)))
+      (wt "lex" (car lex) "[" (cdr lex) "]")
+      (wt-lcl lex)))
 
 ;;; reference to variable of inner closure.
 (defun wt-env (clv) (wt "ECL_CONS_CAR(CLV" clv ")"))
 
 ;;; ----------------------------------------------------------------------
 
-(defun c1make-global-variable (name &key (type t) (kind 'GLOBAL) (warn nil))
-  (let ((var (find name *global-var-objects* :key #'var-name)))
-    (unless var
-      (setf var (make-var :name name :kind kind :type type :loc (add-symbol name))))
-    (push var *global-var-objects*)
+(defun c1make-global-variable (name &key
+			       (type (or (get-sysprop name 'CMP-TYPE) t))
+			       (kind 'GLOBAL)
+			       (warn nil))
+  (let* ((var (make-var :name name :kind kind :type type :loc (add-symbol name))))
     (when warn
-      (unless (or (constantp name) (special-variable-p name))
+      (unless (or (constantp name)
+		  (special-variable-p name)
+		  (member name *undefined-vars*))
 	(undefined-variable name)
-	(push var *undefined-vars*)))
+	(push name *undefined-vars*)))
     var))
 
 (defun c1declare-specials (globals)
   (mapc #'cmp-env-declare-special globals))
 
 (defun si::register-global (name)
-  (unless (check-global name)
-    (push (c1make-global-variable name :kind 'GLOBAL
-				  :type (or (get-sysprop name 'CMP-TYPE) 'T))
-	  *global-vars*))
+  (pushnew name *global-vars*)
   (values))
 
 (defun c1setq (args)
@@ -455,7 +452,7 @@
 		       (rep-type-name (rep-type-name rep-type))
 		       (temp (make-lcl-var :rep-type rep-type)))
 		  (wt-nl-open-brace)
-                  (wt-nl *volatile* rep-type-name " " temp ";")
+                  (wt-nl rep-type-name " " *volatile* temp ";")
                   (let ((*destination* temp)) (c2expr* form))
                   (push (cons var temp) saves))
                 (let ((*destination* (make-temp-var)))

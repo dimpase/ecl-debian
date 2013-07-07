@@ -47,6 +47,18 @@ si_safe_eval(cl_narg narg, cl_object form, cl_object env, ...)
 }
 
 extern cl_object
+cl_slot_value(cl_object instance, cl_object name)
+{
+	return _ecl_funcall3(@'slot-value', instance, name);
+}
+
+extern cl_object
+clos_slot_value_set(cl_object value, cl_object instance, cl_object name)
+{
+	return _ecl_funcall4(@'clos::slot-value-set', value, instance, name);
+}
+
+extern cl_object
 clos_std_compute_applicable_methods(cl_object gf, cl_object arglist)
 {
 	return _ecl_funcall3(@'clos::std-compute-applicable-methods', gf, arglist);
@@ -114,13 +126,25 @@ cl_set_difference(cl_narg narg, cl_object l1, cl_object l2, ...)
 extern cl_object
 cl_array_dimensions(cl_object array)
 {
-	return funcall(2, @'ARRAY-DIMENSIONS', array);
+	return _ecl_funcall2(@'ARRAY-DIMENSIONS', array);
 }
 
 extern cl_object
 si_find_relative_package(cl_narg narg, cl_object package, ...)
 {
 	@(return ECL_NIL);
+}
+
+extern cl_object
+si_wrong_type_argument(cl_narg narg, cl_object object, cl_object type, ...)
+{
+	return _ecl_funcall3(@'si::wrong-type-argument', object, type);
+}
+
+extern cl_object
+si_make_encoding(cl_object mapping)
+{
+	return _ecl_funcall2(@'ext::make-encoding', mapping);
 }
 
 static cl_object si_simple_toplevel ()
@@ -175,7 +199,7 @@ main(int argc, char **args)
 	ECL_SET(@'*features*', features);
 	top_level = _ecl_intern("TOP-LEVEL", cl_core.system_package);
 	ecl_def_c_function(top_level, si_simple_toplevel, 0);
-	funcall(1, top_level);
+	_ecl_funcall1(top_level);
 	return(0);
 }
 

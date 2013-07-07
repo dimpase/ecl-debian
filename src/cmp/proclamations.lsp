@@ -161,6 +161,7 @@
 (deftype ext:instance ()
   'standard-object)
 
+(proclaim '(notinline ext:constantp-inner ext:constant-form-value))
 
 (eval-when (:compile-toplevel :execute)
 (defparameter +proclamations+ '(
@@ -178,7 +179,7 @@
               (values (or function-name function) gen-bool gen-bool))
 (proclamation compiler-macro-function (function-name &optional environment)
               function)
-(proclamation constantp (t &optional environment) gen-bool :no-side-effects)
+(proclamation constantp (t &optional environment) gen-bool)
 (proclamation eval (form) (values &rest t))
 (proclamation macro-function (symbol &optional environment) function)
 (proclamation macroexpand (form &optional environment) (values form gen-bool))
@@ -190,6 +191,8 @@
 (proclamation si:specialp (symbol) gen-bool :predicate)
 (proclamation si::do-defsetf (symbol (or symbol function)) t)
 (proclamation si::do-define-setf-method (symbol function) t)
+(proclamation ext:constant-form-value (t &optional environment) t)
+(proclamation ext:constantp-inner (t &optional environment) gen-bool)
 
 ;;;
 ;;; 4. TYPES AND CLASSES
@@ -244,6 +247,8 @@
 (proclamation si:compiled-function-block (function) (or null si::codeblock))
 (proclamation ext:compiled-function-file (function) (values t t))
 
+(proclamation ext:constantly-t () function)
+
 (proclamation si:ihs-top () si::index)
 (proclamation si:ihs-fun (si::index) (or null function-designator))
 (proclamation si:ihs-env (si::index) environment)
@@ -256,8 +261,10 @@
 (proclamation si:bds-val (si::index) t)
 (proclamation si:sch-frs-base (si::index si::index) (or null si::index))
 
+(proclamation si::ccase-error (t t t) t)
 (proclamation si::ecase-error (t t) t)
 (proclamation si::etypecase-error (t t) t)
+(proclamation si::ctypecase-error (t t t) t)
 (proclamation si::do-check-type (t t t t) t)
 
 (proclamation si::dm-too-many-arguments (t) t)
@@ -289,8 +296,6 @@
 ; (proclamation unbound-slot-instance (condition) si::instance :predicate)
 
 #+clos
-(proclamation clos::standard-instance-get (ext:instance t) t)
-#+clos
 (proclamation clos::standard-instance-set (t ext:instance t) t)
 #+clos
 (proclamation clos:std-compute-applicable-methods (generic-function list) list)
@@ -300,6 +305,12 @@
 (proclamation clos:compute-effective-method-function (generic-function method-combination list) function)
 #+clos
 (proclamation clos::update-instance (ext:instance) (values))
+#+clos
+(proclamation clos::slot-value-set (t si::instance symbol) t)
+#+clos
+(proclamation clos:extract-lambda-list (list) list)
+#+clos
+(proclamation clos:extract-specializer-names (list) list)
 
 ;;;
 ;;; 8. STRUCTURES
@@ -560,14 +571,15 @@
 ;; ECL extensions
 (proclamation si:bit-array-op (t t t t) (array bit))
 (proclamation ext:fixnump (t) gen-bool :pure)
+(proclamation si:ratiop (t) gen-bool :pure)
+(proclamation si:short-float-p (t) gen-bool :pure)
+(proclamation si:single-float-p (t) gen-bool :pure)
+(proclamation si:double-float-p (t) gen-bool :pure)
+(proclamation si:long-float-p (t) gen-bool :pure)
 
 ;; Virtual functions added by the compiler
 (proclamation shift>> (*) nil :pure)
 (proclamation shift<< (*) nil :pure)
-(proclamation short-float-p (*) nil :pure)
-(proclamation single-float-p (*) nil :pure)
-(proclamation double-float-p (*) nil :pure)
-(proclamation long-float-p (*) nil :pure)
 (proclamation c::ldb1 (fixnum fixnum fixnum) fixnum :no-side-effects)
 
 
@@ -1127,6 +1139,8 @@
 #+wants-sockets
 (proclamation si:lookup-host-entry (t) (values (or null string) list list))
 (proclamation si:copy-stream (stream stream) t)
+(proclamation si:make-encoding (t) t)
+(proclamation si:load-encoding (t) t)
 
 ;;;
 ;;; 22. PRINT
@@ -1297,6 +1311,7 @@
 
 ;; ECL extensions
 
+(proclamation ext::lisp-implementation-vcs-id () string :pure)
 (proclamation si::room-report () (values t t t t t t t t))
 (proclamation si::reset-gbc-count () t)
 (proclamation ext:gc (&optional gen-bool) t)
@@ -1340,10 +1355,10 @@
 #+clos
 (proclamation si:sl-makunbound (t fixnum) t)
 #+clos
-(proclamation clos:standard-instance-access (standard-object fixnum) t :reader)
+(proclamation clos:standard-instance-access (standard-object t) t :reader)
 #+clos
 (proclamation clos:funcallable-standard-instance-access
-              (clos:funcallable-standard-object fixnum)
+              (clos:funcallable-standard-object t)
               t :reader)
 #+clos
 (proclamation associate-methods-to-gfun (generic-function *)

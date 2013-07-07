@@ -85,14 +85,23 @@
 
 (defun specializers-expression (specializers)
   (declare (si::c-local))
+  ;; The list of specializers contains either types or (EQL value)
+  ;; expressions. The 'value' has to be obtained by evaluating a lisp form
+  ;; We save some space/time by including directly the value of those
+  ;; forms which do not involve any evaluations, such as literals or QUOTE
+  ;; expressions. Note that we cannot use CONSTANTP because this would extract
+  ;; the value of constant symbols, which would not be EQL to the value of
+  ;; those same constants when the code is reloaded.
   (list 'si::quasiquote
 	(loop for spec in specializers
 	   collect (if (atom spec)
 		       spec
 		       `(eql ,(let ((value (second spec)))
-				   (if (constantp value)
-				       (eval value)
-				       (list 'si::unquote value))))))))
+				(if (if (atom value)
+					(not (symbolp value))
+					(eq (car value) 'quote))
+				    (ext:constant-form-value value)
+				    (list 'si::unquote value))))))))
 
 (defun maybe-remove-block (method-lambda)
   (when (eq (first method-lambda) 'lambda)
@@ -141,6 +150,7 @@
 			(and x (subseq lambda-list x))
                         nil))))
     (let* ((copied-variables '())
+	   (ignorable `(declare (ignorable ,@required-parameters)))
 	   (class-declarations
 	    (nconc (when *add-method-argument-declarations*
 		     (loop for name in required-parameters
@@ -149,6 +159,7 @@
 			do (push `(,name ,name) copied-variables) and
 			nconc `((type ,type ,name)
 				(si::no-check-type ,name))))
+		   (list (list 'si::function-block-name name))
 		   (cdar declarations)))
 	   (block `(block ,(si::function-block-name name) ,@real-body))
 	   (method-lambda
@@ -161,8 +172,11 @@
 	    ;; arguments to the code walk.
 	    `(lambda ,lambda-list
 	       ,@(and class-declarations `((declare ,@class-declarations)))
+	       ,ignorable
 	       ,(if copied-variables
-		    `(let* ,copied-variables ,block)
+		    `(let* ,copied-variables
+		       ,ignorable
+		       ,block)
 		     block))))
       (values method-lambda declarations documentation))))
 
