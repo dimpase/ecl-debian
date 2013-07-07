@@ -14,15 +14,16 @@
     See file '../Copyright' for full details.
 */
 
-#include <ecl/ecl.h>
 #include <string.h>
+#include <ecl/ecl.h>
+#include <ecl/internal.h>
 
 cl_object
 ecl_allocate_instance(cl_object clas, cl_index size)
 {
 	cl_object x = ecl_alloc_instance(size);
 	cl_index i;
-	CLASS_OF(x) = clas;
+	ECL_CLASS_OF(x) = clas;
 	for (i = 0;  i < size;  i++)
 		x->instance.slots[i] = ECL_UNBOUND;
 	return x;
@@ -31,8 +32,8 @@ ecl_allocate_instance(cl_object clas, cl_index size)
 cl_object
 si_allocate_raw_instance(cl_object orig, cl_object clas, cl_object size)
 {
-	cl_object output = ecl_allocate_instance(clas, fixnnint(size));
-	if (orig == Cnil) {
+	cl_object output = ecl_allocate_instance(clas, ecl_to_size(size));
+	if (orig == ECL_NIL) {
 		orig = output;
 	} else {
 		orig->instance.clas = clas;
@@ -51,7 +52,7 @@ si_instance_sig(cl_object x)
 cl_object
 si_instance_sig_set(cl_object x)
 {
-	@(return (x->instance.sig = CLASS_SLOTS(CLASS_OF(x))));
+	@(return (x->instance.sig = ECL_CLASS_SLOTS(ECL_CLASS_OF(x))));
 }
 
 cl_object
@@ -59,7 +60,7 @@ si_instance_class(cl_object x)
 {
 	if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_only_arg(@[class-of], x, @[ext::instance]);
-	@(return CLASS_OF(x))
+	@(return ECL_CLASS_OF(x))
 }
 
 cl_object
@@ -69,7 +70,7 @@ si_instance_class_set(cl_object x, cl_object y)
                 FEwrong_type_nth_arg(@[si::instance-class-set], 1, x, @[ext::instance]);
 	if (ecl_unlikely(!ECL_INSTANCEP(y)))
                 FEwrong_type_nth_arg(@[si::instance-class-set], 2, y, @[ext::instance]);
-	CLASS_OF(x) = y;
+	ECL_CLASS_OF(x) = y;
 	@(return x)
 }
 
@@ -79,7 +80,7 @@ ecl_instance_ref(cl_object x, cl_fixnum i)
 	if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_nth_arg(@[si::instance-ref], 1, x, @[ext::instance]);
 	if (ecl_unlikely(i < 0 || i >= (cl_fixnum)x->instance.length))
-	        FEtype_error_index(x, MAKE_FIXNUM(i));
+	        FEtype_error_index(x, i);
 	return(x->instance.slots[i]);
 }
 
@@ -90,27 +91,33 @@ si_instance_ref(cl_object x, cl_object index)
 
 	if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_nth_arg(@[si::instance-ref], 1, x, @[ext::instance]);
-	if (ecl_unlikely(!FIXNUMP(index) ||
-                         (i = fix(index)) < 0 || i >= (cl_fixnum)x->instance.length))
-	        FEtype_error_index(x, index);
+	if (ecl_unlikely(!ECL_FIXNUMP(index)))
+		FEwrong_type_nth_arg(@[si::instance-ref], 2, index, @[fixnum]);
+	i = ecl_fixnum(index);
+	if (ecl_unlikely(i < 0 || i >= (cl_fixnum)x->instance.length))
+		FEtype_error_index(x, i);
 	@(return x->instance.slots[i])
 }
 
+#ifdef CLOS
 cl_object
-si_instance_ref_safe(cl_object x, cl_object index)
+clos_safe_instance_ref(cl_object x, cl_object index)
 {
 	cl_fixnum i;
 
 	if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_nth_arg(@[si::instance-ref], 1, x, @[ext::instance]);
-	if (ecl_unlikely(!FIXNUMP(index) ||
-                         (i = fix(index)) < 0 || i >= x->instance.length))
-	        FEtype_error_index(x, index);
+	if (ecl_unlikely(!ECL_FIXNUMP(index)))
+		FEwrong_type_nth_arg(@[si::instance-ref], 2, index, @[fixnum]);
+	i = ecl_fixnum(index);
+	if (ecl_unlikely(i < 0 || i >= x->instance.length))
+		FEtype_error_index(x, i);
 	x = x->instance.slots[i];
 	if (ecl_unlikely(x == ECL_UNBOUND))
-		cl_error(5, @'unbound-slot', @':name', index, @':instance', x);
+		x = _ecl_funcall4(@'slot-unbound', ECL_NIL, x, index);
 	@(return x)
 }
+#endif
 
 cl_object
 ecl_instance_set(cl_object x, cl_fixnum i, cl_object v)
@@ -118,7 +125,7 @@ ecl_instance_set(cl_object x, cl_fixnum i, cl_object v)
         if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_nth_arg(@[si::instance-set], 1, x, @[ext::instance]);
 	if (ecl_unlikely(i >= x->instance.length || i < 0))
-	        FEtype_error_index(x, MAKE_FIXNUM(i));
+	        FEtype_error_index(x, i);
 	x->instance.slots[i] = v;
 	return(v);
 }
@@ -130,9 +137,11 @@ si_instance_set(cl_object x, cl_object index, cl_object value)
 
 	if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_nth_arg(@[si::instance-set], 1, x, @[ext::instance]);
-	if (ecl_unlikely(!FIXNUMP(index) ||
-                         (i = fix(index)) >= (cl_fixnum)x->instance.length || i < 0))
-		FEtype_error_index(x, index);
+	if (ecl_unlikely(!ECL_FIXNUMP(index)))
+		FEwrong_type_nth_arg(@[si::instance-set], 2, index, @[fixnum]);
+	i = ecl_fixnum(index);
+	if (ecl_unlikely(i >= (cl_fixnum)x->instance.length || i < 0))
+		FEtype_error_index(x, i);
 	x->instance.slots[i] = value;
 	@(return value)
 }
@@ -140,7 +149,7 @@ si_instance_set(cl_object x, cl_object index, cl_object value)
 cl_object
 si_instancep(cl_object x)
 {
-	@(return (ECL_INSTANCEP(x) ? Ct : Cnil))
+	@(return (ECL_INSTANCEP(x) ? ecl_make_fixnum(x->instance.length) : ECL_NIL))
 }
 
 cl_object
@@ -154,7 +163,7 @@ si_unbound()
 cl_object
 si_sl_boundp(cl_object x)
 {
-	@(return ((x == ECL_UNBOUND) ? Cnil : Ct))
+	@(return ((x == ECL_UNBOUND) ? ECL_NIL : ECL_T))
 }
 
 cl_object
@@ -164,9 +173,11 @@ si_sl_makunbound(cl_object x, cl_object index)
 
 	if (ecl_unlikely(!ECL_INSTANCEP(x)))
                 FEwrong_type_nth_arg(@[si::sl-makunbound], 1, x, @[ext::instance]);
-	if (ecl_unlikely(!FIXNUMP(index) ||
-                         (i = fix(index)) >= x->instance.length || i < 0))
-		FEtype_error_index(x, index);
+	if (ecl_unlikely(!ECL_FIXNUMP(index)))
+		FEwrong_type_nth_arg(@[si::sl-makunbound], 2, index, @[fixnum]);
+	i = ecl_fixnum(index);
+	unlikely_if (i >= x->instance.length || i < 0)
+		FEtype_error_index(x, i);
 	x->instance.slots[i] = ECL_UNBOUND;
 	@(return x)
 }
@@ -185,12 +196,12 @@ si_copy_instance(cl_object x)
 	@(return y)
 }
 
-@(defun find-class (name &optional (errorp Ct) env)
+@(defun find-class (name &optional (errorp ECL_T) env)
 	cl_object class, hash;
 @
 	hash = ECL_SYM_VAL(the_env, @'si::*class-name-hash-table*');
-	class = ecl_gethash_safe(name, hash, Cnil);
-	if (class == Cnil) {
+	class = ecl_gethash_safe(name, hash, ECL_NIL);
+	if (class == ECL_NIL) {
 		if (!Null(errorp))
 			FEerror("No class named ~S.", 1, name);
 	}
@@ -212,6 +223,9 @@ ecl_slot_value_set(cl_object x, const char *slot, cl_object value)
 	return funcall(4, ecl_fdefinition(slot_setter), value, x, slot_name);
 }
 
+/**********************************************************************
+ * IMPORTANT: THE FOLLOWING LIST IS LINKED TO src/clos/builtin.lsp
+ **********************************************************************/
 enum ecl_built_in_classes {
 	ECL_BUILTIN_T = 0,
 	ECL_BUILTIN_SEQUENCE,
@@ -233,6 +247,7 @@ enum ecl_built_in_classes {
 	ECL_BUILTIN_SYNONYM_STREAM,
 	ECL_BUILTIN_BROADCAST_STREAM,
 	ECL_BUILTIN_CONCATENATED_STREAM,
+	ECL_BUILTIN_SEQUENCE_STREAM,
 	ECL_BUILTIN_CHARACTER,
 	ECL_BUILTIN_NUMBER,
 	ECL_BUILTIN_REAL,
@@ -244,7 +259,6 @@ enum ecl_built_in_classes {
 	ECL_BUILTIN_SYMBOL,
 	ECL_BUILTIN_NULL,
 	ECL_BUILTIN_KEYWORD,
-	ECL_BUILTIN_METHOD_COMBINATION,
 	ECL_BUILTIN_PACKAGE,
 	ECL_BUILTIN_FUNCTION,
 	ECL_BUILTIN_PATHNAME,
@@ -260,10 +274,11 @@ enum ecl_built_in_classes {
         ,
 	ECL_BUILTIN_PROCESS,
 	ECL_BUILTIN_LOCK,
-	ECL_BUILTIN_CONDITION_VARIABLE
-#endif
-#ifdef ECL_SEMAPHORES
-        , ECL_BUILTIN_SEMAPHORE
+	ECL_BUILTIN_RWLOCK,
+	ECL_BUILTIN_CONDITION_VARIABLE,
+        ECL_BUILTIN_SEMAPHORE,
+	ECL_BUILTIN_BARRIER,
+	ECL_BUILTIN_MAILBOX
 #endif
 #ifdef ECL_SSE2
 	, ECL_BUILTIN_SSE_PACK
@@ -273,12 +288,10 @@ enum ecl_built_in_classes {
 cl_object
 cl_class_of(cl_object x)
 {
-	cl_env_ptr the_env = ecl_process_env();
 	size_t index;
-	cl_type tp = type_of(x);
-	if (tp == t_instance)
-		@(return CLASS_OF(x));
-	switch (tp) {
+	switch (ecl_t_of(x)) {
+	case t_instance:
+		@(return ECL_CLASS_OF(x))
 	case t_fixnum:
 	case t_bignum:
 		index = ECL_BUILTIN_INTEGER; break;
@@ -324,13 +337,15 @@ cl_class_of(cl_object x)
 		index = ECL_BUILTIN_BIT_VECTOR; break;
 	case t_stream:
 		switch (x->stream.mode) {
-		case smm_synonym:	index = ECL_BUILTIN_SYNONYM_STREAM; break;
-		case smm_broadcast:	index = ECL_BUILTIN_BROADCAST_STREAM; break;
-		case smm_concatenated:	index = ECL_BUILTIN_CONCATENATED_STREAM; break;
-		case smm_two_way:	index =  ECL_BUILTIN_TWO_WAY_STREAM; break;
-		case smm_string_input:
-		case smm_string_output:	index = ECL_BUILTIN_STRING_STREAM; break;
-		case smm_echo:		index = ECL_BUILTIN_ECHO_STREAM; break;
+		case ecl_smm_synonym:	index = ECL_BUILTIN_SYNONYM_STREAM; break;
+		case ecl_smm_broadcast:	index = ECL_BUILTIN_BROADCAST_STREAM; break;
+		case ecl_smm_concatenated:	index = ECL_BUILTIN_CONCATENATED_STREAM; break;
+		case ecl_smm_two_way:	index = ECL_BUILTIN_TWO_WAY_STREAM; break;
+		case ecl_smm_string_input:
+		case ecl_smm_string_output:	index = ECL_BUILTIN_STRING_STREAM; break;
+		case ecl_smm_echo:		index = ECL_BUILTIN_ECHO_STREAM; break;
+                case ecl_smm_sequence_input:
+                case ecl_smm_sequence_output: index = ECL_BUILTIN_SEQUENCE_STREAM; break;
 		default:		index = ECL_BUILTIN_FILE_STREAM; break;
 		}
 		break;
@@ -353,10 +368,12 @@ cl_class_of(cl_object x)
 		index = ECL_BUILTIN_LOCK; break;
 	case t_condition_variable:
 		index = ECL_BUILTIN_CONDITION_VARIABLE; break;
-#endif
-#ifdef ECL_SEMAPHORES
-	case t_semaphores:
+	case t_semaphore:
 		index = ECL_BUILTIN_SEMAPHORE; break;
+	case t_barrier:
+		index = ECL_BUILTIN_BARRIER; break;
+	case t_mailbox:
+		index = ECL_BUILTIN_MAILBOX; break;
 #endif
 	case t_codeblock:
 		index = ECL_BUILTIN_CODE_BLOCK; break;
@@ -374,14 +391,13 @@ cl_class_of(cl_object x)
 		ecl_internal_error("not a lisp data object");
 	}
 	{
-		cl_object output;
-		x = ECL_SYM_VAL(the_env, @'clos::*builtin-classes*');
-		/* We have to be careful because *builtin-classes* might be empty! */
-		if (Null(x)) {
-			output = cl_find_class(1,@'t');
-		} else {
-			output = ecl_aref(x, index);
-		}
+		/* We have to be careful because +builtin-classes+ might be empty! */
+		/* In any case, since +builtin-classes+ is a constant, we may
+		 * optimize the slot access */
+		cl_object v = @'clos::+builtin-classes+'->symbol.value;
+		cl_object output = Null(v)?
+			cl_find_class(1,@'t') :
+			v->vector.self.t[index];
 		@(return output)
 	}
 }

@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -44,18 +45,30 @@
            (fset access-function
 		 #'(lambda (x) (elt x offset))))
           (t (error "~S is an illegal structure type." type)))
-    (if read-only
-	(progn
-	  (rem-sysprop access-function 'SETF-UPDATE-FN)
-	  (rem-sysprop access-function 'SETF-LAMBDA)
-	  (rem-sysprop access-function 'SETF-SYMBOL)
-	  (set-documentation access-function 'SETF nil))
-	(progn
+    (cond (read-only
+	   (fmakunbound `(setf ,access-function))
+	   (set-documentation access-function 'SETF nil))
 	  ;; The following is used by the compiler to expand inline
 	  ;; the accessor
-	  (put-sysprop access-function 'STRUCTURE-ACCESS (cons (or type name) offset)))
-	))
-  )
+	  (t
+	   (do-setf-structure-method access-function (or type name)
+				     offset)))))
+
+
+(defun do-setf-structure-method (access-function type index)
+  (declare (si::c-local)
+	   (optimize (speed 3) (safety 0)))
+  (put-sysprop access-function 'STRUCTURE-ACCESS (cons type index))
+  (do-defsetf access-function
+    (cond ((or (eq type 'list) (eq type 'vector))
+	   #'(lambda (newvalue struct)
+	       `(sys::elt-set ,struct ,index ,newvalue)))
+	  ((consp type)
+	   #'(lambda (newvalue struct)
+	       `(si::aset (the ,type ,struct) ,index ,newvalue)))
+	  (t
+	   #'(lambda (newvalue struct)
+	       `(sys::structure-set ,struct ',type ,index ,newvalue))))))
 
 (defun process-boa-lambda-list (slot-names slot-descriptions boa-list assertions)
   (declare (si::c-local))
@@ -485,7 +498,7 @@ as a STRUCTURE doc and can be retrieved by (documentation 'NAME 'structure)."
 
     ;; Check the print-function.
     (when (and print-function type)
-      (error "An print function is supplied to a typed structure."))
+      (error "A print function is supplied to a typed structure."))
 
     ;;
     ;; The constructors rely on knowing the structure class. For toplevel
@@ -502,7 +515,7 @@ as a STRUCTURE doc and can be retrieved by (documentation 'NAME 'structure)."
 				    (make-constructor name constructor type named
 						      slot-descriptions))
 				constructors)))
-      `(eval-when (:compile-toplevel :load-toplevel :execute)
+      `(progn
 	 (eval-when (:compile-toplevel :load-toplevel)
 	   ,core
 	   ,(si::register-with-pde whole)

@@ -20,10 +20,11 @@
 
 #ifdef ENABLE_DLOPEN
 cl_object
-si_load_binary(cl_object filename, cl_object verbose, cl_object print, cl_object external_format)
+si_load_binary(cl_object filename, cl_object verbose,
+               cl_object print, cl_object external_format)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	cl_object block;
+	cl_object block, map, array;
 	cl_object basename;
 	cl_object init_prefix, prefix;
 	cl_object output;
@@ -41,7 +42,7 @@ si_load_binary(cl_object filename, cl_object verbose, cl_object print, cl_object
 	/* Fist try to call "init_CODE()" */
         init_prefix = _ecl_library_default_entry();
         block->cblock.entry =
-                ecl_library_symbol(block, init_prefix->base_string.self, 0);
+                ecl_library_symbol(block, (char *)init_prefix->base_string.self, 0);
 	if (block->cblock.entry != NULL)
 		goto GO_ON;
 
@@ -57,7 +58,7 @@ si_load_binary(cl_object filename, cl_object verbose, cl_object print, cl_object
                                                       make_constant_base_string("_"));
         }
 	basename = cl_pathname_name(1,filename);
-	basename = @si::base-string-concatenate(2, prefix, @string-upcase(1, funcall(4, @'nsubstitute', CODE_CHAR('_'), CODE_CHAR('-'), basename)));
+	basename = @si::base-string-concatenate(2, prefix, @string-upcase(1, funcall(4, @'nsubstitute', ECL_CODE_CHAR('_'), ECL_CODE_CHAR('-'), basename)));
 	block->cblock.entry = ecl_library_symbol(block, (char*)basename->base_string.self, 0);
 
 	if (block->cblock.entry == NULL) {
@@ -66,12 +67,21 @@ si_load_binary(cl_object filename, cl_object verbose, cl_object print, cl_object
 		goto OUTPUT;
 	}
 
+GO_ON:
+        /* Try to load the compiled data */
+        map = si_get_cdata(filename);
+        array = ecl_nth_value(the_env, 1);
+
+        block->cblock.data_text = (char*)array->base_string.self;
+        block->cblock.data_text_size = array->base_string.dim;
+
 	/* Finally, perform initialization */
-GO_ON:	
-	read_VV(block, (void (*)(cl_object))(block->cblock.entry));
-	output = Cnil;
+	ecl_init_module(block, (void (*)(cl_object))(block->cblock.entry));
+	output = ECL_NIL;
+
+        si_munmap(map);
 OUTPUT:
-	@(return output)
+	ecl_return1(the_env, output);
 }
 #endif /* !ENABLE_DLOPEN */
 
@@ -82,17 +92,17 @@ si_load_source(cl_object source, cl_object verbose, cl_object print, cl_object e
 	cl_object x, strm;
 
 	/* Source may be either a stream or a filename */
-	if (type_of(source) != t_pathname && type_of(source) != t_base_string) {
+	if (ecl_t_of(source) != t_pathname && ecl_t_of(source) != t_base_string) {
 		/* INV: if "source" is not a valid stream, file.d will complain */
 		strm = source;
 	} else {
-		strm = ecl_open_stream(source, smm_input, Cnil, Cnil, 8,
+		strm = ecl_open_stream(source, ecl_smm_input, ECL_NIL, ECL_NIL, 8,
 				       ECL_STREAM_C_STREAM, external_format);
 		if (Null(strm))
-			@(return Cnil)
+			@(return ECL_NIL)
 	}
-	CL_UNWIND_PROTECT_BEGIN(the_env) {
-		cl_object form_index = MAKE_FIXNUM(0);
+	ECL_UNWIND_PROTECT_BEGIN(the_env) {
+		cl_object form_index = ecl_make_fixnum(0);
                 cl_object pathname = ECL_SYM_VAL(the_env, @'*load-pathname*');
 		cl_object location = CONS(pathname, form_index);
 		ecl_bds_bind(the_env, @'ext::*source-location*', location);
@@ -104,22 +114,86 @@ si_load_source(cl_object source, cl_object verbose, cl_object print, cl_object e
 				break;
                         if (the_env->nvalues) {
                                 si_eval_with_env(1, x);
-                                if (print != Cnil) {
+                                if (print != ECL_NIL) {
                                         @write(1, x);
                                         @terpri(0);
                                 }
                         }
 		}
 		ecl_bds_unwind1(the_env);
-	} CL_UNWIND_PROTECT_EXIT {
+	} ECL_UNWIND_PROTECT_EXIT {
 		/* We do not want to come back here if close_stream fails,
 		   therefore, first we frs_pop() current jump point, then
 		   try to close the stream, and then jump to next catch
 		   point */
 		if (strm != source)
 			cl_close(3, strm, @':abort', @'t');
-	} CL_UNWIND_PROTECT_END;
-	@(return Cnil)
+	} ECL_UNWIND_PROTECT_END;
+	@(return ECL_NIL)
+}
+
+
+cl_object
+si_load_bytecodes(cl_object source, cl_object verbose, cl_object print, cl_object external_format)
+{
+	cl_env_ptr env = ecl_process_env();
+	cl_object forms, strm;
+	cl_object old_eptbc = env->packages_to_be_created;
+
+	/* Source may be either a stream or a filename */
+	if (ecl_t_of(source) != t_pathname && ecl_t_of(source) != t_base_string) {
+		/* INV: if "source" is not a valid stream, file.d will complain */
+		strm = source;
+	} else {
+		strm = ecl_open_stream(source, ecl_smm_input, ECL_NIL, ECL_NIL, 8,
+				       ECL_STREAM_C_STREAM, external_format);
+		if (Null(strm))
+			@(return ECL_NIL)
+	}
+	ECL_UNWIND_PROTECT_BEGIN(env) {
+                {
+                cl_object progv_list = ECL_SYM_VAL(env, @'si::+ecl-syntax-progv-list+');
+                cl_index bds_ndx = ecl_progv(env, ECL_CONS_CAR(progv_list),
+                                             ECL_CONS_CDR(progv_list));
+                env->packages_to_be_created_p = ECL_T;
+                forms = cl_read(1, strm);
+                env->packages_to_be_created_p = ECL_NIL;
+                ecl_bds_unwind(env, bds_ndx);
+                }
+                while (!Null(forms)) {
+                        if (ECL_LISTP(forms)) {
+                                cl_object x = ECL_CONS_CAR(forms);
+                                forms = ECL_CONS_CDR(forms);
+                                if (ecl_t_of(x) == t_bytecodes) {
+                                        _ecl_funcall1(x);
+                                        continue;
+                                }
+                        }
+                        FEerror("Corrupt bytecodes file ~S", 1, source);
+                }
+                {
+                cl_object x;
+                x = cl_set_difference(2, env->packages_to_be_created, old_eptbc);
+                old_eptbc = env->packages_to_be_created;
+                unlikely_if (!Null(x)) {
+                        CEerror(ECL_T,
+                                Null(ECL_CONS_CDR(x))?
+                                "Package ~A referenced in "
+				"compiled file~&  ~A~&but has not been created":
+                                "The packages~&  ~A~&were referenced in "
+				"compiled file~&  ~A~&but have not been created",
+				2, x, source);
+		}
+                }
+	} ECL_UNWIND_PROTECT_EXIT {
+		/* We do not want to come back here if close_stream fails,
+		   therefore, first we frs_pop() current jump point, then
+		   try to close the stream, and then jump to next catch
+		   point */
+		if (strm != source)
+			cl_close(3, strm, @':abort', @'t');
+	} ECL_UNWIND_PROTECT_END;
+	@(return ECL_NIL)
 }
 
 @(defun load (source
@@ -132,10 +206,10 @@ si_load_source(cl_object source, cl_object verbose, cl_object print, cl_object e
 	bool not_a_filename = 0;
 @
 	/* If source is a stream, read conventional lisp code from it */
-	if (type_of(source) != t_pathname && !ecl_stringp(source)) {
+	if (ecl_t_of(source) != t_pathname && !ecl_stringp(source)) {
 		/* INV: if "source" is not a valid stream, file.d will complain */
 		filename = source;
-		function = Cnil;
+		function = ECL_NIL;
 		not_a_filename = 1;
 		goto NOT_A_FILENAME;
 	}
@@ -144,8 +218,8 @@ si_load_source(cl_object source, cl_object verbose, cl_object print, cl_object e
 	pathname = coerce_to_file_pathname(source);
 	pntype   = pathname->pathname.type;
 
-	filename = Cnil;
-	hooks = ecl_symbol_value(@'si::*load-hooks*');
+	filename = ECL_NIL;
+	hooks = ecl_symbol_value(@'ext::*load-hooks*');
 	if (Null(pathname->pathname.directory) &&
 	    Null(pathname->pathname.host) &&
 	    Null(pathname->pathname.device) &&
@@ -156,9 +230,9 @@ si_load_source(cl_object source, cl_object verbose, cl_object print, cl_object e
 			cl_object f = cl_merge_pathnames(2, pathname, d);
 			cl_object ok = cl_load(11, f, @':verbose', verbose,
 					       @':print', print,
-					       @':if-does-not-exist', Cnil,
+					       @':if-does-not-exist', ECL_NIL,
                                                @':external-format', external_format,
-					       @':search-list', Cnil);
+					       @':search-list', ECL_NIL);
 			if (!Null(ok)) {
 				@(return ok);
 			}
@@ -169,9 +243,9 @@ si_load_source(cl_object source, cl_object verbose, cl_object print, cl_object e
 		   that the file exists */
                 cl_object kind;
 		filename = si_coerce_to_filename(pathname);
-                kind = si_file_kind(filename, Ct);
+                kind = si_file_kind(filename, ECL_T);
 		if (kind != @':file' && kind != @':special') {
-			filename = Cnil;
+			filename = ECL_NIL;
 		} else {
 			function = cl_cdr(ecl_assoc(pathname->pathname.type, hooks));
 		}
@@ -182,28 +256,28 @@ si_load_source(cl_object source, cl_object verbose, cl_object print, cl_object e
 		filename = pathname;
 		filename->pathname.type = CAAR(hooks);
 		function = CDAR(hooks);
-                kind = si_file_kind(filename, Ct);
+                kind = si_file_kind(filename, ECL_T);
 		if (kind == @':file' || kind == @':special')
 			break;
 		else
-			filename = Cnil;
+			filename = ECL_NIL;
 	} end_loop_for_in;
 	if (Null(filename)) {
 		if (Null(if_does_not_exist))
-			@(return Cnil)
+			@(return ECL_NIL)
 		else
 			FEcannot_open(source);
 	}
 NOT_A_FILENAME:
-	if (verbose != Cnil) {
-		cl_format(3, Ct, make_constant_base_string("~&;;; Loading ~s~%"),
+	if (verbose != ECL_NIL) {
+		cl_format(3, ECL_T, make_constant_base_string("~&;;; Loading ~s~%"),
 			  filename);
 	}
 	ecl_bds_bind(the_env, @'*package*', ecl_symbol_value(@'*package*'));
 	ecl_bds_bind(the_env, @'*readtable*', ecl_symbol_value(@'*readtable*'));
-	ecl_bds_bind(the_env, @'*load-pathname*', not_a_filename? Cnil : source);
+	ecl_bds_bind(the_env, @'*load-pathname*', not_a_filename? ECL_NIL : source);
 	ecl_bds_bind(the_env, @'*load-truename*',
-		     not_a_filename? Cnil : (filename = cl_truename(filename)));
+		     not_a_filename? ECL_NIL : (filename = cl_truename(filename)));
 	if (!Null(function)) {
 		ok = funcall(5, function, filename, verbose, print, external_format);
 	} else {
@@ -217,7 +291,7 @@ NOT_A_FILENAME:
 		 * just loads _anything_.
 		 */
 		if (not_a_filename) {
-			ok = Ct;
+			ok = ECL_T;
 		} else {
 			ok = si_load_binary(filename, verbose, print);
 		}
@@ -229,8 +303,8 @@ NOT_A_FILENAME:
 	if (!Null(ok))
 		FEerror("LOAD: Could not load file ~S (Error: ~S)",
 			2, filename, ok);
-	if (print != Cnil) {
-		cl_format(3, Ct, make_constant_base_string("~&;;; Loading ~s~%"),
+	if (print != ECL_NIL) {
+		cl_format(3, ECL_T, make_constant_base_string("~&;;; Loading ~s~%"),
 			  filename);
 	}
 	@(return filename)

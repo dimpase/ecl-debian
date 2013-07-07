@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -68,6 +69,7 @@
   (let ((function (si::coerce-to-function function)))
     (declare (optimize (speed 3) (safety 0) (debug 0)))
     (with-start-end (start end sequence length)
+      (declare (ignore length))
       (with-key (key)
         (cond ((>= start end)
                (if ivsp
@@ -81,12 +83,12 @@
                    (setf sequence output
                          end (- end start) start 0)))
                (while (plusp start)
-                 (setf sequence (cdr (the cons sequence))
+                 (setf sequence (cons-cdr sequence)
                        start (1- start)
                        end (1- end)))
                (unless ivsp
-                 (setf initial-value (key (car (the cons sequence)))
-                       sequence (cdr (the cons sequence))
+                 (setf initial-value (key (cons-car sequence))
+                       sequence (cons-cdr sequence)
                        end (1- end)))
                (do-sublist (elt sequence 0 end :output initial-value)
                  (setf initial-value
@@ -195,7 +197,7 @@
                   (when (and (compare which (key elt))
                              (minusp (decf skip)))
                     (return))
-                  (setf (aref (the vector out) start) elt
+                  (setf (aref (truly-the vector out) start) elt
                         start (1+ start)))))
           ;; ... now filter the rest
           (do-vector (elt in start end :index index)
@@ -203,7 +205,7 @@
                 (when (zerop (decf %count))
                   (setf end (1+ index))
                   (return))
-                (setf (aref (the vector out) start) elt
+                (setf (aref (truly-the vector out) start) elt
                       start (1+ start))))
           ;; ... and copy the elements outside the limits
           (copy-subarray out start in end l)
@@ -218,13 +220,13 @@
 	       (index 0))
 	  (declare (fixnum index))
 	  (while (and sequence (< index start))
-	    (setf output (cons (car (the cons sequence)) output)
-		  sequence (cdr (the cons sequence))
+	    (setf output (cons (cons-car sequence) output)
+		  sequence (cons-cdr sequence)
 		  index (1+ index)))
           (loop
              (unless (< index end) (return))
-             (let ((elt (car (the cons sequence))))
-               (setf sequence (cdr (the cons sequence)))
+             (let ((elt (cons-car sequence)))
+               (setf sequence (cons-cdr sequence))
                (if (compare which (key elt))
                    (when (zerop (decf %count))
                      (return))
@@ -268,14 +270,14 @@
 	  (declare (fixnum index)
                    (cons splice))
 	  (while (and sequence (< index start))
-	    (setf sequence (cdr (the cons sequence))
-		  splice (cdr (the cons splice))
+	    (setf sequence (cons-cdr sequence)
+		  splice (cons-cdr splice)
 		  index (1+ index)))
           (loop
              (unless (< index end)
                (return))
-             (let ((elt (car (the cons sequence))))
-               (setf sequence (cdr (the cons sequence)))
+             (let ((elt (cons-car sequence)))
+               (setf sequence (cons-cdr sequence))
                (cond ((compare which (key elt))
                       (setf (cdr splice) sequence)
                       (when (zerop (decf %count))
@@ -288,7 +290,7 @@
 (defun delete (which sequence &key test test-not (start 0) end
                from-end count key)
   (declare (optimize (speed 3) (safety 1) (debug 0))
-           (ext:no-check-arguments-type))
+           (ext:check-arguments-type nil))
   (cond ((listp sequence)
          (if from-end
              (let ((l (length sequence)))
@@ -299,11 +301,11 @@
              (delete-list which sequence start end count test test-not key)))
         ((not (vectorp sequence))
          (signal-type-error sequence 'sequence))
-        ((array-has-fill-pointer-p (the vector sequence))
+        ((array-has-fill-pointer-p (truly-the vector sequence))
          (multiple-value-bind (sequence l)
              (filter-vector which sequence sequence start end from-end count
                             test test-not key)
-           (setf (fill-pointer (the vector sequence)) l)
+           (setf (fill-pointer (truly-the vector sequence)) l)
            sequence))
         (t
          (values (filter-vector which nil sequence start end from-end count
@@ -416,7 +418,8 @@
 (defun find (item sequence &key test test-not (start 0) end from-end key)
   (with-tests (test test-not key)
     (declare (optimize (speed 3) (safety 0) (debug 0)))
-    (with-start-end (start end sequence l)
+    (with-start-end (start end sequence length)
+      (declare (ignore length))
       (let ((output nil))
         (do-sequence (elt sequence start end
                           :output output :index index :specialize t)
@@ -464,8 +467,8 @@
     (with-start-end (start end sequence)
       (let* ((output nil))
         (while (and sequence (plusp start))
-          (setf output (cons (car (the cons sequence)) output)
-                sequence (cdr (the cons sequence))
+          (setf output (cons (cons-car sequence) output)
+                sequence (cons-cdr sequence)
                 start (1- start)
                 end (1- end)))
         (let ((start sequence)
@@ -477,26 +480,26 @@
           ;; 2) otherwise, return T only when there are no duplicates
           ;;    after the current one.
           (flet ((already-in-list-p (start current end from-end)
-                   (let ((elt (key (car (the cons current)))))
+                   (let ((elt (key (cons-car current))))
                      (if from-end
                          (loop
                             (when (eq start current)
                               (return nil))
-                            (when (compare elt (key (car (the cons start))))
+                            (when (compare elt (key (cons-car start)))
                               (return t))
-                            (setf start (cdr (the cons start))))
+                            (setf start (cons-cdr start)))
                          (loop
-                            (setf current (cdr (the cons current)))
+                            (setf current (cons-cdr current))
                             (when (eq current end)
                               (return nil))
-                            (when (compare elt (key (car (the cons current))))
+                            (when (compare elt (key (cons-car current)))
                               (return t)))))))
             (loop
                (when (eq sequence end)
                  (return (nreconc output sequence)))
                (unless (already-in-list-p start sequence end from-end)
-                 (push (car (the cons sequence)) output))
-               (setf sequence (cdr (the cons sequence))))))))))
+                 (push (cons-car sequence) output))
+               (setf sequence (cons-cdr sequence)))))))))
 
 (defun remove-duplicates (sequence
                           &key test test-not from-end (start 0) end key)
@@ -527,36 +530,36 @@ Returns a copy of SEQUENCE without duplicated elements."
       (let* ((splice (cons nil sequence))
              (output splice))
         (while (and sequence (plusp start))
-          (setf splice (cdr (the cons splice))
-                sequence (cdr (the cons sequence))
+          (setf splice (cons-cdr splice)
+                sequence (cons-cdr sequence)
                 start (1- start)
                 end (1- end)))
         (let ((start splice)
               (end (nthcdr (- end start) sequence)))
           (flet ((already-in-list-p (start current end from-end)
-                   (let ((elt (key (car (the cons current)))))
+                   (let ((elt (key (cons-car current))))
                      (if from-end
                          (loop
                             (when (eq start current)
                               (return nil))
-                            (when (compare elt (key (car (the cons start))))
+                            (when (compare elt (key (cons-car start)))
                               (return t))
-                            (setf start (cdr (the cons start))))
+                            (setf start (cons-cdr start)))
                          (loop
-                            (setf current (cdr (the cons current)))
+                            (setf current (cons-cdr current))
                             (when (eq current end)
                               (return nil))
-                            (when (compare elt (key (car (the cons current))))
+                            (when (compare elt (key (cons-car current)))
                               (return t)))))))
             (loop
                (when (eq sequence end)
-                 (return (cdr (the cons output))))
-               (if (already-in-list-p (cdr (the cons start))
+                 (return (cons-cdr output)))
+               (if (already-in-list-p (cons-cdr start)
                                       sequence end from-end)
-                   (setf sequence (cdr (the cons sequence))
+                   (setf sequence (cons-cdr sequence)
                          (cdr splice) sequence)
-                   (setf sequence (cdr (the cons sequence))
-                         splice (cdr (the cons splice)))))))))))
+                   (setf sequence (cons-cdr sequence)
+                         splice (cons-cdr splice))))))))))
 
 (defun filter-duplicates-vector (out in start end from-end test test-not key)
   (with-tests (test test-not key)
@@ -584,8 +587,8 @@ Returns a copy of SEQUENCE without duplicated elements."
                        (+ jndex (- length end)))))
            (unless (already-in-vector-p in start index end from-end)
              (when out
-               (setf (aref (the vector out) jndex)
-                     (aref (the vector in) index)))
+               (setf (aref (truly-the vector out) jndex)
+                     (aref (truly-the vector in) index)))
              (setf jndex (1+ jndex)))
            (setf index (1+ index))))))))
 
@@ -767,7 +770,7 @@ evaluates to NIL.  See STABLE-SORT."
 	predicate (si::coerce-to-function predicate))
   (if (listp sequence)
       (list-merge-sort sequence predicate key)
-      (quick-sort sequence 0 (the fixnum (length sequence)) predicate key)))
+      (quick-sort sequence 0 (truly-the fixnum (1- (length sequence))) predicate key)))
 
 
 (defun list-merge-sort (l predicate key)
@@ -829,26 +832,41 @@ evaluates to NIL.  See STABLE-SORT."
 	   (function pred key)
 	   (optimize (safety 0))
 	   (si::c-local))
-  (if (<= end (the fixnum (1+ start)))
-      seq
-      (let* ((j start) (k end) (d (elt seq start)) (kd (funcall key d)))
-            (declare (fixnum j k))
-        (block outer-loop
-          (loop (loop (decf k)
-                      (unless (< j k) (return-from outer-loop))
-                      (when (funcall pred (funcall key (elt seq k)) kd)
-                            (return)))
-                (loop (incf j)
-                      (unless (< j k) (return-from outer-loop))
-                      (unless (funcall pred (funcall key (elt seq j)) kd)
-                              (return)))
-                (let ((temp (elt seq j)))
-                  (setf (elt seq j) (elt seq k)
-                        (elt seq k) temp))))
-        (setf (elt seq start) (elt seq j)
-              (elt seq j) d)
-        (quick-sort seq start j pred key)
-        (quick-sort seq (1+ j) end pred key))))
+  (if (< start end)
+      (let* ((j (1+ end)))
+	(declare (fixnum j))
+	(let* ((i start)
+	       (l (- end start))
+	       (l-half (ash l -1))
+	       (p (+ start l-half))
+	       (d (elt seq p))
+	       (kd (funcall key d)))
+	  (declare (fixnum i p l l-half))
+	  (rotatef (elt seq p) (elt seq start))
+	  (block outer-loop
+	    (loop
+	       (loop 
+		  (unless (> (decf j) i) (return-from outer-loop))
+		  (when (funcall pred 
+				 (funcall key (elt seq j)) kd)
+		    (return)))
+	       (loop 
+	      (unless (< (incf i) j) (return-from outer-loop))
+		  (unless (funcall pred
+				   (funcall key (elt seq i)) kd)
+		    (return)))
+	       (rotatef (elt seq i) (elt seq j))))
+	  (setf (elt seq start) (elt seq j)
+		(elt seq j) d))
+	(if (< (truly-the fixnum (- j start))
+	       (truly-the fixnum (- end j)))
+	    (progn
+	      (quick-sort seq start (1- j) pred key)
+	      (quick-sort seq (1+ j) end pred key))
+	    (progn
+	      (quick-sort seq (1+ j) end pred key)
+	      (quick-sort seq start (1- j) pred key))))
+      seq))
 
 
 (defun stable-sort (sequence predicate &key key)
@@ -882,7 +900,7 @@ the sense of TEST."
   (declare (fixnum l1 l2))
   (with-key (key)
     (with-predicate (predicate)
-      (do* ((size (the fixnum (+ l1 l2)))
+      (do* ((size (truly-the fixnum (+ l1 l2)))
 	    (j 0 (1+ j))
 	    (newseq (make-sequence result-type size))
 	    (i1 0)

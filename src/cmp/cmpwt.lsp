@@ -53,8 +53,7 @@
                             ((vv-used-p vv-record)
                              object)
                             (t
-                             (cmpnote "Constant value optimized away or not used~%~A"
-                                      object)
+                             ;; Value optimized away or not used
                              0))))
   #+(or)
   (loop for i in (nconc (map 'list #'first *permanent-objects*)
@@ -63,49 +62,44 @@
 		    0
 		    i)))
 
-(defun data-dump (stream &key as-lisp-file init-name &aux must-close)
-  (etypecase stream
-    (null (return-from data-dump))
-    ((or pathname string)
-     (setf stream (open stream :direction :output :if-does-not-exist :create
-			:if-exists :supersede :external-format :default)
-	   must-close stream))
-    (stream))
-  (si::with-ecl-io-syntax
-    (let ((output nil))
-      (cond (as-lisp-file
-             (print *permanent-objects* stream)
-             (print *temporary-objects* stream))
-            (*compiler-constants*
-             (format stream "~%#define compiler_data_text NULL~%#define compiler_data_text_size 0~%")
-             (setf output (concatenate 'vector (data-get-all-objects))))
-            #+externalizable
-            ((plusp (data-size))
-             (let* ((data (concatenate 'vector (data-get-all-objects)))
-                    (raw (si::serialize data))
-                    (l (length raw)))
-               (format stream "~%#define compiler_data_text_size ~D~%static const uint8_t compiler_data_text[~D] = {" l l)
-               (loop for byte across raw
-                  for i from 0
-                  when (zerop (mod i 20))
-                  do (terpri stream)
-                  do (format stream "~D," byte))
-               (format stream "};")))
-            #-externalizable
-            ((plusp (data-size))
-             (let ((*wt-string-size* 0)
-                   (*wt-data-column* 80))
-               (princ "static const char compiler_data_text[] = " stream)
-               (wt-filtered-data
-                (subseq (prin1-to-string (data-get-all-objects)) 1)
-                stream)
-               (princ #\; stream)
-               (format stream "~%#define compiler_data_text_size ~D~%"
-                       *wt-string-size*))))
-      (when must-close
-        (close must-close))
-      (data-init)
-      output)))
+(defun data-dump-array ()
+  (cond (*compiler-constants*
+         (setf si::*compiler-constants* (concatenate 'vector (data-get-all-objects)))
+         "")
+        #+externalizable
+        ((plusp (data-size))
+         (let* ((data-vector (concatenate 'vector (data-get-all-objects))))
+           (si::serialize data-vector)))
+        #-externalizable
+        ((plusp (data-size))
+         (let* ((*wt-string-size* 0)
+                (*wt-data-column* 80)
+                (data (data-get-all-objects))
+                (data-string (si::with-ecl-io-syntax
+                                 (prin1-to-string data)))
+                (l (length data-string)))
+           (subseq data-string 1 (1- l))))
+	(t
+	 "")))
+
+(defun data-c-dump (filename)
+  (with-open-file (stream filename :direction :output :if-does-not-exist :create
+                          :if-exists :supersede :external-format :default)
+    (let ((string (data-dump-array)))
+      (if (and *compile-in-constants* (plusp (length string)))
+	  (let ((*wt-string-size* 0)
+		(*wt-data-column* 80))
+	    (princ "static const char compiler_data_text[] = " stream)
+	    (wt-filtered-data string stream)
+	    (princ #\; stream)
+	    (format stream "~%#define compiler_data_text_size ~D~%"
+		    *wt-string-size*))
+          (princ "#define compiler_data_text NULL
+#define compiler_data_text_size 0" stream)))))
+
+(defun data-binary-dump (filename &optional string)
+  (unless *compile-in-constants*
+    (si::add-cdata filename (or string (data-dump-array)))))
 
 (defun wt-data-begin (stream)
   nil)
@@ -119,7 +113,7 @@
   (add-object 0 :duplicate t :permanent t))
 
 (defun add-load-form (object location)
-  (when (clos::need-to-make-load-form-p object)
+  (when (clos::need-to-make-load-form-p object *cmp-env*)
     (if (not (eq *compiler-phase* 't1))
 	(cmperr "Unable to internalize complex object ~A in ~a phase" object *compiler-phase*)
 	(multiple-value-bind (make-form init-form) (make-load-form object)
@@ -194,7 +188,7 @@
 
 (defun static-base-string-builder (name value stream)
   (format stream "ecl_def_ct_base_string(~A," name)
-  (wt-filtered-data value stream t)
+  (wt-filtered-data value stream :one-liner t)
   (format stream ",~D,static,const);" (length value)))
 
 (defun static-single-float-builder (name value stream)
@@ -220,7 +214,7 @@
   (let* ((*read-default-float-format* 'double-float)
 	 (*print-readably* t))
     (format stream
-	    "ecl_def_ct_ratio(~A,MAKE_FIXNUM(~D),MAKE_FIXNUM(~D),static,const);"
+	    "ecl_def_ct_ratio(~A,ecl_make_fixnum(~D),ecl_make_fixnum(~D),static,const);"
 	    name (numerator value) (denominator value))))
 
 (defun static-constant-delegate (name value stream)
@@ -258,15 +252,15 @@
     (ratio (and (static-constant-expression (numerator object))
 		(static-constant-expression (denominator object))
 		#'static-rational-builder))
-    (single-float (and (not (si:float-nan-p object))
-		       (not (si:float-infinity-p object))
+    (single-float (and (not (ext:float-nan-p object))
+		       (not (ext:float-infinity-p object))
 		       #'static-single-float-builder))
-    (double-float (and (not (si:float-nan-p object))
-		       (not (si:float-infinity-p object))
+    (double-float (and (not (ext:float-nan-p object))
+		       (not (ext:float-infinity-p object))
 		       #'static-double-float-builder))
     #+long-float
-    (long-float (and (not (si:float-nan-p object))
-		     (not (si:float-infinity-p object))
+    (long-float (and (not (ext:float-nan-p object))
+		     (not (ext:float-infinity-p object))
 		     #'static-long-float-builder))
     (complex (and (static-constant-expression (realpart object))
 		  (static-constant-expression (imagpart object))
@@ -278,9 +272,16 @@
 (defun add-static-constant (object)
   #+msvc
   nil
-  #-:msvc
+  #-msvc
   ;; FIXME! The Microsoft compiler does not allow static initialization of bit fields.
-  (unless (or *compiler-constants* (not (listp *static-constants*)))
+  ;; SSE uses always unboxed static constants. No reference
+  ;; is kept to them -- it is thus safe to use them even on code
+  ;; that might be unloaded.
+  (unless (or *compiler-constants*
+              (and (not *use-static-constants-p*)
+                   #+sse2
+                   (not (typep object 'ext:sse-pack)))
+              (not (listp *static-constants*)))
     (let ((record (find object *static-constants* :key #'first :test #'equal)))
       (if record
           (second record)
@@ -313,6 +314,6 @@
 
 (defun vv-type (loc)
   (let ((value (vv-value loc)))
-    (if (and value (not (si::fixnump value)))
+    (if (and value (not (ext:fixnump value)))
         (type-of value)
         t)))

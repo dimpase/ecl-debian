@@ -73,6 +73,7 @@ typedef enum {
 	t_cclosure,
 #ifdef CLOS
 	t_instance,
+	t_structure = t_instance,
 #else
 	t_structure,
 #endif /* CLOS */
@@ -81,9 +82,9 @@ typedef enum {
 	t_lock,
 	t_rwlock,
 	t_condition_variable,
-# ifdef ECL_SEMAPHORES
         t_semaphore,
-# endif
+        t_barrier,
+        t_mailbox,
 #endif
 	t_codeblock,
 	t_foreign,
@@ -119,112 +120,107 @@ typedef cl_object (*cl_objectfn_fixed)();
 */
 
 #define ECL_TAG_BITS		2
-#define IMMEDIATE(o)		((cl_fixnum)(o) & 3)
-#define IMMEDIATE_TAG		3
+#define ECL_IMMEDIATE(o)	((cl_fixnum)(o) & 3)
+#define ECL_IMMEDIATE_TAG	3
 
-#define ecl_to_bool(x) ((x)!=Cnil)
-#define ecl_make_bool(x) ((x)? Ct : Cnil)
+#define ecl_to_bool(x) ((x)!=ECL_NIL)
+#define ecl_make_bool(x) ((x)? ECL_T : ECL_NIL)
 
 /* Immediate fixnums:		*/
-#define FIXNUM_TAG		t_fixnum
-#define MAKE_FIXNUM(n)		((cl_object)(((cl_fixnum)(n) << 2) | FIXNUM_TAG))
-#define FIXNUM_MINUSP(n)	((cl_fixnum)(n) < 0)
-#define FIXNUM_PLUSP(n)		((cl_fixnum)(n) >= (cl_fixnum)MAKE_FIXNUM(0))
-#define	fix(obje)		(((cl_fixnum)(obje)) >> 2)
-#define FIXNUMP(o)		(IMMEDIATE(o) == t_fixnum)
-
-#define ECL_FIXNUMP(o)          (IMMEDIATE(o) == t_fixnum)
+#define ECL_FIXNUM_TAG		t_fixnum
+#define ECL_FIXNUMP(o)          (ECL_IMMEDIATE(o) == t_fixnum)
+#define ecl_make_fixnum(n)	((cl_object)(((cl_fixnum)(n) << 2) | t_fixnum))
 #define ecl_fixnum_lower(a,b)   ((cl_fixnum)(a) < (cl_fixnum)(b))
 #define ecl_fixnum_greater(a,b) ((cl_fixnum)(a) > (cl_fixnum)(b))
 #define ecl_fixnum_leq(a,b)     ((cl_fixnum)(a) <= (cl_fixnum)(b))
 #define ecl_fixnum_geq(a,b)     ((cl_fixnum)(a) >= (cl_fixnum)(b))
-#define ecl_fixnum_plusp(a)     ((cl_fixnum)(a) > (cl_fixnum)MAKE_FIXNUM(0))
+#define ecl_fixnum_plusp(a)     ((cl_fixnum)(a) > (cl_fixnum)ecl_make_fixnum(0))
 #define ecl_fixnum_minusp(a)    ((cl_fixnum)(a) < (cl_fixnum)(0))
+#define ecl_fixnum(a)           (((cl_fixnum)(a)) >> 2)
 
 /* Immediate characters:	*/
-#define CHARACTER_TAG		t_character
-#define CHARACTERP(o)		(IMMEDIATE(o) == t_character)
+#define ECL_CHARACTER_TAG	t_character
+#define ECL_CHARACTERP(o)	(ECL_IMMEDIATE(o) == t_character)
 #ifdef ECL_UNICODE
-#define BASE_CHAR_P(obje)	((((cl_fixnum)(obje)) & 0xFFFFFC03) == CHARACTER_TAG)
-#define BASE_CHAR_CODE_P(x)	((x & ~((cl_fixnum)0xFF)) == 0)
-#define	CODE_CHAR(c)		((cl_object)(((cl_fixnum)(c << 2)|CHARACTER_TAG)))
-#define	CHAR_CODE(obje)		(((cl_fixnum)(obje)) >> 2)
+#define ECL_BASE_CHAR_P(obje)	((((cl_fixnum)(obje)) & 0xFFFFFC03) == ECL_CHARACTER_TAG)
+#define ECL_BASE_CHAR_CODE_P(x)	((x & ~((cl_fixnum)0xFF)) == 0)
+#define	ECL_CODE_CHAR(c)	((cl_object)(((cl_fixnum)(c << 2)|ECL_CHARACTER_TAG)))
+#define	ECL_CHAR_CODE(obje)	(((cl_fixnum)(obje)) >> 2)
 #else
-#define	CODE_CHAR(c)		((cl_object)(((cl_fixnum)((c & 0xff) << 2)|CHARACTER_TAG)))
-#define	CHAR_CODE(obje)		((((cl_fixnum)(obje)) >> 2) & 0xff)
+#define ECL_BASE_CHAR_P(o)	ECL_CHARACTERP(o)
+#define	ECL_CODE_CHAR(c)	((cl_object)(((cl_fixnum)((c & 0xff) << 2)|ECL_CHARACTER_TAG)))
+#define	ECL_CHAR_CODE(obje)	((((cl_fixnum)(obje)) >> 2) & 0xff)
 #endif
 #define ECL_CHAR_CODE_RETURN	13
 #define ECL_CHAR_CODE_NEWLINE	10
 #define ECL_CHAR_CODE_LINEFEED	10
 
 #define ECL_NUMBER_TYPE_P(t)	(t >= t_fixnum && t <= t_complex)
-#define REAL_TYPE(t)		(t >= t_fixnum && t < t_complex)
-#define ARRAY_TYPE(t)		(t >= t_array && t <= t_bitvector)
-#define ECL_ARRAYP(x)		((IMMEDIATE(x) == 0) && (x)->d.t >= t_array && (x)->d.t <= t_bitvector)
-#define ECL_VECTORP(x)		((IMMEDIATE(x) == 0) && (x)->d.t >= t_vector && (x)->d.t <= t_bitvector)
-#define ECL_BIT_VECTOR_P(x)     ((IMMEDIATE(x) == 0) && ((x)->d.t == t_bitvector))
+#define ECL_REAL_TYPE_P(t)	(t >= t_fixnum && t < t_complex)
+#define ECL_ARRAYP(x)		((ECL_IMMEDIATE(x) == 0) && (x)->d.t >= t_array && (x)->d.t <= t_bitvector)
+#define ECL_VECTORP(x)		((ECL_IMMEDIATE(x) == 0) && (x)->d.t >= t_vector && (x)->d.t <= t_bitvector)
+#define ECL_BIT_VECTOR_P(x)     ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_bitvector))
 #ifdef ECL_UNICODE
-#define ECL_STRINGP(x)		((IMMEDIATE(x) == 0) && \
+#define ECL_STRINGP(x)		((ECL_IMMEDIATE(x) == 0) && \
                                  ((x)->d.t == t_base_string || (x)->d.t == t_string))
-#define ECL_EXTENDED_STRING_P(x) ((IMMEDIATE(x) == 0) && (x)->d.t == t_string)
+#define ECL_EXTENDED_STRING_P(x) ((ECL_IMMEDIATE(x) == 0) && (x)->d.t == t_string)
 #else
-#define ECL_STRINGP(x)		((IMMEDIATE(x) == 0) && ((x)->d.t == t_base_string))
+#define ECL_STRINGP(x)		((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_base_string))
 #define ECL_EXTENDED_STRING_P(x) 0
 #endif
-#define ECL_BASE_STRING_P(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_base_string))
-#define ECL_HASH_TABLE_P(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_hashtable))
-#define ECL_BIGNUMP(x)          ((IMMEDIATE(x) == 0) && ((x)->d.t == t_bignum))
-#define ECL_COMPLEXP(x)         ((IMMEDIATE(x) == 0) && ((x)->d.t == t_complex))
-#define ECL_RANDOM_STATE_P(x)   ((IMMEDIATE(x) == 0) && ((x)->d.t == t_random))
-#define ECL_SINGLE_FLOAT_P(x)   ((IMMEDIATE(x) == 0) && ((x)->d.t == t_singlefloat))
-#define ECL_DOUBLE_FLOAT_P(x)   ((IMMEDIATE(x) == 0) && ((x)->d.t == t_doublefloat))
+#define ECL_BASE_STRING_P(x)	((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_base_string))
+#define ECL_HASH_TABLE_P(x)	((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_hashtable))
+#define ECL_BIGNUMP(x)          ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_bignum))
+#define ECL_COMPLEXP(x)         ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_complex))
+#define ECL_RANDOM_STATE_P(x)   ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_random))
+#define ECL_SINGLE_FLOAT_P(x)   ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_singlefloat))
+#define ECL_DOUBLE_FLOAT_P(x)   ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_doublefloat))
 #ifdef ECL_LONG_FLOAT
-#define ECL_LONG_FLOAT_P(x)     ((IMMEDIATE(x) == 0) && ((x)->d.t == t_longfloat))
+#define ECL_LONG_FLOAT_P(x)     ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_longfloat))
 #endif
-#define ECL_PACKAGEP(x)         ((IMMEDIATE(x) == 0) && ((x)->d.t == t_package))
-#define ECL_PATHNAMEP(x)        ((IMMEDIATE(x) == 0) && ((x)->d.t == t_pathname))
-#define ECL_READTABLEP(x)       ((IMMEDIATE(x) == 0) && ((x)->d.t == t_readtable))
-#define ECL_FOREIGN_DATA_P(x)   ((IMMEDIATE(x) == 0) && ((x)->d.t == t_foreign))
+#define ECL_PACKAGEP(x)         ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_package))
+#define ECL_PATHNAMEP(x)        ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_pathname))
+#define ECL_READTABLEP(x)       ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_readtable))
+#define ECL_FOREIGN_DATA_P(x)   ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_foreign))
 #ifdef ECL_SSE2
-#define ECL_SSE_PACK_P(x)       ((IMMEDIATE(x) == 0) && ((x)->d.t == t_sse_pack))
+#define ECL_SSE_PACK_P(x)       ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_sse_pack))
 #endif
 
-#define HEADER			int8_t t, m, padding1, padding2
-#define HEADER1(field)		int8_t t, m, field, padding
-#define HEADER2(field1,field2)	int8_t t, m, field1, field2
+#define _ECL_HDR			int8_t t, m, padding1, padding2
+#define _ECL_HDR1(field)		int8_t t, m, field, padding
+#define _ECL_HDR2(field1,field2)	int8_t t, m, field1, field2
 
 struct ecl_singlefloat {
-	HEADER;
+	_ECL_HDR;
 	float SFVAL;	/*  singlefloat value  */
 };
-#define	sf(obje)	(obje)->SF.SFVAL
 #define ecl_single_float(o) ((o)->SF.SFVAL)
 
 struct ecl_doublefloat {
-	HEADER;
+	_ECL_HDR;
 	double DFVAL;	/*  doublefloat value  */
 };
-#define	df(obje)	(obje)->DF.DFVAL
 #define ecl_double_float(o) ((o)->DF.DFVAL)
 
 #ifdef ECL_LONG_FLOAT
 struct ecl_long_float {
-	HEADER;
+	_ECL_HDR;
 	long double value;
 };
 #define ecl_long_float(o) ((o)->longfloat.value)
 #endif
 
 struct ecl_bignum {
-	HEADER;
+	_ECL_HDR;
 	mpz_t big_num;
 };
-#define big_dim		big_num->_mp_alloc
-#define big_size	big_num->_mp_size
-#define big_limbs	big_num->_mp_d
+
+#define ECL_BIGNUM_DIM(x)	((x)->big.big_num->_mp_alloc)
+#define ECL_BIGNUM_SIZE(x)	((x)->big.big_num->_mp_size)
+#define ECL_BIGNUM_LIMBS(x)	((x)->big.big_num->_mp_d)
 
 struct ecl_ratio {
-	HEADER;
+	_ECL_HDR;
 	cl_object den;		/*  denominator, must be an integer  */
 	cl_object num;		/*  numerator, must be an integer  */
 };
@@ -233,30 +229,29 @@ struct ecl_ratio {
 #undef complex			/* Otherwise we cannot do x->complex.real */
 #endif
 struct ecl_complex {
-	HEADER;
+	_ECL_HDR;
 	cl_object real;		/*  real part, must be a number  */
 	cl_object imag;		/*  imaginary part, must be a number  */
 };
 
 enum ecl_stype {		/*  symbol type  */
-	stp_ordinary = 0,
-	stp_constant = 1,
-        stp_special = 2,
-	stp_macro = 4,
-	stp_special_form = 8
+	ecl_stp_ordinary = 0,
+	ecl_stp_constant = 1,
+        ecl_stp_special = 2,
+	ecl_stp_macro = 4,
+	ecl_stp_special_form = 8
 };
 
-#define	Cnil			((cl_object)t_list)
-#define	Cnil_symbol		((cl_object)cl_symbols)
-#define	Ct			((cl_object)(cl_symbols+1))
+#define	ECL_NIL			((cl_object)t_list)
+#define	ECL_NIL_SYMBOL		((cl_object)cl_symbols)
+#define	ECL_T			((cl_object)(cl_symbols+1))
 #define ECL_UNBOUND		((cl_object)(cl_symbols+2))
 #define ECL_PROTECT_TAG		((cl_object)(cl_symbols+3))
-
-#define ECL_FLAG_MACRO        1
-#define ECLF_LAG_SPECIAL_VAR  4
+#define ECL_RESTART_CLUSTERS	((cl_object)(cl_symbols+4))
+#define ECL_HANDLER_CLUSTERS	((cl_object)(cl_symbols+5))
 
 struct ecl_symbol {
-	HEADER2(stype, dynamic);/*  symbol type, special-variable-p */
+	_ECL_HDR2(stype, dynamic);/*  symbol type, special-variable-p */
 	cl_object value;	/*  global value of the symbol  */
 				/*  Coincides with cons.car  */
 	cl_object gfdef;	/*  global function definition  */
@@ -268,15 +263,15 @@ struct ecl_symbol {
 				/*  This field coincides with cons.car  */
 	cl_object name;		/*  print name  */
 	cl_object hpack;	/*  home package  */
-				/*  Cnil for uninterned symbols  */
+				/*  ECL_NIL for uninterned symbols  */
 #ifdef ECL_THREADS
         cl_index binding;	/*  index into the bindings array  */
 #endif
 };
-#define SYM_FUN(sym)	((sym)->symbol.gfdef)
+#define ECL_SYM_FUN(sym)	((sym)->symbol.gfdef)
 
 struct ecl_package {
-	HEADER1(locked);
+	_ECL_HDR1(locked);
 	cl_object name;		/*  package name, a string  */
 	cl_object nicknames;	/*  nicknames, list of strings  */
 	cl_object shadowings;	/*  shadowing symbol list  */
@@ -290,9 +285,11 @@ struct ecl_package {
 	The values returned by intern and find_symbol.
 	File_symbol may return 0.
 */
-#define	INTERNAL	1
-#define	EXTERNAL	2
-#define	INHERITED	3
+enum {
+	ECL_INTERNAL = 1,
+	ECL_EXTERNAL,
+	ECL_INHERITED
+};
 
 /*
  * CONSES
@@ -314,15 +311,10 @@ struct ecl_package {
  */
 
 #ifdef ECL_SMALL_CONS
-#define ECL_LISTP(x)    (IMMEDIATE(x) == t_list)
+#define ECL_LISTP(x)    (ECL_IMMEDIATE(x) == t_list)
 #define ECL_CONSP(x)    (LISTP(x) && !Null(x))
 #define ECL_ATOM(x)     (Null(x) || !LISTP(x))
-#define ECL_SYMBOLP(x)  (Null(x) || ((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
-
-#define LISTP(x)	(IMMEDIATE(x) == t_list)
-#define CONSP(x)	(LISTP(x) && !Null(x))
-#define ATOM(x)		(Null(x) || !LISTP(x))
-#define SYMBOLP(x)	(Null(x) || ((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
+#define ECL_SYMBOLP(x)  (Null(x) || ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
 
 #define ECL_PTR_CONS(x)	(cl_object)((char*)(x) + t_list)
 #define ECL_CONS_PTR(x)	((struct ecl_cons *)((char *)(x) - t_list))
@@ -336,15 +328,10 @@ struct ecl_cons {
 	cl_object cdr;		/*  cdr  */
 };
 #else
-#define ECL_LISTP(x)    (IMMEDIATE(x)? Null(x) : ((x)->d.t == t_list))
-#define ECL_CONSP(x)    ((IMMEDIATE(x) == 0) && ((x)->d.t == t_list))
-#define ECL_ATOM(x)     (IMMEDIATE(x) || ((x)->d.t != t_list))
-#define ECL_SYMBOLP(x)  (Null(x) || ((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
-
-#define LISTP(x)	(IMMEDIATE(x)? Null(x) : ((x)->d.t == t_list))
-#define CONSP(x)	((IMMEDIATE(x) == 0) && ((x)->d.t == t_list))
-#define ATOM(x)		(IMMEDIATE(x) || ((x)->d.t != t_list))
-#define SYMBOLP(x)	(Null(x) || ((IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
+#define ECL_LISTP(x)    (ECL_IMMEDIATE(x)? Null(x) : ((x)->d.t == t_list))
+#define ECL_CONSP(x)    ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_list))
+#define ECL_ATOM(x)     (ECL_IMMEDIATE(x) || ((x)->d.t != t_list))
+#define ECL_SYMBOLP(x)  (Null(x) || ((ECL_IMMEDIATE(x) == 0) && ((x)->d.t == t_symbol)))
 
 #define ECL_CONS_CAR(x)	((x)->cons.car)
 #define ECL_CONS_CDR(x)	((x)->cons.cdr)
@@ -352,18 +339,25 @@ struct ecl_cons {
 #define ECL_RPLACD(x,v)	(ECL_CONS_CDR(x)=(v))
 
 struct ecl_cons {
-	HEADER;
+	_ECL_HDR;
 	cl_object car;		/*  car  */
 	cl_object cdr;		/*  cdr  */
 };
 #endif
 
 enum ecl_httest {		/*  hash table key test function  */
-	htt_eq,			/*  eq  */
-	htt_eql,		/*  eql  */
-	htt_equal,		/*  equal  */
-	htt_equalp,		/*  equalp  */
-	htt_pack		/*  symbol hash  */
+	ecl_htt_eq,			/*  eq  */
+	ecl_htt_eql,		/*  eql  */
+	ecl_htt_equal,		/*  equal  */
+	ecl_htt_equalp,		/*  equalp  */
+	ecl_htt_pack		/*  symbol hash  */
+};
+
+enum ecl_htweak {
+	ecl_htt_not_weak = 0,
+	ecl_htt_weak_key,
+	ecl_htt_weak_value,
+	ecl_htt_weak_key_and_value
 };
 
 struct ecl_hashtable_entry {	/*  hash table entry  */
@@ -372,7 +366,7 @@ struct ecl_hashtable_entry {	/*  hash table entry  */
 };
 
 struct ecl_hashtable {		/*  hash table header  */
-	HEADER1(test);
+	_ECL_HDR2(test,weak);
 	struct ecl_hashtable_entry *data; /*  pointer to the hash table  */
 	cl_index entries;	/*  number of entries  */
 	cl_index size;		/*  hash table size  */
@@ -380,45 +374,36 @@ struct ecl_hashtable {		/*  hash table header  */
 	cl_object rehash_size;	/*  rehash size  */
 	cl_object threshold;	/*  rehash threshold  */
 	double factor;		/*  cached value of threshold  */
-#ifdef ECL_THREADS
-	cl_object lock;		/*  mutex to prevent race conditions  */
-#endif
-	struct ecl_hashtable_entry *(*get)(cl_object, cl_object);
+	cl_object (*get)(cl_object, cl_object, cl_object);
 	cl_object (*set)(cl_object, cl_object, cl_object);
+	bool (*rem)(cl_object, cl_object);
 };
 
 typedef enum {			/*  array element type  */
-	aet_object,		/*  t                */
-	aet_sf,			/*  single-float     */
-	aet_df,			/*  double-float     */
-	aet_bit,		/*  bit              */
-	aet_fix,		/*  cl_fixnum        */
-	aet_index,		/*  cl_index         */
+	ecl_aet_object,		/*  t                */
+	ecl_aet_sf,			/*  single-float     */
+	ecl_aet_df,			/*  double-float     */
+	ecl_aet_bit,		/*  bit              */
+	ecl_aet_fix,		/*  cl_fixnum        */
+	ecl_aet_index,		/*  cl_index         */
 	/* Below here, list types accepted by streams (i.e. OPEN) */
-	aet_b8,			/*  byte8	     */
-	aet_i8,			/*  integer8	     */
+	ecl_aet_b8,			/*  byte8	     */
+	ecl_aet_i8,			/*  integer8	     */
 #ifdef ecl_uint16_t
-        aet_b16, aet_i16,
+        ecl_aet_b16, ecl_aet_i16,
 #endif
 #ifdef ecl_uint32_t
-        aet_b32, aet_i32,
+        ecl_aet_b32, ecl_aet_i32,
 #endif
 #ifdef ecl_uint64_t
-        aet_b64, aet_i64,
+        ecl_aet_b64, ecl_aet_i64,
 #endif
 #ifdef ECL_UNICODE
-	aet_ch,			/*  character        */
+	ecl_aet_ch,			/*  character        */
 #endif
-	aet_bc,			/*  base-char        */
-	aet_last_type = aet_bc
+	ecl_aet_bc,			/*  base-char        */
+	ecl_aet_last_type = ecl_aet_bc
 } cl_elttype;
-
-typedef unsigned char ecl_base_char;
-#ifdef ECL_UNICODE
-typedef int32_t ecl_character;
-#else
-typedef int ecl_character;
-#endif
 
 union ecl_array_data {
 	cl_object     *t;
@@ -455,7 +440,7 @@ union ecl_array_data {
 struct ecl_array {		/*  array header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
-	HEADER2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
+	_ECL_HDR2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
 	cl_object displaced;	/*  displaced  */
 	cl_index dim;		/*  dimension  */
 	cl_index *dims;		/*  table of dimensions  */
@@ -467,7 +452,7 @@ struct ecl_array {		/*  array header  */
 struct ecl_vector {		/*  vector header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
-	HEADER2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
+	_ECL_HDR2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
 	cl_object displaced;	/*  displaced  */
 	cl_index dim;		/*  dimension  */
 	cl_index fillp;		/*  fill pointer  */
@@ -480,7 +465,7 @@ struct ecl_vector {		/*  vector header  */
 struct ecl_base_string {	/*  string header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
-	HEADER2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
+	_ECL_HDR2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
 	cl_object displaced;	/*  displaced  */
 	cl_index dim;       	/*  dimension  */
 				/*  string length  */
@@ -494,7 +479,7 @@ struct ecl_base_string {	/*  string header  */
 struct ecl_string {		/*  string header  */
 				/*  adjustable flag  */
 				/*  has-fill-pointer flag  */
-	HEADER2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
+	_ECL_HDR2(elttype,flags);	/*  array element type, has fill ptr, adjustable-p */
 	cl_object displaced;	/*  displaced  */
 	cl_index dim;       	/*  dimension  */
 				/*  string length  */
@@ -507,48 +492,52 @@ struct ecl_string {		/*  string header  */
 
 #ifdef CLOS
 #define T_STRUCTURE	t_instance
-#define STYPE(x)	CLASS_OF(x)
-#define SLOTS(x)	(x)->instance.slots
-#define SLENGTH(x)	(x)->instance.length
-#define SLOT(x,i)	(x)->instance.slots[i]
-#define SNAME(x)	CLASS_NAME(CLASS_OF(x))
+#define ECL_STRUCT_TYPE(x)	ECL_CLASS_OF(x)
+#define ECL_STRUCT_SLOTS(x)	(x)->instance.slots
+#define ECL_STRUCT_LENGTH(x)	(x)->instance.length
+#define ECL_STRUCT_SLOT(x,i)	(x)->instance.slots[i]
+#define ECL_STRUCT_NAME(x)	ECL_CLASS_NAME(ECL_CLASS_OF(x))
 #else
 struct ecl_structure {		/*  structure header  */
-	HEADER;
+	_ECL_HDR;
 	cl_object name;		/*  structure name  */
 	cl_object *self;	/*  structure self  */
 	cl_fixnum length;	/*  structure length  */
 };
 
 #define T_STRUCTURE	t_structure
-#define STYPE(x)	x->str.name
-#define SLOTS(x)	(x)->str.self
-#define SLENGTH(x)	(x)->str.length
-#define SLOT(x,i)	(x)->str.self[i]
-#define SNAME(x)	x->str.name
+#define ECL_STRUCT_TYPE(x)	x->str.name
+#define ECL_STRUCT_SLOTS(x)	(x)->str.self
+#define ECL_STRUCT_LENGTH(x)	(x)->str.length
+#define ECL_STRUCT_SLOT(x,i)	(x)->str.self[i]
+#define ECL_STRUCT_NAME(x)	x->str.name
 #endif
 
 enum ecl_smmode {		/*  stream mode  */
-	smm_input,		/*  input  */
-	smm_input_file,		/*  input  */
-	smm_output,		/*  output  */
-	smm_output_file,	/*  output  */
-	smm_io,			/*  input-output  */
-	smm_io_file,		/*  input-output  */
-	smm_synonym,		/*  synonym  */
-	smm_broadcast,		/*  broadcast  */
-	smm_concatenated,	/*  concatenated  */
-	smm_two_way,		/*  two way  */
-	smm_echo,		/*  echo  */
-	smm_string_input,	/*  string input  */
-	smm_string_output,	/*  string output  */
-	smm_probe		/*  probe (only used in open_stream())  */
+	ecl_smm_input,		/*  input  */
+	ecl_smm_input_file,		/*  input  */
+	ecl_smm_output,		/*  output  */
+	ecl_smm_output_file,	/*  output  */
+	ecl_smm_io,			/*  input-output  */
+	ecl_smm_io_file,		/*  input-output  */
+	ecl_smm_synonym,		/*  synonym  */
+	ecl_smm_broadcast,		/*  broadcast  */
+	ecl_smm_concatenated,	/*  concatenated  */
+	ecl_smm_two_way,		/*  two way  */
+	ecl_smm_echo,		/*  echo  */
+	ecl_smm_string_input,	/*  string input  */
+	ecl_smm_string_output,	/*  string output  */
+	ecl_smm_probe,		/*  probe (only used in open_stream())  */
 #if defined(ECL_WSOCK)
-	,
-	smm_input_wsock,	/* input socket (Win32) */
-	smm_output_wsock,	/* output socket (Win32) */
-	smm_io_wsock		/* input/output socket (Win32) */
+	ecl_smm_input_wsock,	/*  input socket (Win32) */
+	ecl_smm_output_wsock,	/*  output socket (Win32) */
+	ecl_smm_io_wsock,		/*  input/output socket (Win32) */
 #endif
+#if defined(ECL_MS_WINDOWS_HOST)
+	ecl_smm_io_wcon,		/*  windows console (Win32) */
+#endif
+	ecl_smm_sequence_input,	/*  sequence input  */
+	ecl_smm_sequence_output	/*  sequence output  */
 };
 
 struct ecl_file_ops {
@@ -613,17 +602,17 @@ enum {
 	ECL_STREAM_CLOSE_COMPONENTS = 1024
 };
 
+typedef int (*cl_eformat_decoder)(cl_object stream);
 typedef int (*cl_eformat_encoder)(cl_object stream, unsigned char *buffer, int c);
 typedef cl_index (*cl_eformat_read_byte8)(cl_object object, unsigned char *buffer, cl_index n);
-typedef int (*cl_eformat_decoder)(cl_object stream, cl_eformat_read_byte8 read_byte8, cl_object source);
 
 #define ECL_ANSI_STREAM_P(o) \
-        (IMMEDIATE(o) == 0 && ((o)->d.t == t_stream))
+        (ECL_IMMEDIATE(o) == 0 && ((o)->d.t == t_stream))
 #define ECL_ANSI_STREAM_TYPE_P(o,m) \
-        (IMMEDIATE(o) == 0 && ((o)->d.t == t_stream) && ((o)->stream.mode == (m)))
+        (ECL_IMMEDIATE(o) == 0 && ((o)->d.t == t_stream) && ((o)->stream.mode == (m)))
 
 struct ecl_stream {
-	HEADER2(mode,closed);	/*  stream mode of enum smmode  */
+	_ECL_HDR2(mode,closed);	/*  stream mode of enum smmode  */
 				/*  closed stream?  */
 	struct ecl_file_ops *ops; /*  dispatch table  */
         union {
@@ -633,6 +622,7 @@ struct ecl_stream {
 	cl_object object0;	/*  some object  */
 	cl_object object1;	/*  some object */
 	cl_object byte_stack;	/*  buffer for unread bytes  */
+	cl_index column;	/*  file column  */
 	cl_fixnum last_char;	/*  last character read  */
 	cl_fixnum last_code[2];	/*  actual composition of last character  */
 	cl_fixnum int0;		/*  some int  */
@@ -645,10 +635,11 @@ struct ecl_stream {
 	cl_eformat_decoder decoder;
 	cl_object format_table;
 	int flags;		/*  character table, flags, etc  */
+	ecl_character eof_char;
 };
 
 struct ecl_random {
-	HEADER;
+	_ECL_HDR;
 	cl_object value;	/*  random state value  */
 };
 
@@ -674,7 +665,7 @@ enum ecl_readtable_case {
 };
 
 struct ecl_readtable {		/*  read table  */
-	HEADER1(locked);
+	_ECL_HDR1(locked);
 	enum ecl_readtable_case read_case; /*  readtable-case  */
 	struct ecl_readtable_entry *table; /*  read table itself  */
 #ifdef ECL_UNICODE
@@ -683,7 +674,7 @@ struct ecl_readtable {		/*  read table  */
 };
 
 struct ecl_pathname {
-	HEADER1(logical);	/*  logical pathname?  */
+	_ECL_HDR1(logical);	/*  logical pathname?  */
 	cl_object host;		/*  host  */
 	cl_object device;	/*  device  */
 	cl_object directory;	/*  directory  */
@@ -693,7 +684,7 @@ struct ecl_pathname {
 };
 
 struct ecl_codeblock {
-	HEADER2(self_destruct,locked);	/*  delete DLL after gc */
+	_ECL_HDR2(self_destruct,locked);	/*  delete DLL after gc */
 					/*  do not garbage collect this library */
 	void	*handle;		/*  handle returned by dlopen  */
 	void	*entry;			/*  entry point  */
@@ -710,31 +701,31 @@ struct ecl_codeblock {
 	const struct ecl_cfun *cfuns;
         cl_object source;		/*  common debug information for this block  */
         cl_object refs;			/*  reference counter for the library  */
+	cl_object error;		/*  error message when loading */
 };
 
 struct ecl_bytecodes {
-	HEADER;
+	_ECL_HDR;
 	cl_object name;		/*  function name  */
 	cl_object definition;	/*  function definition in list form  */
 	cl_objectfn entry;	/*  entry address (must match the position of
                                  *  the equivalent field in cfun) */
 	cl_index code_size;	/*  number of bytecodes  */
-	cl_index data_size;	/*  number of constants  */
 	char *code;		/*  the intermediate language  */
-	cl_object *data;	/*  non-inmediate constants used in the code  */
+	cl_object data;		/*  non-inmediate constants used in the code  */
 	cl_object file;		/*  file where it was defined...  */
 	cl_object file_position;/*  and where it was created  */
 };
 
 struct ecl_bclosure {
-	HEADER;
+	_ECL_HDR;
 	cl_object code;
 	cl_object lex;
 	cl_objectfn entry;	/*  entry address  */
 };
 
 struct ecl_cfun {		/*  compiled function header  */
-	HEADER1(narg);
+	_ECL_HDR1(narg);
 	cl_object name;		/*  compiled function name  */
 	cl_object block;	/*  descriptor of C code block for GC  */
 	cl_objectfn entry;	/*  entry address  */
@@ -743,7 +734,7 @@ struct ecl_cfun {		/*  compiled function header  */
 };
 
 struct ecl_cfunfixed {		/*  compiled function header  */
-	HEADER1(narg);
+	_ECL_HDR1(narg);
 	cl_object name;		/*  compiled function name  */
 	cl_object block;	/*  descriptor of C code block for GC  */
 	cl_objectfn entry;	/*  entry address (must match the position of
@@ -754,7 +745,7 @@ struct ecl_cfunfixed {		/*  compiled function header  */
 };
 
 struct ecl_cclosure {		/*  compiled closure header  */
-	HEADER;
+	_ECL_HDR;
 	cl_object env;		/*  environment  */
 	cl_object block;	/*  descriptor of C code block for GC  */
 	cl_objectfn entry;	/*  entry address (must match the position of
@@ -849,14 +840,14 @@ enum ecl_ffi_calling_convention {
 };
 
 struct ecl_foreign {		/*  user defined datatype  */
-	HEADER;
+	_ECL_HDR;
 	cl_object tag;		/*  a tag identifying the type  */
 	cl_index size;		/*  the amount of memory allocated  */
 	char *data;		/*  the data itself  */
 };
 
 struct ecl_stack_frame {
-	HEADER;
+	_ECL_HDR;
 	cl_object *stack;	/*  Is this relative to the lisp stack?  */
 	cl_object *base;	/*  Start of frame  */
         cl_index size;		/*  Number of arguments  */
@@ -864,7 +855,7 @@ struct ecl_stack_frame {
 };
 
 struct ecl_weak_pointer {	/*  weak pointer to value  */
-	HEADER;
+	_ECL_HDR;
 	cl_object value;
 };
 
@@ -872,7 +863,7 @@ struct ecl_weak_pointer {	/*  weak pointer to value  */
 	dummy type
 */
 struct ecl_dummy {
-	HEADER;
+	_ECL_HDR;
 };
 
 #ifdef ECL_THREADS
@@ -880,34 +871,80 @@ enum {
         ECL_PROCESS_INACTIVE = 0,
         ECL_PROCESS_BOOTING,
         ECL_PROCESS_ACTIVE,
-        ECL_PROCESS_EXITING,
-        ECL_PROCESS_DEAD
+        ECL_PROCESS_EXITING
 };
 struct ecl_process {
-	HEADER2(active, phase);
+	_ECL_HDR;
 	cl_object name;
 	cl_object function;
 	cl_object args;
-	pthread_t thread;
 	struct cl_env_struct *env;
 	cl_object interrupt;
 	cl_object initial_bindings;
         cl_object parent;
-	cl_object exit_lock;
-	int trap_fpe_bits;
+	cl_object exit_barrier;
         cl_object exit_values;
+	cl_object woken_up;
+	cl_object queue_record;
+	cl_object start_spinlock;
+	cl_index phase;
+	pthread_t thread;
+	int trap_fpe_bits;
+};
+
+enum {
+	ECL_WAKEUP_ONE = 0,
+	ECL_WAKEUP_ALL = 1,
+	ECL_WAKEUP_RESET_FLAG = 2,
+	ECL_WAKEUP_KILL = 4,
+	ECL_WAKEUP_DELETE = 8
+};
+
+struct ecl_queue {
+	_ECL_HDR;
+	cl_object list;
+	cl_object spinlock;
+};
+
+struct ecl_semaphore {
+	_ECL_HDR;
+	cl_object queue_list;
+	cl_object queue_spinlock;
+        cl_object name;
+	cl_fixnum counter;
+};
+
+struct ecl_barrier {
+	_ECL_HDR;
+	cl_object queue_list;
+	cl_object queue_spinlock;
+        cl_object name;
+	cl_fixnum count;
+	cl_fixnum arrivers_count;
 };
 
 struct ecl_lock {
-	HEADER1(recursive);
+	_ECL_HDR1(recursive);
+	cl_object queue_list;
+	cl_object queue_spinlock;
+        cl_object owner;       /* thread holding the lock or NIL */
         cl_object name;
-        cl_object holder;       /* thread holding the lock or NIL */
-	cl_index counter;
-        pthread_mutex_t mutex;
+	cl_fixnum counter;
+};
+
+struct ecl_mailbox {
+	_ECL_HDR;
+	cl_object name;
+        cl_object data;
+        cl_object reader_semaphore;
+        cl_object writer_semaphore;
+	cl_index read_pointer;
+	cl_index write_pointer;
+	cl_index mask;
 };
 
 struct ecl_rwlock {
-	HEADER;
+	_ECL_HDR;
         cl_object name;
 #ifdef ECL_RWLOCK
         pthread_rwlock_t mutex;
@@ -917,30 +954,32 @@ struct ecl_rwlock {
 };
 
 struct ecl_condition_variable {
-        HEADER;
-        pthread_cond_t cv;
-};
-
-struct ecl_semaphore {
-        HEADER;
-        void *handle;
+        _ECL_HDR;
+	cl_object queue_list;
+	cl_object queue_spinlock;
+	cl_object lock;
 };
 #endif /* ECL_THREADS */
 
 #ifdef CLOS
-#define CLASS_OF(x)		(x)->instance.clas
-#define CLASS_NAME(x)		(x)->instance.slots[0]
-#define CLASS_SUPERIORS(x)	(x)->instance.slots[1]
-#define CLASS_INFERIORS(x)	(x)->instance.slots[2]
-#define CLASS_SLOTS(x)		(x)->instance.slots[3]
-#define CLASS_CPL(x)		(x)->instance.slots[4]
-#define ECL_INSTANCEP(x)	((IMMEDIATE(x)==0) && ((x)->d.t==t_instance))
+#define ECL_CLASS_OF(x)		(x)->instance.clas
+#define ECL_SPEC_FLAG(x)	(x)->instance.slots[0]
+#define ECL_SPEC_OBJECT(x)	(x)->instance.slots[3]
+#define ECL_CLASS_NAME(x)		(x)->instance.slots[3+0]
+#define ECL_CLASS_SUPERIORS(x)	(x)->instance.slots[3+1]
+#define ECL_CLASS_INFERIORS(x)	(x)->instance.slots[3+2]
+#define ECL_CLASS_SLOTS(x)		(x)->instance.slots[3+3]
+#define ECL_CLASS_CPL(x)		(x)->instance.slots[3+4]
+#define ECL_INSTANCEP(x)	((ECL_IMMEDIATE(x)==0) && ((x)->d.t==t_instance))
 #define ECL_NOT_FUNCALLABLE	0
 #define ECL_STANDARD_DISPATCH	1
-#define ECL_USER_DISPATCH	2
+#define ECL_RESTRICTED_DISPATCH	2
+#define ECL_READER_DISPATCH	3
+#define ECL_WRITER_DISPATCH	4
+#define ECL_USER_DISPATCH	5
 
 struct ecl_instance {		/*  instance header  */
-	HEADER1(isgf);
+	_ECL_HDR1(isgf);
 	cl_index length;	/*  instance length  */
 	cl_object clas;		/*  instance class  */
 	cl_objectfn entry;	/*  entry address  */
@@ -978,7 +1017,7 @@ union ecl_sse_data {
 };
 
 struct ecl_sse_pack {
-	HEADER1(elttype);
+	_ECL_HDR1(elttype);
 	union ecl_sse_data data;
 };
 #endif
@@ -1025,12 +1064,13 @@ union cl_lispunion {
 #endif /* CLOS */
 #ifdef ECL_THREADS
 	struct ecl_process	process; 	/*  process  */
+	struct ecl_queue	queue; 		/*  lock  */
 	struct ecl_lock		lock; 		/*  lock  */
 	struct ecl_rwlock	rwlock; 	/*  read/write lock  */
         struct ecl_condition_variable condition_variable; /*  condition-variable */
-#endif
-#ifdef ECL_SEMAPHORES
         struct ecl_semaphore	semaphore;	/*  semaphore  */
+        struct ecl_barrier	barrier;	/*  barrier  */
+        struct ecl_mailbox	mailbox;	/*  mailbox  */
 #endif
 	struct ecl_codeblock	cblock;		/*  codeblock  */
 	struct ecl_foreign	foreign; 	/*  user defined data type */
@@ -1045,14 +1085,15 @@ union cl_lispunion {
 	Type_of.
 */
 #if defined(__cplusplus) || (defined(__GNUC__) && !defined(__STRICT_ANSI__))
-static inline cl_type type_of(cl_object o) {
-	int i = IMMEDIATE(o);
+static inline cl_type ecl_t_of(cl_object o) {
+	int i = ECL_IMMEDIATE(o);
 	return (i? (cl_type)i : (cl_type)(o->d.t));
 }
 #else
-#define	type_of(o) \
-	((cl_type)(IMMEDIATE(o) ? IMMEDIATE(o) : ((o)->d.t)))
+#define	ecl_t_of(o) \
+	((cl_type)(ECL_IMMEDIATE(o) ? ECL_IMMEDIATE(o) : ((o)->d.t)))
 #endif
+#define type_of(o) ecl_t_of(o)
 
 /*
 	This is used to retrieve optional arguments
@@ -1061,7 +1102,7 @@ typedef struct {
 	va_list args;
 	cl_object *sp;
 	int narg;
-} cl_va_list[1];
+} ecl_va_list[1];
 
 #ifdef __cplusplus
 }

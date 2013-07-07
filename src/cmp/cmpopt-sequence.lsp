@@ -102,7 +102,7 @@
                          test))))))
 
 #+(or)
-(define-compiler-macro ext::make-seq-iterator (seq &optional (start 0))
+(define-compiler-macro si::make-seq-iterator (seq &optional (start 0))
   (with-clean-symbols (%seq %start)
     `(let ((%seq (optional-type-check ,seq sequence))
            (%start ,start))
@@ -114,7 +114,7 @@
               nil)))))
 
 #+(or)
-(define-compiler-macro ext::seq-iterator-ref (seq iterator)
+(define-compiler-macro si::seq-iterator-ref (seq iterator)
   (with-clean-symbols (%seq %iterator)
     `(let* ((%seq ,seq)
             (%iterator ,iterator))
@@ -123,18 +123,18 @@
            ;; Fixnum iterators are always fine
            (aref %seq %iterator)
            ;; Error check in case we may have been passed an improper list
-           (cons-car (assert-type-if-known %iterator cons))))))
+           (cons-car (checked-value cons %iterator))))))
 
 #+(or)
-(define-compiler-macro ext::seq-iterator-next (seq iterator)
+(define-compiler-macro si::seq-iterator-next (seq iterator)
   (with-clean-symbols (%seq %iterator)
     `(let* ((%seq ,seq)
             (%iterator ,iterator))
        (declare (optimize (safety 0)))
        (if (si::fixnump %iterator)
-           (let ((%iterator (1+ (the fixnum %iterator))))
+           (let ((%iterator (1+ (truly-the fixnum %iterator))))
              (declare (fixnum %iterator))
-             (and (< %iterator (length (the vector %seq)))
+             (and (< %iterator (length (truly-the vector %seq)))
                   %iterator))
            (cons-cdr %iterator)))))
 
@@ -148,16 +148,16 @@
                      %iterator)))
       `(let* ((,%sequence ,sequence)
               (,%start ,start)
-              (,%iterator (ext::make-seq-iterator ,%sequence ,%start))
+              (,%iterator (si::make-seq-iterator ,%sequence ,%start))
               (,%counter ,counter))
          (declare (:read-only ,%sequence ,%start ,%counter)
                   (ignorable ,%counter)
                   (fixnum ,%counter))
          (loop
             (unless ,test (return ,output))
-            (let ((,%elt (ext::seq-iterator-ref ,%sequence ,%iterator)))
+            (let ((,%elt (si::seq-iterator-ref ,%sequence ,%iterator)))
               ,@body)
-            (setf ,%iterator (ext::seq-iterator-next ,%sequence ,%iterator)))))))
+            (setf ,%iterator (si::seq-iterator-next ,%sequence ,%iterator)))))))
 
 ;;;
 ;;; MEMBER
@@ -225,7 +225,7 @@
 (defun expand-assoc (value list &rest sequence-args)
   (multiple-value-bind (key-function test-function init
                         key-flag test-flag test)
-      (seq-opt-parse-args 'member sequence-args :start-end nil)
+      (seq-opt-parse-args 'assoc sequence-args :start-end nil)
     (unless key-flag
       (when (or (null test-flag) (eq test-flag :test))
         (when (member test '('EQ #'EQ) :test #'equal)
@@ -268,7 +268,7 @@
 (defun expand-find (value sequence &rest sequence-args)
   (multiple-value-bind (key-function test-function init
                         key-flag test-flag test start end)
-      (seq-opt-parse-args 'member sequence-args)
+      (seq-opt-parse-args 'find sequence-args)
     (when test-function
       (ext:with-unique-names (%value %elt)
         `(let ((,%value ,value)

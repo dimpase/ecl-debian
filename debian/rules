@@ -30,17 +30,15 @@ endif
 DEB_HOST_ARCH := $(shell dpkg-architecture -qDEB_HOST_ARCH)
 
 # gengc doesn't work on ia64 right now -- check again for next version
-ifneq ($(DEB_HOST_ARCH),ia64)
-  confflags += --enable-gengc
-endif
+# actually gengc and threads don't work together accoding to upstream
+#ifneq ($(DEB_HOST_ARCH),ia64)
+#  confflags += --enable-gengc
+#endif
 
 # force to use ginstall-info:
 export INSTALL_INFO=/usr/bin/ginstall-info
 
 config.status: configure
-	mv src/gc .private_gc
-	mkdir src/gc
-	cp .private_gc/mkinstalldirs src/gc
 	dh_testdir
 #	Add here commands to configure the package.
 	chmod a+x configure \
@@ -49,9 +47,9 @@ config.status: configure
 	 src/configure \
 	 src/gmp/mpn/m4-ccas
 
-	touch  src/configure.in && \
-	touch  src/aclocal.m4 && \
-	touch  src/configure configure
+	touch src/configure.in && \
+	touch src/aclocal.m4 && \
+	touch src/configure configure
 
 	./configure $(confflags) \
 	   --prefix=/usr --mandir=\$${prefix}/share/man \
@@ -60,7 +58,7 @@ config.status: configure
 	   --with-tcp \
 	   --with-clx  \
 	   --enable-threads=yes \
-	   --enable-boehm=system \
+	   --enable-boehm=system  \
 	   --with-x
 
 	touch config.status
@@ -86,10 +84,14 @@ clean:
 	dh_testdir
 	dh_testroot
 	rm -f build-*-stamp
-	-test -r /usr/share/misc/config.sub && \
-           cp -f /usr/share/misc/config.sub src/config.sub
-	-test -r /usr/share/misc/config.guess && \
-           cp -f /usr/share/misc/config.guess src/config.guess
+#	-test -r /usr/share/misc/config.sub && \
+#           cp -f /usr/share/misc/config.sub src/gc/config.sub
+#	-test -r /usr/share/misc/config.guess && \
+#           cp -f /usr/share/misc/config.guess src/gc/config.guess
+#	-test -r /usr/share/misc/config.sub && \
+#           cp -f /usr/share/misc/config.sub src/config.sub
+#	-test -r /usr/share/misc/config.guess && \
+#           cp -f /usr/share/misc/config.guess src/config.guess
 #	do this manually on a big change:
 #	autoreconf --force
 #	Add here commands to clean up after the build process.
@@ -98,12 +100,6 @@ clean:
 	rm -f src/gc/configure.in
 
 	rm -rf build
-
-	if [ -d .private_gc ]; \
-	 then \
-	   rm -rf src/gc; \
-	   mv .private_gc src/gc; \
-	 fi
 
 	dh_clean
 
@@ -129,14 +125,14 @@ install: build-arch
 
 #	rmdir $(CURDIR)/debian/ecl/usr/share/info
 
-	find $(CURDIR)/debian -name "*.lsp" -print0 | \
-	   xargs -0 chmod a-x || true
+#	find $(CURDIR)/debian -name "*.lsp" -print0 | \
+#	   xargs -0 chmod a-x || true
 
 #	remove rpath from /us/lib/ecl/ binaries (bug #495756)
 #	this is a workaround until upstream properly fixes it
 	find $(CURDIR)/debian/ecl/usr/lib/ -name "*.fas" -print0 | \
 	   xargs -0 chrpath -d
-	chrpath -d $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/libecl.so.11.1.1
+	chrpath -d $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/libecl.so.*
 
 	cp debian/overrides.ecl $(CURDIR)/debian/ecl/usr/share/lintian/overrides/ecl
 

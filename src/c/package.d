@@ -15,6 +15,7 @@
     See file '../Copyright' for full details.
 */
 
+#include <string.h>
 #include <ecl/ecl.h>
 #include <ecl/internal.h>
 #include <ecl/ecl-inl.h>
@@ -33,20 +34,16 @@
  * they signal an error, they should undo all locks they had before.
  */
 
-#define	INTERNAL	1
-#define	EXTERNAL	2
-#define	INHERITED	3
-
 static cl_object find_symbol_inner(cl_object name, cl_object p, int *intern_flag);
 
 static void
 FEpackage_error(const char *message, cl_object package, int narg, ...)
 {
-	cl_va_list args;
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_list args;
+	ecl_va_start(args, narg, narg, 0);
 	si_signal_simple_error(6,
 			       @'package-error',
-			       Cnil, /* not correctable */
+			       ECL_NIL, /* not correctable */
 			       make_constant_base_string(message), /* format control */
 			       narg? cl_grab_rest_args(args) : cl_list(1,package), /* format args */
 			       @':package', package); /* extra arguments */
@@ -55,8 +52,8 @@ FEpackage_error(const char *message, cl_object package, int narg, ...)
 void
 CEpackage_error(const char *message, const char *continue_message, cl_object package, int narg, ...)
 {
-	cl_va_list args;
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_list args;
+	ecl_va_start(args, narg, narg, 0);
 	si_signal_simple_error(6,
 			       @'package-error',
 			       make_constant_base_string(continue_message),
@@ -86,17 +83,17 @@ static INLINE void
 symbol_remove_package(cl_object s, cl_object p)
 {
 	if (Null(s))
-		s = Cnil_symbol;
+		s = ECL_NIL_SYMBOL;
 	if (s->symbol.hpack == p)
-		s->symbol.hpack = Cnil;
+		s->symbol.hpack = ECL_NIL;
 }
 
 static INLINE void
 symbol_add_package(cl_object s, cl_object p)
 {
 	if (Null(s))
-		s = Cnil_symbol;
-	if (s->symbol.hpack == Cnil)
+		s = ECL_NIL_SYMBOL;
+	if (s->symbol.hpack == ECL_NIL)
 		s->symbol.hpack = p;
 }
 
@@ -111,10 +108,9 @@ static cl_object
 make_package_hashtable()
 {
 	return cl__make_hash_table(@'package', /* package hash table */
-				   MAKE_FIXNUM(128), /* initial size */
+				   ecl_make_fixnum(128), /* initial size */
                                    cl_core.rehash_size,
-                                   cl_core.rehash_threshold,
-				   Cnil); /* lockable */
+                                   cl_core.rehash_threshold);
 }
 
 static cl_object
@@ -124,10 +120,10 @@ alloc_package(cl_object name)
         p->pack.internal = make_package_hashtable();
 	p->pack.external = make_package_hashtable();
         p->pack.name = name;
-	p->pack.nicknames = Cnil;
-	p->pack.shadowings = Cnil;
-	p->pack.uses = Cnil;
-	p->pack.usedby = Cnil;
+	p->pack.nicknames = ECL_NIL;
+	p->pack.shadowings = ECL_NIL;
+	p->pack.uses = ECL_NIL;
+	p->pack.usedby = ECL_NIL;
 	p->pack.locked = FALSE;
         return p;
 }
@@ -150,14 +146,14 @@ _ecl_package_to_be_created(const cl_env_ptr env, cl_object name)
 static cl_object
 find_pending_package(cl_env_ptr env, cl_object name, cl_object nicknames)
 {
-        if (ecl_get_option(ECL_OPT_BOOTED)) {
+        if (ecl_option_values[ECL_OPT_BOOTED]) {
                 cl_object l = env->packages_to_be_created;
 		while (!Null(l)) {
 			cl_object pair = ECL_CONS_CAR(l);
 			cl_object other_name = ECL_CONS_CAR(pair);
 			if (ecl_equal(other_name, name) ||
-			    funcall(5, @'member', other_name, nicknames,
-				    @':test', @'string=') != Cnil)
+			    _ecl_funcall5(@'member', other_name, nicknames,
+					  @':test', @'string=') != ECL_NIL)
 			{
 				cl_object x = ECL_CONS_CDR(pair);
                                 env->packages_to_be_created =
@@ -168,7 +164,7 @@ find_pending_package(cl_env_ptr env, cl_object name, cl_object nicknames)
 			l = ECL_CONS_CDR(l);
 		}
         }
-        return Cnil;
+        return ECL_NIL;
 }
 
 static cl_object
@@ -176,7 +172,7 @@ process_nicknames(cl_object nicknames)
 {
         cl_object l;
         nicknames = cl_copy_list(nicknames);
-        for (l = nicknames; l != Cnil; l = ECL_CONS_CDR(l))
+        for (l = nicknames; l != ECL_NIL; l = ECL_CONS_CDR(l))
                 ECL_RPLACA(l, cl_string(ECL_CONS_CAR(l)));
         return nicknames;
 }
@@ -186,7 +182,7 @@ process_package_list(cl_object packages)
 {
         cl_object l;
         packages = cl_copy_list(packages);
-        for (l = packages; l != Cnil; l = ECL_CONS_CDR(l))
+        for (l = packages; l != ECL_NIL; l = ECL_CONS_CDR(l))
                 ECL_RPLACA(l, si_coerce_to_package(ECL_CONS_CAR(l)));
         return packages;
 }
@@ -195,7 +191,7 @@ cl_object
 ecl_make_package(cl_object name, cl_object nicknames, cl_object use_list)
 {
         const cl_env_ptr env = ecl_process_env();
-	cl_object x, l, other = Cnil;
+	cl_object x, other = ECL_NIL;
 
         /* Type checking, coercions, and the like, happen before we
          * acquire the lock */
@@ -203,14 +199,14 @@ ecl_make_package(cl_object name, cl_object nicknames, cl_object use_list)
         nicknames = process_nicknames(nicknames);
         use_list = process_package_list(use_list);
 
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(env) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(env) {
                 /* Find a similarly named package in the list of
                  * packages to be created and use it or try to build a
                  * new package */
                 x = find_pending_package(env, name, nicknames);
                 if (Null(x)) {
                         other = ecl_find_package_nolock(name);
-                        if (other != Cnil) {
+                        if (other != ECL_NIL) {
                                 goto OUTPUT;
                         } else {
                                 x = alloc_package(name);
@@ -219,22 +215,22 @@ ecl_make_package(cl_object name, cl_object nicknames, cl_object use_list)
                 loop_for_in(nicknames) {
                         cl_object nick = ECL_CONS_CAR(nicknames);
                         other = ecl_find_package_nolock(nick);
-                        if (other != Cnil) {
+                        if (other != ECL_NIL) {
                                 name = nick;
                                 goto OUTPUT;
                         }
                         x->pack.nicknames = CONS(nick, x->pack.nicknames);
-                } end_loop_for_in(nicknames);
+                } end_loop_for_in;
                 loop_for_in(use_list) {
                         cl_object y = ECL_CONS_CAR(use_list);
                         x->pack.uses = CONS(y, x->pack.uses);
                         y->pack.usedby = CONS(x, y->pack.usedby);
-                } end_loop_for_in(use_list);
+                } end_loop_for_in;
                 /* Finally, add it to the list of packages */
                 cl_core.packages = CONS(x, cl_core.packages);
         OUTPUT:
                 (void)0;
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
         if (!Null(other)) {
                 CEpackage_error("A package with the name ~A already exists.",
                                 "Return existing package",
@@ -258,12 +254,12 @@ ecl_rename_package(cl_object x, cl_object name, cl_object nicknames)
         }
         nicknames = ecl_cons(name, nicknames);
         error = 0;
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 cl_object l;
-                for (l = nicknames; l != Cnil; l = ECL_CONS_CDR(l)) {
+                for (l = nicknames; l != ECL_NIL; l = ECL_CONS_CDR(l)) {
                         cl_object nick = ECL_CONS_CAR(l);
                         cl_object p = ecl_find_package_nolock(nick);
-                        if ((p != Cnil) && (p != x)) {
+                        if ((p != ECL_NIL) && (p != x)) {
                                 name = nick;
                                 error = 1;
                                 break;
@@ -273,7 +269,7 @@ ecl_rename_package(cl_object x, cl_object name, cl_object nicknames)
                         x->pack.name = name;
                         x->pack.nicknames = ECL_CONS_CDR(nicknames);
                 }
-	} ECL_WITH_PACKAGE_WRLOCK_END;
+	} ECL_WITH_GLOBAL_ENV_WRLOCK_END;
         if (error) {
                 FEpackage_error("A package with name ~S already exists.", x,
                                 1, name);
@@ -311,12 +307,19 @@ ecl_find_package_nolock(cl_object name)
 #ifdef ECL_RELATIVE_PACKAGE_NAMES
 	/* Note that this function may actually be called _before_ symbols are set up
 	 * and bound! */
-	if (ecl_get_option(ECL_OPT_BOOTED) &&
-	    ECL_SYM_VAL(ecl_process_env(), @'si::*relative-package-names*') != Cnil) {
+	if (ecl_option_values[ECL_OPT_BOOTED] &&
+	    ECL_SYM_VAL(ecl_process_env(), @'si::*relative-package-names*') != ECL_NIL) {
 		return si_find_relative_package(1, name);
 	}
 #endif
-	return Cnil;
+	return ECL_NIL;
+}
+
+cl_object
+ecl_find_package(const char *p)
+{
+	ecl_def_ct_base_string(pack_name,p,strlen(p),,);
+	return cl_find_package(pack_name);
 }
 
 cl_object
@@ -358,14 +361,14 @@ _ecl_intern(const char *s, cl_object p)
 cl_object
 ecl_intern(cl_object name, cl_object p, int *intern_flag)
 {
-	cl_object s, ul;
+	cl_object s;
         bool error, ignore_error = 0;
 
         if (ecl_unlikely(!ECL_STRINGP(name)))
                 FEwrong_type_nth_arg(@[intern], 1, name, @[string]);
 	p = si_coerce_to_package(p);
  AGAIN:
-        ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+        ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 s = find_symbol_inner(name, p, intern_flag);
                 if (*intern_flag) {
                         error = 0;
@@ -376,7 +379,7 @@ ecl_intern(cl_object name, cl_object p, int *intern_flag)
                         s->symbol.hpack = p;
                         *intern_flag = 0;
                         if (p == cl_core.keyword_package) {
-                                ecl_symbol_type_set(s, ecl_symbol_type(s) | stp_constant);
+                                ecl_symbol_type_set(s, ecl_symbol_type(s) | ecl_stp_constant);
                                 ECL_SET(s, s);
                                 p->pack.external =
                                         _ecl_sethash(name, p->pack.external, s);
@@ -386,7 +389,7 @@ ecl_intern(cl_object name, cl_object p, int *intern_flag)
                         }
                         error = 0;
                 }
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
         if (error) {
                 CEpackage_error("Cannot intern symbol ~S in locked package ~S.",
 				"Ignore lock and proceed", p, 2, name, p);
@@ -407,27 +410,27 @@ find_symbol_inner(cl_object name, cl_object p, int *intern_flag)
 
 	s = ecl_gethash_safe(name, p->pack.external, OBJNULL);
 	if (s != OBJNULL) {
-		*intern_flag = EXTERNAL;
+		*intern_flag = ECL_EXTERNAL;
 		goto OUTPUT;
 	}
 	if (p == cl_core.keyword_package)
 		goto NOTHING;
 	s = ecl_gethash_safe(name, p->pack.internal, OBJNULL);
 	if (s != OBJNULL) {
-		*intern_flag = INTERNAL;
+		*intern_flag = ECL_INTERNAL;
 		goto OUTPUT;
 	}
 	ul = p->pack.uses;
 	loop_for_on_unsafe(ul) {
 		s = ecl_gethash_safe(name, ECL_CONS_CAR(ul)->pack.external, OBJNULL);
 		if (s != OBJNULL) {
-			*intern_flag = INHERITED;
+			*intern_flag = ECL_INHERITED;
 			goto OUTPUT;
 		}
 	} end_loop_for_on_unsafe(ul);
  NOTHING:
 	*intern_flag = 0;
-	s = Cnil;
+	s = ECL_NIL;
  OUTPUT:
 	return s;
 }
@@ -439,9 +442,9 @@ ecl_find_symbol(cl_object n, cl_object p, int *intern_flag)
 	if (ecl_unlikely(!ECL_STRINGP(n)))
                 FEwrong_type_nth_arg(@[find-symbol], 1, n, @[string]);
 	p = si_coerce_to_package(p);
-        ECL_WITH_PACKAGE_RDLOCK_BEGIN(ecl_process_env()) {
+        ECL_WITH_GLOBAL_ENV_RDLOCK_BEGIN(ecl_process_env()) {
                 s = find_symbol_inner(n, p, intern_flag);
-        } ECL_WITH_PACKAGE_RDLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_RDLOCK_END;
         return s;
 }
 
@@ -461,13 +464,13 @@ potential_unintern_conflict(cl_object name, cl_object s, cl_object p)
                         }
                 }
         } end_loop_for_on_unsafe(l);
-        return Cnil;
+        return ECL_NIL;
 }
 
 bool
 ecl_unintern(cl_object s, cl_object p)
 {
-	cl_object conflict, l, hash;
+	cl_object conflict;
 	bool output = FALSE;
 	cl_object name = ecl_symbol_name(s);
 
@@ -476,8 +479,8 @@ ecl_unintern(cl_object s, cl_object p)
 		CEpackage_error("Cannot unintern symbol ~S from locked package ~S.",
 				"Ignore lock and proceed", p, 2, s, p);
 	}
-        conflict = Cnil;
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+        conflict = ECL_NIL;
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 cl_object hash = p->pack.internal;
                 cl_object x = ecl_gethash_safe(name, hash, OBJNULL);
                 if (x != s) {
@@ -488,7 +491,7 @@ ecl_unintern(cl_object s, cl_object p)
                 }
                 if (ecl_member_eq(s, p->pack.shadowings)) {
                         conflict = potential_unintern_conflict(name, s, p);
-                        if (conflict != Cnil) {
+                        if (conflict != ECL_NIL) {
                                 goto OUTPUT;
                         }
                         p->pack.shadowings = ecl_remove_eq(s, p->pack.shadowings);
@@ -498,8 +501,8 @@ ecl_unintern(cl_object s, cl_object p)
                 output = TRUE;
         OUTPUT:
                 (void)0;
-        } ECL_WITH_PACKAGE_WRLOCK_END;
-        if (conflict != Cnil) {
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
+        if (conflict != ECL_NIL) {
                 FEpackage_error("Cannot unintern the shadowing symbol ~S~%"
                                 "from ~S,~%"
                                 "because ~S and ~S will cause~%"
@@ -522,13 +525,12 @@ potential_export_conflict(cl_object name, cl_object s, cl_object p)
                         return other_p;
                 }
         } end_loop_for_on_unsafe(l);
-        return Cnil;
+        return ECL_NIL;
 }
 
 void
 cl_export2(cl_object s, cl_object p)
 {
-	cl_object x, l, hash = OBJNULL;
 	int intern_flag, error;
 	cl_object other_p, name = ecl_symbol_name(s);
 	p = si_coerce_to_package(p);
@@ -536,23 +538,23 @@ cl_export2(cl_object s, cl_object p)
 		CEpackage_error("Cannot export symbol ~S from locked package ~S.",
 				"Ignore lock and proceed", p, 2, s, p);
  AGAIN:
-        ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+        ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 cl_object x = find_symbol_inner(name, p, &intern_flag);
                 if (!intern_flag) {
                         error = 1;
                 } else if (x != s) {
                         error = 2;
-                } else if (intern_flag == EXTERNAL) {
+                } else if (intern_flag == ECL_EXTERNAL) {
                         error = 0;
-                } else if ((other_p = potential_export_conflict(name, s, p)) != Cnil) {
+                } else if ((other_p = potential_export_conflict(name, s, p)) != ECL_NIL) {
                         error = 3;
                 } else {
-                        if (intern_flag == INTERNAL)
+                        if (intern_flag == ECL_INTERNAL)
                                 ecl_remhash(name, p->pack.internal);
                         p->pack.external = _ecl_sethash(name, p->pack.external, s);
                         error = 0;
                 }
-	} ECL_WITH_PACKAGE_WRLOCK_END;
+	} ECL_WITH_GLOBAL_ENV_WRLOCK_END;
         if (error == 1) {
 		CEpackage_error("The symbol ~S is not accessible from ~S "
                                 "and cannot be exported.",
@@ -583,7 +585,7 @@ cl_delete_package(cl_object p)
 	if (Null(p)) {
 		CEpackage_error("Package ~S not found. Cannot delete it.",
 				"Ignore error and continue", p, 0);
-		@(return Cnil);
+		@(return ECL_NIL);
 	}
 	if (p->pack.locked)
 		CEpackage_error("Cannot delete locked package ~S.",
@@ -596,7 +598,7 @@ cl_delete_package(cl_object p)
 	 *    and empty the package.
 	 */
 	if (Null(p->pack.name)) {
-		@(return Cnil)
+		@(return ECL_NIL)
 	}
         while (!Null(l = p->pack.uses)) {
 		ecl_unuse_package(ECL_CONS_CAR(l), p);
@@ -605,7 +607,7 @@ cl_delete_package(cl_object p)
 		ecl_unuse_package(p, ECL_CONS_CAR(l));
 	}
 
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 for (hash = p->pack.internal, i = 0; i < hash->hash.size; i++)
                         if (hash->hash.data[i].key != OBJNULL) {
                                 cl_object s = hash->hash.data[i].value;
@@ -618,12 +620,12 @@ cl_delete_package(cl_object p)
                                 symbol_remove_package(s, p);
                         }
                 cl_clrhash(p->pack.external);
-                p->pack.shadowings = Cnil;
-                p->pack.name = Cnil;
+                p->pack.shadowings = ECL_NIL;
+                p->pack.name = ECL_NIL;
                 /* 2) Only at the end, remove the package from the list of packages. */
                 cl_core.packages = ecl_remove_eq(p, cl_core.packages);
-        } ECL_WITH_PACKAGE_WRLOCK_END;
-	@(return Ct)
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
+	@(return ECL_T)
 }
 
 void
@@ -640,12 +642,12 @@ cl_unexport2(cl_object s, cl_object p)
 		CEpackage_error("Cannot unexport symbol ~S from locked package ~S.",
 				"Ignore lock and proceed", p, 2, s, p);
         }
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 int intern_flag;
                 cl_object x = find_symbol_inner(name, p, &intern_flag);
                 if (intern_flag == 0 || x != s) {
                         error = 1;
-                } else if (intern_flag != EXTERNAL) {
+                } else if (intern_flag != ECL_EXTERNAL) {
                         /* According to ANSI & Cltl, internal symbols are
                            ignored in unexport */
                         error = 0;
@@ -654,7 +656,7 @@ cl_unexport2(cl_object s, cl_object p)
                         p->pack.internal = _ecl_sethash(name, p->pack.internal, s);
                         error = 0;
                 }
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
         if (error) {
 		FEpackage_error("Cannot unexport ~S because it does not "
                                 "belong to package ~S.",
@@ -672,14 +674,14 @@ cl_import2(cl_object s, cl_object p)
 		CEpackage_error("Cannot import symbol ~S into locked package ~S.",
 				"Ignore lock and proceed", p, 2, s, p);
         }
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 cl_object x = find_symbol_inner(name, p, &intern_flag);
                 if (intern_flag) {
                         if (x != s && !ignore_error) {
                                 error = 1;
                                 goto OUTPUT;
                         }
-                        if (intern_flag == INTERNAL || intern_flag == EXTERNAL) {
+                        if (intern_flag == ECL_INTERNAL || intern_flag == ECL_EXTERNAL) {
                                 error = 0;
                                 goto OUTPUT;
                         }
@@ -689,7 +691,7 @@ cl_import2(cl_object s, cl_object p)
                 error = 0;
         OUTPUT:
                 (void)0;
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
         if (error) {
                 CEpackage_error("Cannot import the symbol ~S "
                                 "from package ~A,~%"
@@ -712,9 +714,9 @@ ecl_shadowing_import(cl_object s, cl_object p)
                                 "locked package ~S.",
 				"Ignore lock and proceed", p, 2, s, p);
 
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 x = find_symbol_inner(name, p, &intern_flag);
-                if (intern_flag && intern_flag != INHERITED) {
+                if (intern_flag && intern_flag != ECL_INHERITED) {
                         if (x == s) {
                                 if (!ecl_member_eq(x, p->pack.shadowings))
                                         p->pack.shadowings
@@ -724,7 +726,7 @@ ecl_shadowing_import(cl_object s, cl_object p)
                         if(ecl_member_eq(x, p->pack.shadowings))
                                 p->pack.shadowings =
                                         ecl_remove_eq(x, p->pack.shadowings);
-                        if (intern_flag == INTERNAL)
+                        if (intern_flag == ECL_INTERNAL)
                                 ecl_remhash(name, p->pack.internal);
                         else
                                 ecl_remhash(name, p->pack.external);
@@ -734,7 +736,7 @@ ecl_shadowing_import(cl_object s, cl_object p)
                 p->pack.internal = _ecl_sethash(name, p->pack.internal, s);
         OUTPUT:
                 (void)0;
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
 }
 
 void
@@ -749,15 +751,15 @@ ecl_shadow(cl_object s, cl_object p)
 	if (p->pack.locked)
 		CEpackage_error("Cannot shadow symbol ~S in locked package ~S.",
 				"Ignore lock and proceed", p, 2, s, p);
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 x = find_symbol_inner(s, p, &intern_flag);
-                if (intern_flag != INTERNAL && intern_flag != EXTERNAL) {
+                if (intern_flag != ECL_INTERNAL && intern_flag != ECL_EXTERNAL) {
                         x = cl_make_symbol(s);
                         p->pack.internal = _ecl_sethash(s, p->pack.internal, x);
                         x->symbol.hpack = p;
                 }
                 p->pack.shadowings = CONS(x, p->pack.shadowings);
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
 }
 
 void
@@ -785,7 +787,7 @@ ecl_use_package(cl_object x, cl_object p)
 				"Ignore lock and proceed",
 				p, 2, x, p);
 
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 hash_entries = x->pack.external->hash.data;
                 hash_length = x->pack.external->hash.size;
                 for (i = 0, error = 0;  i < hash_length;  i++) {
@@ -796,6 +798,7 @@ ecl_use_package(cl_object x, cl_object p)
                                 if (intern_flag && here != there
                                     && ! ecl_member_eq(there, p->pack.shadowings)) {
                                         error = 1;
+                                        break;
                                 }
                         }
                 }
@@ -803,7 +806,7 @@ ecl_use_package(cl_object x, cl_object p)
                         p->pack.uses = CONS(x, p->pack.uses);
                         x->pack.usedby = CONS(p, x->pack.usedby);
                 }
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
         if (error) {
                 FEpackage_error("Cannot use ~S~%"
                                 "from ~S,~%"
@@ -821,13 +824,13 @@ ecl_unuse_package(cl_object x, cl_object p)
 		CEpackage_error("Cannot unuse package ~S from locked package ~S.",
 				"Ignore lock and proceed",
 				p, 2, x, p);
-        ECL_WITH_PACKAGE_WRLOCK_BEGIN(ecl_process_env()) {
+        ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(ecl_process_env()) {
                 p->pack.uses = ecl_remove_eq(x, p->pack.uses);
                 x->pack.usedby = ecl_remove_eq(p, x->pack.usedby);
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
 }
 
-@(defun make_package (pack_name &key nicknames (use CONS(cl_core.lisp_package, Cnil)))
+@(defun make_package (pack_name &key nicknames (use CONS(cl_core.lisp_package, ECL_NIL)))
 @
 	/* INV: ecl_make_package() performs type checking */
 	@(return ecl_make_package(pack_name, nicknames, use))
@@ -838,7 +841,7 @@ si_select_package(cl_object pack_name)
 {
 	const cl_env_ptr the_env = ecl_process_env();
 	cl_object p = si_coerce_to_package(pack_name);
-	@(return (ECL_SETQ(the_env, @'*package*', p)))
+	ecl_return1(the_env, ECL_SETQ(the_env, @'*package*', p));
 }
 
 cl_object
@@ -890,9 +893,10 @@ cl_package_shadowing_symbols(cl_object p)
 cl_object
 si_package_lock(cl_object p, cl_object t)
 {
+	bool previous = p->pack.locked;
 	p = si_coerce_to_package(p);
-	p->pack.locked = (t != Cnil);
-	@(return p)
+	p->pack.locked = (t != ECL_NIL);
+	@(return (previous? ECL_T : ECL_NIL))
 }
 
 cl_object
@@ -905,13 +909,13 @@ cl_list_all_packages()
 	int intern_flag;
 @
 	sym = ecl_intern(strng, p, &intern_flag);
-	if (intern_flag == INTERNAL)
+	if (intern_flag == ECL_INTERNAL)
 		@(return sym @':internal')
-	if (intern_flag == EXTERNAL)
+	if (intern_flag == ECL_EXTERNAL)
 		@(return sym @':external')
-	if (intern_flag == INHERITED)
+	if (intern_flag == ECL_INHERITED)
 		@(return sym @':inherited')
-	@(return sym Cnil)
+	@(return sym ECL_NIL)
 @)
 
 @(defun find_symbol (strng &optional (p ecl_current_package()))
@@ -919,23 +923,23 @@ cl_list_all_packages()
 	int intern_flag;
 @
 	x = ecl_find_symbol(strng, p, &intern_flag);
-	if (intern_flag == INTERNAL)
+	if (intern_flag == ECL_INTERNAL)
 		@(return x @':internal')
-	if (intern_flag == EXTERNAL)
+	if (intern_flag == ECL_EXTERNAL)
 		@(return x @':external')
-	if (intern_flag == INHERITED)
+	if (intern_flag == ECL_INHERITED)
 		@(return x @':inherited')
-	@(return Cnil Cnil)
+	@(return ECL_NIL ECL_NIL)
 @)
 
 @(defun unintern (symbl &optional (p ecl_current_package()))
 @
-	@(return (ecl_unintern(symbl, p) ? Ct : Cnil))
+	@(return (ecl_unintern(symbl, p) ? ECL_T : ECL_NIL))
 @)
 
 @(defun export (symbols &o (pack ecl_current_package()))
 @
-	switch (type_of(symbols)) {
+	switch (ecl_t_of(symbols)) {
 	case t_symbol:
 		cl_export2(symbols, pack);
 		break;
@@ -949,12 +953,12 @@ cl_list_all_packages()
                 FEwrong_type_nth_arg(@[export],1,symbols,
                                      cl_list(3,@'or',@'symbol',@'list'));
 	}
-	@(return Ct)
+	@(return ECL_T)
 @)
 
 @(defun unexport (symbols &o (pack ecl_current_package()))
 @
-	switch (type_of(symbols)) {
+	switch (ecl_t_of(symbols)) {
 	case t_symbol:
 		cl_unexport2(symbols, pack);
 		break;
@@ -968,12 +972,12 @@ cl_list_all_packages()
                 FEwrong_type_nth_arg(@[unexport],1,symbols,
                                      cl_list(3,@'or',@'symbol',@'list'));
 	}
-	@(return Ct)
+	@(return ECL_T)
 @)
 
 @(defun import (symbols &o (pack ecl_current_package()))
 @
-	switch (type_of(symbols)) {
+	switch (ecl_t_of(symbols)) {
 	case t_symbol:
 		cl_import2(symbols, pack);
 		break;
@@ -987,12 +991,12 @@ cl_list_all_packages()
                 FEwrong_type_nth_arg(@[import],1,symbols,
                                      cl_list(3,@'or',@'symbol',@'list'));
 	}
-	@(return Ct)
+	@(return ECL_T)
 @)
 
 @(defun shadowing_import (symbols &o (pack ecl_current_package()))
 @
-	switch (type_of(symbols)) {
+	switch (ecl_t_of(symbols)) {
 	case t_symbol:
 		ecl_shadowing_import(symbols, pack);
 		break;
@@ -1006,12 +1010,12 @@ cl_list_all_packages()
                 FEwrong_type_nth_arg(@[shadowing-import],1,symbols,
                                      cl_list(3,@'or',@'symbol',@'list'));
 	}
-	@(return Ct)
+	@(return ECL_T)
 @)
 
 @(defun shadow (symbols &o (pack ecl_current_package()))
 @
-	switch (type_of(symbols)) {
+	switch (ecl_t_of(symbols)) {
 #ifdef ECL_UNICODE
 	case t_string:
 #endif
@@ -1032,13 +1036,12 @@ cl_list_all_packages()
                 FEwrong_type_nth_arg(@[shadow],1,symbols,
                                      cl_list(3,@'or',@'symbol',@'list'));
 	}
-	@(return Ct)
+	@(return ECL_T)
 @)
 
 @(defun use_package (pack &o (pa ecl_current_package()))
 @
-BEGIN:
-	switch (type_of(pack)) {
+	switch (ecl_t_of(pack)) {
 	case t_symbol:
 	case t_character:
 	case t_base_string:
@@ -1055,13 +1058,12 @@ BEGIN:
                 FEwrong_type_nth_arg(@[use-package], 1, pack,
                                      ecl_read_from_cstring("(OR SYMBOL CHARACTER STRING LIST PACKAGE)"));
 	}
-	@(return Ct)
+	@(return ECL_T)
 @)
 
 @(defun unuse_package (pack &o (pa ecl_current_package()))
 @
-BEGIN:
-	switch (type_of(pack)) {
+	switch (ecl_t_of(pack)) {
 	case t_symbol:
 	case t_character:
 	case t_base_string:
@@ -1078,7 +1080,7 @@ BEGIN:
                 FEwrong_type_nth_arg(@[unuse-package], 1, pack,
                                      ecl_read_from_cstring("(OR SYMBOL CHARACTER STRING LIST PACKAGE)"));
 	}
-	@(return Ct)
+	@(return ECL_T)
 @)
 
 cl_object
@@ -1088,10 +1090,10 @@ si_package_hash_tables(cl_object p)
 	cl_object he, hi, u;
         unlikely_if (!ECL_PACKAGEP(p))
                 FEwrong_type_only_arg(@[si::package-hash-tables], p, @[package]);
-	ECL_WITH_PACKAGE_WRLOCK_BEGIN(the_env) {
+	ECL_WITH_GLOBAL_ENV_WRLOCK_BEGIN(the_env) {
                 he = si_copy_hash_table(p->pack.external);
                 hi = si_copy_hash_table(p->pack.internal);
                 u = cl_copy_list(p->pack.uses);
-        } ECL_WITH_PACKAGE_WRLOCK_END;
+        } ECL_WITH_GLOBAL_ENV_WRLOCK_END;
 	@(return he hi u)
 }

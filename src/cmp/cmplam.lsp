@@ -69,16 +69,40 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	 (<= narg si::c-arguments-limit)
 	 narg)))
 
-(defun add-referred-variables-to-function (fun var-list)
-  (setf (fun-referred-vars fun)
-	(set-difference (union (fun-referred-vars fun) var-list)
-			(fun-local-vars fun)))
-  fun)
+(defun add-to-fun-referenced-vars (fun var-list)
+  (loop with new-vars = (fun-referenced-vars fun)
+     with locals = (fun-local-vars fun)
+     with change = nil
+     for v in var-list
+     when (and (not (member v locals :test #'eq))
+	       (not (member v new-vars :test #'eq)))
+     do (setf change t new-vars (cons v new-vars))
+     finally (when change
+	       (setf (fun-referenced-vars fun) new-vars)
+	       (return t))))
+
+(defun add-to-fun-referenced-funs (fun fun-list)
+  (loop with new-funs = (fun-referenced-funs fun)
+     with change = nil
+     for f in fun-list
+     when (and (not (eq fun f))
+	       (not (member f new-funs :test #'eq))
+	       (not (child-function-p fun f)))
+     do (setf change t
+	      new-funs (cons f new-funs)
+	      (fun-referencing-funs f) (cons fun (fun-referencing-funs f)))
+     finally (when change
+	       (setf (fun-referenced-funs fun) new-funs)
+	       (return t))))
 
 (defun c1compile-function (lambda-list-and-body &key (fun (make-fun))
 			   (name (fun-name fun)) (CB/LB 'CB))
-  (setf (fun-name fun) name
-	(fun-parent fun) *current-function*)
+  (let ((lambda (if name
+		    `(ext:lambda-block ,name ,@lambda-list-and-body)
+		    `(lambda ,@lambda-list-and-body))))
+    (setf (fun-name fun) name
+	  (fun-lambda-expression fun) lambda 
+	  (fun-parent fun) *current-function*))
   (when *current-function*
     (push fun (fun-child-funs *current-function*)))
   (let* ((*current-function* fun)
@@ -89,7 +113,6 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	 (no-entry (assoc 'SI::C-LOCAL decl))
 	 (lambda-expr (c1lambda-expr lambda-list-and-body
 				     (si::function-block-name name)))
-	 (children (fun-child-funs fun))
 	 cfun exported minarg maxarg)
     (when (and no-entry (policy-debug-ihs-frame))
       (setf no-entry nil)
@@ -121,23 +144,16 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	  (fun-maxarg fun) maxarg
 	  (fun-description fun) name
 	  (fun-no-entry fun) no-entry)
-    (reduce #'add-referred-variables-to-function
-	    (mapcar #'fun-referred-vars children)
-	    :initial-value fun)
-    (reduce #'add-referred-variables-to-function
-	    (mapcar #'fun-referred-vars (fun-referred-funs fun))
-	    :initial-value fun)
-    (do ((finish nil))
-	(finish)
-      (setf finish t)
-      (dolist (f (fun-child-funs fun))
-	(when (compute-fun-closure-type f)
-	  (setf finish nil))))
-    (compute-fun-closure-type fun)
+    (loop for child in (fun-child-funs fun)
+       do (add-to-fun-referenced-vars fun (fun-referenced-vars child))
+       do (add-to-fun-referenced-funs fun (fun-referenced-funs child)))
+    (loop for f in (fun-referenced-funs fun)
+       do (add-to-fun-referenced-vars fun (fun-referenced-vars f)))
+    (update-fun-closure-type fun)
     (when global
       (if (fun-closure fun)
           (cmpnote "Function ~A is global but is closed over some variables.~%~{~A ~}"
-                   (fun-name fun) (mapcar #'var-name (fun-referred-vars fun)))
+                   (fun-name fun) (mapcar #'var-name (fun-referenced-vars fun)))
           (new-defun fun (fun-no-entry fun)))))
   fun)
 
@@ -159,8 +175,8 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
   (cmpck (endp lambda-expr)
          "The lambda expression ~s is illegal." (cons 'LAMBDA lambda-expr))
 
-  (multiple-value-setq (body ss ts is other-decls doc all-declarations)
-                       (c1body (cdr lambda-expr) t))
+  (multiple-value-setq (body ss ts is other-decls doc)
+    (c1body (cdr lambda-expr) t))
 
   (when block-name (setq body (list (cons 'BLOCK (cons block-name body)))))
 
@@ -315,6 +331,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 		 (*permanent-data* t)
 		 (*unwind-exit* *unwind-exit*)
 		 (*env* *env*)
+		 (*inline-blocks* 0)
 		 (last-arg))
   (declare (fixnum nreq nkey))
 
@@ -336,7 +353,6 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 
   ;; check arguments
   (unless (or local-entry-p (not (policy-check-nargs)))
-    (incf *inline-blocks*)
     (if (and use-narg (not varargs))
 	(wt-nl "if (ecl_unlikely(narg!=" nreq ")) FEwrong_num_arguments_anonym();")
 	(when varargs
@@ -344,7 +360,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	    (wt-nl "if (ecl_unlikely(narg<" nreq ")) FEwrong_num_arguments_anonym();"))
 	  (unless (or rest keywords allow-other-keys)
 	    (wt-nl "if (ecl_unlikely(narg>" (+ nreq nopt) ")) FEwrong_num_arguments_anonym();"))))
-    (wt-nl "{"))
+    (open-inline-block))
 
   ;; If the number of required arguments exceeds the number of variables we
   ;; want to pass on the C stack, we pass some of the arguments to the list
@@ -352,10 +368,10 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
   (when (> nreq si::c-arguments-limit)
     (setf nopt (+ nopt (- nreq si::c-arguments-limit))
 	  nreq si::c-arguments-limit)
-    (setf optionals (nconc (reduce #'nconc (mapcar #'(lambda (var) (list var *c1nil* NIL))
-						   (subseq requireds si::c-arguments-limit)))
-				  (rest optionals))
-	  required (subseq requireds 0 si::c-arguments-limit)
+    (setf optionals (nconc (loop for var in (subseq requireds si::c-arguments-limit)
+			      nconc (list var *c1nil* NIL))
+			   optionals)
+	  requireds (subseq requireds 0 si::c-arguments-limit)
 	  varargs t))
 
   ;; For each variable, set its var-loc.
@@ -373,15 +389,12 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
              (do-decl (var)
 	       (when (local var) ; no LCL needed for SPECIAL or LEX
 		 (setf (var-loc var) (wt-decl var)))))
-      (do ((reqs requireds (cdr reqs))
-	   (reqi (1+ req0) (1+ reqi)) (var))
-	  ((endp reqs))
-	(declare (fixnum reqi) (type cons reqs) (type var var))
-	(setq var (first reqs))
-	(cond (local-entry-p
-	       (bind `(LCL ,reqi) var))
-	      ((unboxed var) ; create unboxed variable
-	       (setf (var-loc var) (wt-decl var)))))
+      (loop for var in requireds
+	 for reqi of-type fixnum from (1+ req0)
+	 do (cond (local-entry-p
+		   (bind `(LCL ,reqi) var))
+		  ((unboxed var) ; create unboxed variable
+		   (setf (var-loc var) (wt-decl var)))))
       ;; dont create rest or varargs if not used
       (when (and rest (< (var-ref rest) 1))
 	(setq rest nil
@@ -405,18 +418,17 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	     (if (setq simple-varargs (and (not (or rest keywords allow-other-keys))
 					   (< (+ nreq nopt) 30)))
 		 "va_list args; va_start(args,~a);"
-		 "cl_va_list args; cl_va_start(args,~a,narg,~d);")
+		 "ecl_va_list args; ecl_va_start(args,~a,narg,~d);")
 	     first-arg nreq))))
 
     ;; Bind required parameters.
-    (do ((reqs requireds (cdr reqs))
-	 (reqi (1+ req0) (1+ reqi)))
-	((or local-entry-p (endp reqs)))
-      (declare (fixnum reqi) (type cons reqs))
-      (bind `(LCL ,reqi) (first reqs)))
+    (unless local-entry-p
+      (loop for var in requireds
+	 for reqi of-type fixnum from (1+ req0)
+	 do (bind `(LCL ,reqi) var)))
 
     (when fname-in-ihs-p
-      (wt-nl "{")
+      (open-inline-block)
       (setf *ihs-used-p* t)
       (push 'IHS *unwind-exit*)
       (when (policy-debug-variable-bindings)
@@ -434,26 +446,30 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
     ;; which is what we do here.
     (let ((va-arg-loc (if simple-varargs 'VA-ARG 'CL-VA-ARG)))
       ;; counter for optionals
-      (wt-nl "{int i=" nreq ";")
+      (wt-nl-open-brace)
+      (wt-nl "int i = " nreq ";")
       (do ((opt optionals (cdddr opt)))
 	  ((endp opt))
 	(wt-nl "if (i >= narg) {")
+	(let ((*opened-c-braces* (1+ *opened-c-braces*)))
 	  (bind-init (second opt) (first opt))
-	  (when (third opt) (bind nil (third opt)))
+	  (when (third opt) (bind nil (third opt))))
 	(wt-nl "} else {")
+	(let ((*opened-c-braces* (1+ *opened-c-braces*))
+	      (*unwind-exit* *unwind-exit*))
 	  (wt-nl "i++;")
-	  (let ((*unwind-exit* *unwind-exit*))
-	    (bind va-arg-loc (first opt)))
-	  (when (third opt) (bind t (third opt)))
+	  (bind va-arg-loc (first opt))
+	  (when (third opt) (bind t (third opt))))
 	(wt-nl "}"))
-      (wt "}")))
+      (wt-nl-close-brace)))
 
   (when (or rest keywords allow-other-keys)
     (cond ((not (or keywords allow-other-keys))
-	   (wt-nl rest-loc "=cl_grab_rest_args(args);"))
+	   (wt-nl rest-loc " = cl_grab_rest_args(args);"))
 	  (t
 	   (cond (keywords
-		  (wt-nl "{ cl_object keyvars[" (* 2 nkey) "];")
+		  (wt-nl-open-brace) ;; Brace [1]
+		  (wt-nl "cl_object keyvars[" (* 2 nkey) "];")
 		  (wt-nl "cl_parse_key(args," nkey "," cfun "keys,keyvars"))
 		 (t
 		  (wt-nl "cl_parse_key(args,0,NULL,NULL")))
@@ -464,7 +480,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
     (when rest (bind rest-loc rest)))
 
   (when varargs
-    (wt-nl (if simple-varargs "va_end(args);" "cl_va_end(args);")))
+    (wt-nl (if simple-varargs "va_end(args);" "ecl_va_end(args);")))
 
   ;;; Bind keywords.
   (do ((kwd keywords (cddddr kwd))
@@ -474,7 +490,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
       ((endp kwd)
        (when all-kwd
 	 (wt-nl-h "#define " cfun "keys (&" (add-keywords (nreverse all-kwd)) ")")
-	 (wt-nl "}")))
+	 (wt-nl-close-brace))) ;; Matches [1]
     (declare (fixnum i))
     (push (first kwd) all-kwd)
     (let ((key (first kwd))
@@ -484,19 +500,21 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
       (cond ((and (eq (c1form-name init) 'LOCATION)
 		  (null (c1form-arg 0 init)))
 	     ;; no initform
-	     ;; Cnil has been set in keyvars if keyword parameter is not supplied.
+	     ;; ECL_NIL has been set in keyvars if keyword parameter is not supplied.
 	     (setf (second KEYVARS[i]) i)
 	     (bind KEYVARS[i] var))
 	    (t
 	     ;; with initform
 	     (setf (second KEYVARS[i]) (+ nkey i))
-	     (wt-nl "if(") (wt-loc KEYVARS[i]) (wt "==Cnil){")
-	     (let ((*unwind-exit* *unwind-exit*))
+	     (wt-nl "if (Null(") (wt-loc KEYVARS[i]) (wt ")) {")
+	     (let ((*unwind-exit* *unwind-exit*)
+		   (*opened-c-braces* (1+ *opened-c-braces*)))
 	       (bind-init init var))
-	     (wt-nl "}else{")
-	     (setf (second KEYVARS[i]) i)
-	     (bind KEYVARS[i] var)
-	     (wt "}")))
+	     (wt-nl "} else {")
+	     (let ((*opened-c-braces* (1+ *opened-c-braces*)))
+	       (setf (second KEYVARS[i]) i)
+	       (bind KEYVARS[i] var))
+	     (wt-nl "}")))
       (when flag
 	(setf (second KEYVARS[i]) (+ nkey i))
 	(bind KEYVARS[i] flag))))
@@ -508,10 +526,7 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
   ;;; Now the parameters are ready, after all!
   (c2expr body)
 
-  ;;; Closing braces is done i cmptop.lsp
-  (when fname-in-ihs-p
-    (wt-nl "}"))
-  )
+  (close-inline-blocks))
 
 (defun optimize-funcall/apply-lambda (lambda-form arguments apply-p
 				      &aux body apply-list apply-var
@@ -539,8 +554,8 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 			 (pop arguments))
 			(apply-p
 			 `(if ,apply-var
-			   (pop ,apply-var)
-			   (si::dm-too-few-arguments)))
+			      (pop ,apply-var)
+			      (si::dm-too-few-arguments nil)))
 			(t
 			 (cmperr "Too few arguments for lambda form ~S"
                                  (cons 'LAMBDA lambda-form)))))
@@ -577,6 +592,8 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 			     `(list ,@arguments))
 			 (if apply-p apply-var nil)))
 	    let-vars))
+    (loop while aux-vars
+       do (push (list (pop aux-vars) (pop aux-vars)) let-vars))
     (do ((scan (cdr keywords) (cddddr scan)))
 	((endp scan))
       (let ((keyword (first scan))
@@ -586,11 +603,11 @@ The function thus belongs to the type of functions that ecl_make_cfun accepts."
 	(push keyword all-keys)
 	(setf let-vars
 	      (list*
-	       `(,key-var (if (eq ,key-flag 'si::failed) ,key-value ,key-flag))
+	       `(,key-var (if (eq ,key-flag 'si::missing-keyword) ,key-value ,key-flag))
 	       `(,key-flag (si::search-keyword ,rest ,keyword))
 	       let-vars))
 	(when (fourth scan)
-	  (push `(setf ,key-flag (not (eq ,key-flag 'si::failed)))
+	  (push `(setf ,key-flag (not (eq ,key-flag 'si::missing-keyword)))
 		extra-stmts))))
     (when (and key-flag (not allow-other-keys))
       (push `(si::check-keyword ,rest ',all-keys) extra-stmts))

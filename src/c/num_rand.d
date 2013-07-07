@@ -20,6 +20,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ecl/internal.h>
+#include <fcntl.h>
+#if !defined(ECL_MS_WINDOWS_HOST)
+# include <unistd.h>
+#endif
+#if !defined(_MSC_VER) && !defined(__MINGW32__)
+# include <sys/stat.h>
+/* it isn't pulled in by fcntl.h */
+#endif
 
 #if 0
 
@@ -66,22 +74,28 @@ init_random_state()
 	cl_index bytes = sizeof(ulong) * (MT_N + 1);
 	cl_object a = ecl_alloc_simple_base_string(bytes);
 	ulong *mt = (ulong*)a->base_string.self;
-	int j;
+	int j = 0;
 #if !defined(ECL_MS_WINDOWS_HOST)
-	FILE *fp = fopen("/dev/urandom","r");
-	if (fp) {
-		fread(mt, sizeof(*mt), MT_N, fp);
-		for (j=0; j < MT_N; j++){
-			mt[j] &= 0xffffffffUL;
+	/* fopen() might read full 4kB blocks and discard
+	 * a lot of entropy, so use open() */
+	int fh = open("/dev/urandom", O_RDONLY);
+	char buffer[16];
+	if (fh != -1) {
+		j = read(fh, buffer, sizeof(buffer));
+		for (; j < sizeof(buffer) && j < MT_N; j++){
+			mt[j] = buffer[j];
 		}
-		fclose(fp);
-	} else
+		close(fh);
+	}
 #endif	
 	{
 		/* cant get urandom, use crappy source */
-		mt[0] = (rand() + time(0)) & 0xffffffffUL;
-		for (j=1; j < MT_N; j++){
+		/* and/or fill rest of area */
+		mt[j++] = (rand() + time(0)) & 0xffffffffUL;
+		for (; j < MT_N; j++){
 			mt[j] = (1812433253UL * (mt[j-1] ^ (mt[j-1] >> 30)) + j);
+			if (j >= 16)
+				mt[j] ^= mt[j-16];
 			mt[j] &= 0xffffffffUL;
 		}
 	}
@@ -156,9 +170,9 @@ random_integer(cl_object limit, cl_object state)
         cl_object buffer;
         if (bit_length <= FIXNUM_BITS)
                 bit_length = FIXNUM_BITS;
-        buffer = ecl_ash(MAKE_FIXNUM(1), bit_length);
+        buffer = ecl_ash(ecl_make_fixnum(1), bit_length);
         for (bit_length = mpz_size(buffer->big.big_num); bit_length; ) {
-                buffer->big.big_limbs[--bit_length] =
+                ECL_BIGNUM_LIMBS(buffer)[--bit_length] =
                         generate_limb(state);
         }
         return cl_mod(buffer, limit);
@@ -171,26 +185,26 @@ rando(cl_object x, cl_object rs)
 	if (!ecl_plusp(x)) {
 		goto ERROR;
 	}
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_fixnum:
 #if FIXNUM_BITS <= 32
-                z = MAKE_FIXNUM(generate_int32(rs->random.value) % fix(x));
+                z = ecl_make_fixnum(generate_int32(rs->random.value) % ecl_fixnum(x));
                 break;
 #endif
 	case t_bignum:
 		z = random_integer(x, rs->random.value);
 		break;
 	case t_singlefloat:
-		z = ecl_make_singlefloat(sf(x) *
+		z = ecl_make_single_float(ecl_single_float(x) *
                                          (float)generate_double(rs->random.value));
 		break;
 	case t_doublefloat:
-		z = ecl_make_doublefloat(df(x) *
+		z = ecl_make_double_float(ecl_double_float(x) *
                                          generate_double(rs->random.value));
 		break;
 #ifdef ECL_LONG_FLOAT
 	case t_longfloat:
-		z = ecl_make_longfloat(ecl_long_float(x) *
+		z = ecl_make_long_float(ecl_long_float(x) *
                                        (long double)generate_double(rs->random.value));
 		break;
 #endif
@@ -206,7 +220,7 @@ cl_object
 ecl_make_random_state(cl_object rs)
 {
         cl_object z = ecl_alloc_object(t_random);
-	if (rs == Ct) {
+	if (rs == ECL_T) {
 		z->random.value = init_random_state();
 	} else {
 		if (Null(rs)) {
@@ -227,7 +241,7 @@ ecl_make_random_state(cl_object rs)
 	@(return rando(x, rs));
 @)
 
-@(defun make_random_state (&optional (rs Cnil))
+@(defun make_random_state (&optional (rs ECL_NIL))
 @
 	@(return ecl_make_random_state(rs))
 @)
@@ -235,5 +249,5 @@ ecl_make_random_state(cl_object rs)
 cl_object
 cl_random_state_p(cl_object x)
 {
-	@(return (ECL_RANDOM_STATE_P(x) ? Ct : Cnil))
+	@(return (ECL_RANDOM_STATE_P(x) ? ECL_T : ECL_NIL))
 }

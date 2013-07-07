@@ -6,7 +6,7 @@ Uploaders: Peter Van Eynde <pvaneynd@debian.org>,
  Christoph Egger <christoph@debian.org>
 Build-Depends: debhelper (>> 7.0.0),
  autotools-dev,
- libgmp3-dev,
+ libgmp-dev,
  automake1.9,
  file,
  texinfo,
@@ -17,7 +17,7 @@ Build-Depends: debhelper (>> 7.0.0),
  install-info,
  libatomic-ops-dev
 Build-Conflicts: autoconf2.13, automake1.4
-Standards-Version: 3.8.3
+Standards-Version: 3.9.1
 Homepage: http://ecls.sourceforge.net/
 Vcs-Git: http://git.debian.org/git/pkg-common-lisp/ecl.git
 Vcs-Browser: http://git.debian.org/?p=pkg-common-lisp/ecl.git;a=summary

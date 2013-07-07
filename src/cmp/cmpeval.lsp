@@ -14,121 +14,168 @@
 
 (in-package "COMPILER")
 
+(defun c1expr-inner (form)
+  (declare (si::c-local))
+  (cond ((symbolp form)
+	 (setq form (chk-symbol-macrolet form))
+	 (cond ((not (symbolp form))
+		form)
+	       ((eq form nil) (c1nil))
+	       ((eq form t) (c1t))
+	       ((keywordp form)
+		(make-c1form* 'LOCATION :type (object-type form)
+			      :args (add-symbol form)))
+	       ((constantp form)
+		(or (c1constant-value (symbol-value form) :only-small-values t)
+		    (c1var form)))
+	       (t (c1var form))))
+	((consp form)
+	 (cmpck (not (si::proper-list-p form))
+		"Improper list found in lisp form~%~A" form)
+	 (let ((fun (car form)))
+	   (cond ((let ((fd (gethash fun *c1-dispatch-table*)))
+		    (and fd (setf fun fd)))
+		  (funcall fun (rest form)))
+		 ((symbolp fun)
+		  (c1call fun (cdr form) t))
+		 ((and (consp fun) (eq (car fun) 'LAMBDA))
+		  (c1funcall form))
+		 (t (cmperr "~s is not a legal function name." fun)))))
+	(t (c1constant-value form :always t))))
+
 (defun c1expr (form)
   (let ((*current-form* form))
-  (setq form (catch *cmperr-tag*
-    (cond ((symbolp form)
-	   (setq form (chk-symbol-macrolet form))
-	   (cond ((not (symbolp form))
-		  (c1expr form))
-		 ((eq form nil) (c1nil))
-		 ((eq form t) (c1t))
-		 ((keywordp form)
-		  (make-c1form* 'LOCATION :type (object-type form)
-				:args (add-symbol form)))
-		 ((constantp form)
-		  (or (c1constant-value (symbol-value form) :only-small-values t)
-		      (c1var form)))
-		 (t (c1var form))))
-	  ((consp form)
-	   (let ((fun (car form)))
-	     (cond ((symbolp fun)
-		    (c1call-symbol fun (cdr form)))
-		   ((and (consp fun) (eq (car fun) 'LAMBDA))
-		    (c1funcall form))
-		   (t (cmperr "~s is not a legal function name." fun)))))
-	  (t (c1constant-value form :always t))))))
-  (if (eq form '*cmperr-tag*)
-      (c1nil)
-      form))
+    (loop
+       (setf form (c1expr-inner form))
+       (when (c1form-p form)
+	 (return form)))))
 
 (defvar *c1nil* (make-c1form* 'LOCATION :type (object-type nil) :args nil))
 (defun c1nil () *c1nil*)
 (defvar *c1t* (make-c1form* 'LOCATION :type (object-type t) :args t))
 (defun c1t () *c1t*)
 
-(defun c1call-symbol (fname args &aux fd)
-  (cond ((setq fd (gethash fname *c1-dispatch-table*))
-	 (funcall fd args))
-	((c1call-local fname args))
-	((and (setq fd (compiler-macro-function fname))
-	      (inline-possible fname)
-	      (let ((success nil))
+(defun c1call (fname args macros-allowed &aux fd success can-inline)
+  (cond ((> (length args) si::c-arguments-limit)
+	 (if (and macros-allowed
+		  (setf fd (cmp-macro-function fname)))
+	     (cmp-expand-macro fd (list* fname args))
+	     ;; When it is a function and takes many arguments, we will
+	     ;; need a special C form to call it. It takes extra code for
+	     ;; handling the stack
+	     (unoptimized-long-call `#',fname args)))
+	((setq fd (local-function-ref fname))
+	 (c1call-local fname fd args))
+	((and (setq can-inline (inline-possible fname))
+	      (setq fd (compiler-macro-function fname))
+	      (progn
 		(multiple-value-setq (fd success)
-		  (cmp-expand-macro fd (list* fname args)))
+		  (cmp-expand-compiler-macro fd fname args))
 		success))
-	 (c1expr fd))
-	((setq fd (cmp-macro-function fname))
-	 (c1expr (cmp-expand-macro fd (list* fname args))))
+	 fd)
+	((and can-inline
+	      (progn
+		(multiple-value-setq (fd success)
+		  (clos-compiler-macro-expand fname args))
+		success))
+	 fd)
+	((and macros-allowed
+	      (setq fd (cmp-macro-function fname)))
+	 (cmp-expand-macro fd (list* fname args)))
+	((and (setq can-inline (declared-inline-p fname))
+	      (consp can-inline)
+	      (eq (first can-inline) 'function)
+	      (plusp *inline-max-depth*)
+	      (<= (cmp-env-optimization 'space) 1))
+	 (let ((*inline-max-depth* (1- *inline-max-depth*)))
+	   (cmpnote "Inlining ~a" fname)
+	   `(funcall ,can-inline ,@args)))
 	(t (c1call-global fname args))))
 
-(defun c1call-local (fname args)
-  (let ((fun (local-function-ref fname)))
-    (when fun
-      (when (> (length args) si::c-arguments-limit)
-	(return-from c1call-local (unoptimized-long-call `#',fname args)))
-      (let* ((forms (c1args* args))
-	     (lambda-form (fun-lambda fun))
-	     (return-type (or (get-local-return-type fun) 'T))
-	     (arg-types (get-local-arg-types fun)))
-	  ;; Add type information to the arguments.
-	(when arg-types
-	  (let ((fl nil))
-	    (dolist (form forms)
-	      (cond ((endp arg-types) (push form fl))
-		    (t (push (and-form-type (car arg-types) form (car args)
-					    :safe "In a call to ~a" fname)
-			     fl)
-		       (pop arg-types)
-		       (pop args))))
-	    (setq forms (nreverse fl))))
-	(make-c1form* 'CALL-LOCAL
-                      :sp-change t ; conservative estimate
-                      :side-effects t ; conservative estimate
-                      :type return-type
-		      :args fun forms)))))
+(defun c1call-local (fname fun args)
+  (declare (si::c-local))
+  (let ((lambda (fun-lambda-expression fun)))
+    (when (and lambda
+	       (declared-inline-p fname)
+	       (plusp *inline-max-depth*))
+      (return-from c1call-local
+	(let ((*inline-max-depth* (1- *inline-max-depth*)))
+	  `(funcall #',lambda ,@args)))))
+  (let* ((forms (c1args* args))
+	 (return-type (or (get-local-return-type fun) 'T))
+	 (arg-types (get-local-arg-types fun)))
+    ;; Add type information to the arguments.
+    (when arg-types
+      (let ((fl nil))
+	(dolist (form forms)
+	  (cond ((endp arg-types) (push form fl))
+		(t (push (and-form-type (car arg-types) form (car args)
+					:safe "In a call to ~a" fname)
+			 fl)
+		   (pop arg-types)
+		   (pop args))))
+	(setq forms (nreverse fl))))
+    (make-c1form* 'CALL-LOCAL
+		  :sp-change t ; conservative estimate
+		  :side-effects t ; conservative estimate
+		  :type return-type
+		  :args fun forms)))
 
 (defun c1call-global (fname args)
-  (let ((l (length args))
-	forms)
-    (cond ((> l si::c-arguments-limit)
-	   (unoptimized-long-call `#',fname args))
-#|
-	  ((maybe-optimize-structure-access fname args))
-	  #+clos
-	  ((maybe-optimize-generic-function fname args))
-|#
-	  (t
-	   (let* ((forms (c1args* args))
-		  (return-type (propagate-types fname forms)))
-	     (make-c1form* 'CALL-GLOBAL
-			   :sp-change (function-may-change-sp fname)
-                           :side-effects (function-may-have-side-effects fname)
-			   :type return-type
-			   :args fname forms
-                           ;; loc and type are filled by c2expr
-                           ))))))
+  (let* ((forms (c1args* args)))
+    ;; If all arguments are constants, try to precompute the function
+    ;; value. We abort when the function signals an error or the value
+    ;; is not printable.
+    (let ((value (c1call-constant-fold fname forms)))
+      (when value
+	(return-from c1call-global value)))
+    ;; Otherwise emit a global function call
+    (make-c1form* 'CALL-GLOBAL
+		  :sp-change (function-may-change-sp fname)
+		  :side-effects (function-may-have-side-effects fname)
+		  :type (propagate-types fname forms)
+		  :args fname forms
+		  ;; loc and type are filled by c2expr
+		  )))
+
+(defun c1call-constant-fold (fname forms)
+  (when (and (get-sysprop fname 'pure)
+	     (policy-evaluate-forms)
+	     (inline-possible fname))
+    (handler-case
+	(loop with all-values = '()
+	   with constant-p
+	   with v
+	   for form in forms
+	   do (if (multiple-value-setq (constant-p v)
+		    (c1form-constant-p form))
+		  (push v all-values)
+		  (return nil))
+	   finally
+	     (return (c1constant-value
+		      (apply fname (nreverse all-values))
+		      :only-small-values nil)))
+      (error (c)))))
 
 (defun c2expr (form)
   (with-c1form-env (form form)
     (let* ((name (c1form-name form))
            (args (c1form-args form))
            (dispatch (gethash name *c2-dispatch-table*)))
-      (if (or (eq name 'LET) (eq name 'LET*))
-          (let ((*volatile* (c1form-volatile* form)))
-            (declare (special *volatile*))
-            (apply dispatch args))
-          (apply dispatch args)))))
+      (apply dispatch form args))))
 
 (defun c2expr* (form)
-  (let* ((*exit* (next-label))
-	 (*unwind-exit* (cons *exit* *unwind-exit*))
-	 ;;(*lex* *lex*)
-	 (*lcl* *lcl*)
-	 (*temp* *temp*))
-    (c2expr form)
-    (wt-label *exit*))
-  )
+  ;; C2EXPR* compiles the giving expression in a context in which
+  ;; other expressions will follow this one. We must thus create
+  ;; a possible label so that the compiled forms exit right at
+  ;; the point where the next form will be compiled.
+  (with-exit-label (label)
+    (let* ((*exit* label)
+	   (*unwind-exit* (cons *exit* *unwind-exit*))
+	   ;;(*lex* *lex*)
+	   (*lcl* *lcl*)
+	   (*temp* *temp*))
+      (c2expr form))))
 
 (defun c1with-backend (forms)
   (c1progn (loop for tag = (pop forms)
@@ -145,7 +192,8 @@
 		  (output-type (and output-form (c1form-type output-form))))
 	     (make-c1form* 'PROGN :type output-type :args fl)))))
 
-(defun c2progn (forms)
+(defun c2progn (c1form forms)
+  (declare (ignore c1form))
   ;; c1progn ensures that the length of forms is not less than 1.
   (do ((l forms (cdr l))
        (lex *lex*))

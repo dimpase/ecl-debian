@@ -30,24 +30,25 @@ ecl_sequence_start_end(cl_object fun, cl_object sequence,
 	unlikely_if (!ECL_FIXNUMP(start) || ecl_fixnum_minusp(start)) {
                 FEwrong_type_key_arg(fun, @[:start], start, @[unsigned-byte]);
         }
-        p.start = fix(start);
+        p.start = ecl_fixnum(start);
 	if (Null(end)) {
 		p.end = l;
 	} else {
-                unlikely_if (!FIXNUMP(end) || ecl_fixnum_minusp(end)) {
+                unlikely_if (!ECL_FIXNUMP(end) || ecl_fixnum_minusp(end)) {
                         FEwrong_type_key_arg(fun, @[:end], end,
                                              ecl_read_from_cstring("(OR NULL UNSIGNED-BYTE)"));
                 }
-		p.end = fix(end);
+		p.end = ecl_fixnum(end);
 		unlikely_if (p.end > l) {
-                        cl_object fillp = MAKE_FIXNUM(l);
+                        cl_object fillp = ecl_make_fixnum(l);
                         FEwrong_type_key_arg(fun, @[:end], end,
                                              ecl_make_integer_type(start, fillp));
                 }
 	}
         unlikely_if (p.end < p.start) {
                 FEwrong_type_key_arg(fun, @[:start], start,
-                                     ecl_make_integer_type(MAKE_FIXNUM(0), end));
+                                     ecl_make_integer_type(ecl_make_fixnum(0),
+							   ecl_make_fixnum(p.end)));
         }
         return p;
 }
@@ -56,14 +57,14 @@ cl_object
 si_sequence_start_end(cl_object fun, cl_object sequence, cl_object start, cl_object end)
 {
 	cl_index_pair p = ecl_sequence_start_end(fun, sequence, start, end);
-	@(return MAKE_FIXNUM(p.start) MAKE_FIXNUM(p.end)
-          MAKE_FIXNUM(p.length));
+	@(return ecl_make_fixnum(p.start) ecl_make_fixnum(p.end)
+          ecl_make_fixnum(p.length));
 }
 
 cl_object
 cl_elt(cl_object x, cl_object i)
 {
-	@(return ecl_elt(x, fixint(i)))
+	@(return ecl_elt(x, ecl_to_size(i)))
 }
 
 cl_object
@@ -74,7 +75,7 @@ ecl_elt(cl_object seq, cl_fixnum index)
 
 	if (index < 0)
 		goto E;
-	switch (type_of(seq)) {
+	switch (ecl_t_of(seq)) {
 	case t_list:
 		for (i = index, l = seq;  i > 0;  --i) {
                         if (!LISTP(l)) goto E0;
@@ -98,13 +99,13 @@ ecl_elt(cl_object seq, cl_fixnum index)
 		FEtype_error_sequence(seq);
 	}
 E:
-	FEtype_error_index(seq, MAKE_FIXNUM(index));
+	FEtype_error_index(seq, index);
 }
 
 cl_object
 si_elt_set(cl_object seq, cl_object index, cl_object val)
 {
-	@(return ecl_elt_set(seq, fixint(index), val))
+	@(return ecl_elt_set(seq, ecl_to_size(index), val))
 }
 
 cl_object
@@ -115,7 +116,7 @@ ecl_elt_set(cl_object seq, cl_fixnum index, cl_object val)
 
 	if (index < 0)
 		goto E;
-	switch (type_of(seq)) {
+	switch (ecl_t_of(seq)) {
 	case t_list:
 		for (i = index, l = seq;  i > 0;  --i) {
                         if (!LISTP(l)) goto E0;
@@ -140,18 +141,18 @@ ecl_elt_set(cl_object seq, cl_fixnum index, cl_object val)
 		FEtype_error_sequence(seq);
 	}
 E:
-	FEtype_error_index(seq, MAKE_FIXNUM(index));
+	FEtype_error_index(seq, index);
 }
 
 cl_object
 ecl_subseq(cl_object sequence, cl_index start, cl_index limit)
 {
-	switch (type_of(sequence)) {
+	switch (ecl_t_of(sequence)) {
 	case t_list:
 		if (start)
 			sequence = ecl_nthcdr(start, sequence);
 		{
-			cl_object x = Cnil;
+			cl_object x = ECL_NIL;
 			cl_object *z = &x;
 			while (!Null(sequence) && (limit--)) {
 				if (ECL_ATOM(sequence))
@@ -208,7 +209,7 @@ cl_copy_seq(cl_object x)
 cl_object
 cl_length(cl_object x)
 {
-	@(return MAKE_FIXNUM(ecl_length(x)))
+	@(return ecl_make_fixnum(ecl_length(x)))
 }
 
 cl_fixnum
@@ -216,7 +217,7 @@ ecl_length(cl_object x)
 {
 	cl_fixnum i;
 
-	switch (type_of(x)) {
+	switch (ecl_t_of(x)) {
 	case t_list:
 		/* INV: A list's length always fits in a fixnum */
 		i = 0;
@@ -243,9 +244,9 @@ cl_reverse(cl_object seq)
 {
 	cl_object output, x;
 
-	switch (type_of(seq)) {
+	switch (ecl_t_of(seq)) {
 	case t_list: {
-		for (x = seq, output = Cnil; !Null(x); x = ECL_CONS_CDR(x)) {
+		for (x = seq, output = ECL_NIL; !Null(x); x = ECL_CONS_CDR(x)) {
                         if (!LISTP(x)) goto E;
 			output = CONS(ECL_CONS_CAR(x), output);
                 }
@@ -271,10 +272,10 @@ cl_reverse(cl_object seq)
 cl_object
 cl_nreverse(cl_object seq)
 {
-	switch (type_of(seq)) {
+	switch (ecl_t_of(seq)) {
 	case t_list: {
 		cl_object x, y, z;
-                for (x = seq, y = Cnil; !Null(x); ) {
+                for (x = seq, y = ECL_NIL; !Null(x); ) {
                         if (!LISTP(x)) FEtype_error_list(x);
                         z = x;
                         x = ECL_CONS_CDR(x);

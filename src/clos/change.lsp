@@ -1,6 +1,7 @@
 ;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: CLOS -*-
 ;;;;
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -10,10 +11,6 @@
 ;;;;    See file '../Copyright' for full details.
 
 (in-package "CLOS")
-
-;;; The mechanism for updating classes.
-
-(defclass forward-referenced-class (class) ())
 
 ;;; ----------------------------------------------------------------------
 ;;; INSTANCE UPDATE PROTOCOL
@@ -62,8 +59,7 @@
     ;; unbound."
     ;; "The values of slots specified as shared in the class Cfrom and
     ;; as local in the class Cto are retained."
-    (let* ((old-local-slotds (class-slots (class-of old-instance)))
-	   (new-local-slotds (class-slots (class-of instance))))
+    (let* ((new-local-slotds (class-slots (class-of instance))))
       (dolist (new-slot new-local-slotds)
 	;; CHANGE-CLASS can only operate on the value of local slots.
 	(when (eq (slot-definition-allocation new-slot) :INSTANCE)
@@ -77,6 +73,7 @@
     instance))
 
 (defmethod change-class ((instance class) new-class &rest initargs)
+  (declare (ignore new-class initargs))
   (if (forward-referenced-class-p instance)
       (call-next-method)
       (error "The metaclass of a class metaobject cannot be changed.")))
@@ -114,7 +111,6 @@
 (defmethod update-instance-for-redefined-class
     ((instance standard-object) added-slots discarded-slots property-list
      &rest initargs)
-  (declare (ignore discarded-slots property-list))
   (check-initargs (class-of instance) initargs
 		  (valid-keywords-from-methods
                    (compute-applicable-methods
@@ -198,10 +194,6 @@
   ;; if there are no forward references, we can just finalize the class here
   (setf (class-finalized-p class) nil)
   (finalize-unless-forward class)
-
-  ;; Now we can call the dependents
-  (map-dependents class #'(lambda (dep)
-                            (apply #'update-dependent class dep initargs)))
 
   class)
 

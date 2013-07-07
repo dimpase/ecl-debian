@@ -23,12 +23,6 @@ exponent_charp(cl_fixnum c)
 }
 
 static cl_object
-read_exponent(cl_object str, cl_index start, cl_index end, cl_index *ep)
-{
-
-}
-
-static cl_object
 expt10(cl_index expt)
 {
         cl_object accum = _ecl_big_register0();
@@ -79,10 +73,10 @@ infinity(cl_index exp_char, int sign)
 static cl_object
 make_float(cl_object num, cl_object exp, cl_index exp_char, int sign)
 {
-        if (!FIXNUMP(exp)) {
+        if (!ECL_FIXNUMP(exp)) {
                 return infinity(exp_char, sign);
         } else {
-                cl_fixnum fix_exp = fix(exp);
+                cl_fixnum fix_exp = ecl_fixnum(exp);
                 if (fix_exp > 0) {
                         num = ecl_times(num, expt10(fix_exp));
                 } else if (fix_exp < 0) {
@@ -96,13 +90,13 @@ make_float(cl_object num, cl_object exp, cl_index exp_char, int sign)
                 goto AGAIN;
         case 's':  case 'S':
         case 'f':  case 'F':
-                return ecl_make_singlefloat(sign * ecl_to_double(num));
+                return ecl_make_single_float(sign * ecl_to_double(num));
         case 'l':  case 'L':
 #ifdef ECL_LONG_FLOAT
-                return ecl_make_longfloat(sign * ecl_to_long_double(num));
+                return ecl_make_long_float(sign * ecl_to_long_double(num));
 #endif
         case 'd':  case 'D': {
-                return ecl_make_doublefloat(sign * ecl_to_double(num));
+                return ecl_make_double_float(sign * ecl_to_double(num));
         }
         default:
                 return OBJNULL;
@@ -126,6 +120,7 @@ ecl_parse_number(cl_object str, cl_index start, cl_index end,
         int sign = -1, d;
 	cl_index c, i, decimal = end;
         cl_object num = _ecl_big_register0();
+        bool some_digit = 0;
 	if (end <= start || radix > 36) {
 		*ep = start;
 		return OBJNULL;
@@ -157,8 +152,8 @@ ecl_parse_number(cl_object str, cl_index start, cl_index end,
                         den = ecl_parse_integer(str, i, end, ep, radix);
                         if (den == OBJNULL || (*ep < end)) {
                                 return OBJNULL;
-                        } else if (den == MAKE_FIXNUM(0)) {
-                                return Cnil;
+                        } else if (den == ecl_make_fixnum(0)) {
+                                return ECL_NIL;
                         } else {
                                 return ecl_make_ratio(num, den);
                         }
@@ -178,16 +173,19 @@ ecl_parse_number(cl_object str, cl_index start, cl_index end,
                 } else if ((d = ecl_digitp(c, radix)) >= 0) {
                         _ecl_big_mul_ui(num, num, radix);
                         _ecl_big_add_ui(num, num, d);
+                        some_digit = 1;
                 } else if (exponent_charp(c)) {
                         cl_object exp, decimals;
+                        if (!some_digit)
+                                goto NOT_A_NUMBER;
                         if (radix != 10) {
                                 radix = 10;
                                 goto AGAIN;
                         }
                         num = _ecl_big_register_normalize(num);
                         decimals = (decimal < i) ?
-                                MAKE_FIXNUM(decimal - i):
-                                MAKE_FIXNUM(0);
+                                ecl_make_fixnum(decimal - i):
+                                ecl_make_fixnum(0);
                         exp = ecl_parse_integer(str, ++i, end, ep, 10);
                         if (exp == OBJNULL || (*ep < end))
                                 return OBJNULL;
@@ -217,8 +215,9 @@ ecl_parse_number(cl_object str, cl_index start, cl_index end,
          * 1., 2, 13., etc) we return an integer */
         *ep = i;
         if (decimal < i) {
+                if (!some_digit) goto NOT_A_NUMBER;
                 return make_float(_ecl_big_register_normalize(num),
-                                  MAKE_FIXNUM(decimal - i), 'e', sign);
+                                  ecl_make_fixnum(decimal - i), 'e', sign);
         } else {
                 if (sign < 0) _ecl_big_complement(num, num);
                 return _ecl_big_register_normalize(num);

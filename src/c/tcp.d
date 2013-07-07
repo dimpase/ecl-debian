@@ -245,7 +245,7 @@ create_server_port(int port)
     fclose(fp);
   }
 #else
-  if ((conn = accept(request, (struct sockaddr *)NULL, (int *)NULL)) < 0)
+  if ((conn = accept(request, (struct sockaddr *)NULL, NULL)) < 0)
     FElibc_error("Accepting requests", 0);
 #endif	/* THREADS */
 
@@ -275,26 +275,26 @@ si_open_client_stream(cl_object host, cl_object port)
 
    if (ecl_unlikely(!ECL_FIXNUMP(port) ||
                     ecl_fixnum_minusp(port) ||
-                    ecl_fixnum_greater(port,MAKE_FIXNUM(65536)))) {
+                    ecl_fixnum_greater(port,ecl_make_fixnum(65536)))) {
            FEwrong_type_nth_arg(@[si::open-client-stream], 2, port,
                                 ecl_read_from_cstring("(INTEGER 0 65535)"));
    }
-   p = fix(port);
+   p = ecl_fixnum(port);
 
    if (host->base_string.fillp > BUFSIZ - 1)
      FEerror("~S is a too long file name.", 1, host);
 
    ecl_disable_interrupts();
-   fd = connect_to_server((char*)host->base_string.self, fix(port)); 
+   fd = connect_to_server((char*)host->base_string.self, ecl_fixnum(port)); 
    ecl_enable_interrupts();
 
    if (fd == 0)
-     @(return Cnil)
+     @(return ECL_NIL)
 
 #if defined(ECL_MS_WINDOWS_HOST)
-   stream = ecl_make_stream_from_fd(host, fd, smm_io_wsock, 8, 0, Cnil);
+   stream = ecl_make_stream_from_fd(host, fd, ecl_smm_io_wsock, 8, 0, ECL_NIL);
 #else
-   stream = ecl_make_stream_from_fd(host, fd, smm_io, 8, 0, Cnil);
+   stream = ecl_make_stream_from_fd(host, fd, ecl_smm_io, 8, 0, ECL_NIL);
 #endif
 
    @(return stream)
@@ -305,20 +305,19 @@ si_open_server_stream(cl_object port)
 {
    int fd;			/* file descriptor */
    cl_index p;
-   cl_object output;
 
    if (ecl_unlikely(!ECL_FIXNUMP(port) ||
                     ecl_fixnum_minusp(port) ||
-                    ecl_fixnum_greater(port,MAKE_FIXNUM(65536)))) {
+                    ecl_fixnum_greater(port,ecl_make_fixnum(65536)))) {
            FEwrong_type_only_arg(@[si::open-client-stream], port,
                                  ecl_read_from_cstring("(INTEGER 0 65535)"));
    }
-   p = fix(port);
+   p = ecl_fixnum(port);
    ecl_disable_interrupts();
    fd = create_server_port(p);
    ecl_enable_interrupts();
 
-   @(return ((fd == 0)? Cnil : ecl_make_stream_from_fd(Cnil, fd, smm_io, 8, 0, Cnil)))
+   @(return ((fd == 0)? ECL_NIL : ecl_make_stream_from_fd(ECL_NIL, fd, ecl_smm_io, 8, 0, ECL_NIL)))
 }
 
 /************************************************************
@@ -332,10 +331,9 @@ si_open_unix_socket_stream(cl_object path)
 	FEerror("UNIX socket not supported under Win32 platform", 0);
 #else
 	int fd;			/* file descriptor */
-	cl_object stream;
 	struct sockaddr_un addr;
 
-	if (ecl_unlikely(type_of(path) != t_base_string))
+	if (ecl_unlikely(ecl_t_of(path) != t_base_string))
                 FEwrong_type_nth_arg(@[si::open-unix-socket-stream], 1, path,
                                      @[string]);
 	if (path->base_string.fillp > UNIX_MAX_PATH-1)
@@ -344,7 +342,7 @@ si_open_unix_socket_stream(cl_object path)
 	fd = socket(PF_UNIX, SOCK_STREAM, 0);
 	if (fd < 0) {
 		FElibc_error("Unable to create unix socket", 0);
-		@(return Cnil)
+		@(return ECL_NIL)
 	}
 
 	memcpy(addr.sun_path, path->base_string.self, path->base_string.fillp);
@@ -354,10 +352,10 @@ si_open_unix_socket_stream(cl_object path)
 	if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		close(fd);
 		FElibc_error("Unable to connect to unix socket ~A", 1, path);
-		@(return Cnil)
+		@(return ECL_NIL)
 	}
 
-	@(return ecl_make_stream_from_fd(path, fd, smm_io, 8, 0, Cnil))
+	@(return ecl_make_stream_from_fd(path, fd, ecl_smm_io, 8, 0, ECL_NIL))
 #endif
 }
 
@@ -367,7 +365,6 @@ si_open_unix_socket_stream(cl_object path)
 cl_object
 si_lookup_host_entry(cl_object host_or_address)
 {
-	const cl_env_ptr the_env = ecl_process_env();
 	struct hostent *he;
 	unsigned long l;
 	char address[4];
@@ -376,13 +373,13 @@ si_lookup_host_entry(cl_object host_or_address)
 
 	INIT_TCP
 
-	switch (type_of(host_or_address)) {
+	switch (ecl_t_of(host_or_address)) {
 	case t_base_string:
 		host_or_address = si_copy_to_simple_base_string(host_or_address);
 		he = gethostbyname((char*)host_or_address->base_string.self);
 		break;
 	case t_fixnum:
-		l = fix(host_or_address);
+		l = ecl_fixnum(host_or_address);
 		goto addr;
 	case t_bignum:
 		l = _ecl_big_to_ulong(host_or_address);
@@ -397,12 +394,12 @@ si_lookup_host_entry(cl_object host_or_address)
 			1, host_or_address);
 	}
 	if (he == NULL)
-		@(return Cnil Cnil Cnil)
+		@(return ECL_NIL ECL_NIL ECL_NIL)
 	name = make_base_string_copy(he->h_name);
-	aliases = Cnil;
+	aliases = ECL_NIL;
 	for (i = 0; he->h_aliases[i] != 0; i++)
 		aliases = CONS(make_base_string_copy(he->h_aliases[i]), aliases);
-	addresses = Cnil;
+	addresses = ECL_NIL;
 	for (i = 0; he->h_addr_list[i]; i++) {
 		unsigned long *s = (unsigned long*)(he->h_addr_list[i]);
 		l = *s;

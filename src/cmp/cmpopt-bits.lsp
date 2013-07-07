@@ -29,5 +29,57 @@
 	     (integerp (setq pos (third arg1)))
 	     (<= (+ size pos) len)
 	     (subtypep (result-type (second args)) 'FIXNUM))
-	`(the fixnum (ldb1 ,size ,pos ,(second args)))
+	`(truly-the fixnum (ldb1 ,size ,pos ,(second args)))
 	whole)))
+
+;;;
+;;; ASH
+;;; Bit fiddling. It is a bit tricky because C does not allow
+;;; shifts in << or >> which exceed the integer size. In those
+;;; cases the compiler may do whatever it wants (and gcc does!)
+;;;
+
+(define-compiler-macro ash (&whole whole argument shift)
+  (if (and (policy-assume-right-type)
+           (integerp shift))
+      (if (zerop shift)
+          argument
+          `(shift ,argument ,shift))
+      whole))
+
+(define-c-inliner shift (return-type argument orig-shift)
+  (let* ((arg-type (inlined-arg-type argument))
+         (arg-c-type (lisp-type->rep-type arg-type))
+	 (return-c-type (lisp-type->rep-type return-type))
+         (shift (loc-immediate-value (inlined-arg-loc orig-shift))))
+    (if (or (not (c-integer-rep-type-p arg-c-type))
+            (not (c-integer-rep-type-p return-c-type)))
+        (produce-inline-loc (list argument orig-shift) '(:object :fixnum) '(:object)
+                            "ecl_ash(#0,#1)" nil t)
+        (let* ((arg-bits (c-integer-rep-type-bits arg-c-type))
+	       (return-bits (c-integer-rep-type-bits return-c-type))
+	       (max-type (if (and (plusp shift)
+				  (< arg-bits return-bits))
+			   return-c-type
+			   arg-c-type)))
+	  (produce-inline-loc (list argument) (list max-type) (list return-type)
+			      (format nil
+				      (if (minusp shift)
+					  "((#0) >> (~D))"
+					  "((#0) << (~D))")
+				      (abs shift))
+			      nil t)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; TYPE PROPAGATION
+;;;
+
+(def-type-propagator logand (&rest args)
+  (values args
+	  (if args
+	      (dolist (int-type '((UNSIGNED-BYTE 8) FIXNUM) 'integer)
+		(when (loop for value in args
+			 always (subtypep value int-type))
+		  (return int-type)))
+	      'fixnum)))

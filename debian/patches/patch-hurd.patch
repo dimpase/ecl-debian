@@ -1,0 +1,13 @@
+Index: ecl/src/c/unixint.d
+===================================================================
+--- ecl.orig/src/c/unixint.d	2012-12-07 15:18:57.055829624 -0800
++++ ecl/src/c/unixint.d	2012-12-07 15:22:19.335829155 -0800
+@@ -1386,6 +1386,8 @@
+ 	 */
+ #ifdef SIGRTMIN
+ # define DEFAULT_THREAD_INTERRUPT_SIGNAL SIGRTMIN + 2
++#elif defined(__GNU__)
++# define DEFAULT_THREAD_INTERRUPT_SIGNAL SIGINFO
+ #else
+ # define DEFAULT_THREAD_INTERRUPT_SIGNAL SIGUSR1
+ #endif

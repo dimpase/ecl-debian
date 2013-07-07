@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -33,8 +34,9 @@
 	 (/= (float 1 x) (+ (float 1 x) x)))
        (epsilon- (x)
 	 (/= (float 1 x) (- (float 1 x) x))))
+  #+ecl-min
+  (si::trap-fpe 'last nil)
   `(eval-when (compile load eval)
-   (let ((bits (si::trap-fpe 'last nil)))
     (defconstant short-float-epsilon
       ,(binary-search #'epsilon+ (coerce 0 'short-float) (coerce 1 'short-float))
       "The smallest postive short-float E that satisfies
@@ -67,7 +69,7 @@
       ,(binary-search #'epsilon- (coerce 0 'long-float) (coerce 1 'long-float))
       "The smallest positive long-float E that satisfies
 	(not (= (float 1 E) (- (float 1 E) E)))")
-    (si::trap-fpe 'last nil))))
+    ))
 
 #+IEEE-FLOATING-POINT
 (locally

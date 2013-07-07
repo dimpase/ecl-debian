@@ -18,6 +18,18 @@
 #include <ecl/ecl.h>
 
 void
+FEtype_error_fixnum(cl_object x) {
+	FEwrong_type_argument(@[fixnum], x);
+}
+
+void
+FEtype_error_size(cl_object x) {
+	FEwrong_type_argument(cl_list(3, @'integer', ecl_make_fixnum(0),
+				      ecl_make_fixnum(MOST_POSITIVE_FIXNUM)),
+			      x);
+}
+
+void
 FEtype_error_cons(cl_object x) {
 	FEwrong_type_argument(@[cons], x);
 }
@@ -40,7 +52,7 @@ void
 FEcircular_list(cl_object x)
 {
 	/* FIXME: Is this the right way to rebind it? */
-	ecl_bds_bind(ecl_process_env(), @'*print-circle*', Ct);
+	ecl_bds_bind(ecl_process_env(), @'*print-circle*', ECL_T);
 	cl_error(9, @'simple-type-error', @':format-control',
 		    make_constant_base_string("Circular list ~D"),
 		    @':format-arguments', cl_list(1, x),
@@ -49,13 +61,15 @@ FEcircular_list(cl_object x)
 }
 
 void
-FEtype_error_index(cl_object seq, cl_object ndx)
+FEtype_error_index(cl_object seq, cl_fixnum ndx)
 {
+        cl_object n = ecl_make_fixnum(ndx);
+	cl_index l = ECL_INSTANCEP(seq)? seq->instance.length : ecl_length(seq);
 	cl_error(9, @'simple-type-error', @':format-control',
 		    make_constant_base_string("~S is not a valid index into the object ~S"),
-		    @':format-arguments', cl_list(2, ndx, seq),
-		    @':expected-type', cl_list(3, @'integer', MAKE_FIXNUM(0), MAKE_FIXNUM(ecl_length(seq)-1)),
-		    @':datum', ndx);
+		    @':format-arguments', cl_list(2, n, seq),
+		    @':expected-type', cl_list(3, @'integer', ecl_make_fixnum(0), ecl_make_fixnum(l-1)),
+		    @':datum', n);
 }
 
 void
@@ -80,7 +94,7 @@ ecl_type_error(cl_object function, const char *place, cl_object o,
 	       cl_object type)
 {
 	return funcall(5, @'si::wrong-type-argument', o, type,
-		       (*place? make_constant_base_string(place) : Cnil),
+		       (*place? make_constant_base_string(place) : ECL_NIL),
 		       function);
 }
 
@@ -149,10 +163,12 @@ ecl_type_to_symbol(cl_type t)
 		return @'mp::lock';
 	case t_condition_variable:
 		return @'mp::condition-variable';
-#endif
-#ifdef ECL_SEMAPHORES
 	case t_semaphore:
 		return @'mp::semaphore';
+	case t_barrier:
+		return @'mp::barrier';
+	case t_mailbox:
+		return @'mp::mailbox';
 #endif
 	case t_codeblock:
 		return @'si::code-block';
@@ -174,7 +190,7 @@ ecl_type_to_symbol(cl_type t)
 cl_object
 ecl_check_cl_type(cl_object fun, cl_object p, cl_type t)
 {
-	while (type_of(p) != t) {
+	while (ecl_t_of(p) != t) {
 		p = ecl_type_error(fun, "argument", p, ecl_type_to_symbol(t));
 	}
 	return p;
@@ -183,7 +199,7 @@ ecl_check_cl_type(cl_object fun, cl_object p, cl_type t)
 void
 assert_type_integer(cl_object p)
 {
-	cl_type t = type_of(p);
+	cl_type t = ecl_t_of(p);
 	if (t != t_fixnum && t != t_bignum)
                 FEwrong_type_nth_arg(@[coerce], 1, p, @[integer]);
 }
@@ -191,24 +207,24 @@ assert_type_integer(cl_object p)
 void
 assert_type_non_negative_integer(cl_object p)
 {
-	cl_type t = type_of(p);
+	cl_type t = ecl_t_of(p);
 
 	if (t == t_fixnum) {
-		if (FIXNUM_PLUSP(p))
+		if (ecl_fixnum_plusp(p))
 			return;
 	} else if (t == t_bignum) {
 		if (_ecl_big_sign(p) >= 0)
 			return;
 	}
-	FEwrong_type_argument(cl_list(3,@'integer',MAKE_FIXNUM(0),@'*'), p);
+	FEwrong_type_argument(cl_list(3,@'integer',ecl_make_fixnum(0),@'*'), p);
 }
 
 void
 assert_type_proper_list(cl_object p)
 {
-	if (ATOM(p) && p != Cnil)
+	if (ECL_ATOM(p) && p != ECL_NIL)
 		FEtype_error_list(p);
-	if (cl_list_length(p) == Cnil)
+	if (cl_list_length(p) == ECL_NIL)
 		FEcircular_list(p);
 }
 
@@ -216,13 +232,13 @@ cl_object
 cl_type_of(cl_object x)
 {
 	cl_object t;
-	cl_type tx = type_of(x);
+	cl_type tx = ecl_t_of(x);
 	switch (tx) {
 #ifdef CLOS
         case t_instance: {
-		cl_object cl = CLASS_OF(x);
-		t = CLASS_NAME(cl);
-		if (t == Cnil || cl != cl_find_class(2, t, Cnil))
+		cl_object cl = ECL_CLASS_OF(x);
+		t = ECL_CLASS_NAME(cl);
+		if (t == ECL_NIL || cl != cl_find_class(2, t, ECL_NIL))
 			t = cl;
 		break;
 	}
@@ -233,7 +249,7 @@ cl_type_of(cl_object x)
 		t = cl_list(3, @'integer', x, x); break;
 #endif
 	case t_character: {
-		int i = CHAR_CODE(x);
+		int i = ECL_CHAR_CODE(x);
 		if (ecl_standard_char_p(i)) {
 			t = @'standard-char';
 		} else if (ecl_base_char_p(i)) {
@@ -245,7 +261,7 @@ cl_type_of(cl_object x)
 	}
 
 	case t_symbol:
-		if (x == Ct)
+		if (x == ECL_T)
 			t = @'boolean';
 		else if (x->symbol.hpack == cl_core.keyword_package)
 			t = @'keyword';
@@ -265,14 +281,14 @@ cl_type_of(cl_object x)
 		if (ECL_ADJUSTABLE_ARRAY_P(x) ||
 		    !Null(CAR(x->vector.displaced))) {
 			t = cl_list(3, @'vector', ecl_elttype_to_symbol(ecl_array_elttype(x)),
-				    MAKE_FIXNUM(x->vector.dim));
+				    ecl_make_fixnum(x->vector.dim));
 		} else if (ECL_ARRAY_HAS_FILL_POINTER_P(x) ||
-			   (cl_elttype)x->vector.elttype != aet_object) {
+			   (cl_elttype)x->vector.elttype != ecl_aet_object) {
 			t = cl_list(3, @'simple-array',
                                     ecl_elttype_to_symbol(ecl_array_elttype(x)),
 				    cl_array_dimensions(x));
 		} else {
-			t = cl_list(2, @'simple-vector', MAKE_FIXNUM(x->vector.dim));
+			t = cl_list(2, @'simple-vector', ecl_make_fixnum(x->vector.dim));
 		}
 		break;
 #ifdef ECL_UNICODE
@@ -283,7 +299,7 @@ cl_type_of(cl_object x)
 			t = @'array';
 		else
 			t = @'simple-array';
-		t = cl_list(3, t, @'character', cl_list(1, MAKE_FIXNUM(x->string.dim)));
+		t = cl_list(3, t, @'character', cl_list(1, ecl_make_fixnum(x->string.dim)));
 		break;
 #endif
 	case t_base_string:
@@ -293,7 +309,7 @@ cl_type_of(cl_object x)
 			t = @'array';
 		else
 			t = @'simple-array';
-		t = cl_list(3, t, @'base-char', cl_list(1, MAKE_FIXNUM(x->base_string.dim)));
+		t = cl_list(3, t, @'base-char', cl_list(1, ecl_make_fixnum(x->base_string.dim)));
 		break;
 	case t_bitvector:
 		if (ECL_ADJUSTABLE_ARRAY_P(x) ||
@@ -302,7 +318,7 @@ cl_type_of(cl_object x)
 			t = @'array';
 		else
 			t = @'simple-array';
-		t = cl_list(3, t, @'bit', cl_list(1, MAKE_FIXNUM(x->vector.dim)));
+		t = cl_list(3, t, @'bit', cl_list(1, ecl_make_fixnum(x->vector.dim)));
 		break;
 #ifndef CLOS
 	case t_structure:
@@ -310,13 +326,15 @@ cl_type_of(cl_object x)
 #endif
 	case t_stream:
 		switch (x->stream.mode) {
-		case smm_synonym:	t = @'synonym-stream'; break;
-		case smm_broadcast:	t = @'broadcast-stream'; break;
-		case smm_concatenated:	t = @'concatenated-stream'; break;
-		case smm_two_way:	t =  @'two-way-stream'; break;
-		case smm_string_input:
-		case smm_string_output:	t = @'string-stream'; break;
-		case smm_echo:		t = @'echo-stream'; break;
+		case ecl_smm_synonym:	t = @'synonym-stream'; break;
+		case ecl_smm_broadcast:	t = @'broadcast-stream'; break;
+		case ecl_smm_concatenated:	t = @'concatenated-stream'; break;
+		case ecl_smm_two_way:	t =  @'two-way-stream'; break;
+		case ecl_smm_string_input:
+		case ecl_smm_string_output:	t = @'string-stream'; break;
+		case ecl_smm_echo:		t = @'echo-stream'; break;
+                case ecl_smm_sequence_input:
+                case ecl_smm_sequence_output: t = @'ext::sequence-stream'; break;
 		default:		t = @'file-stream'; break;
 		}
 		break;

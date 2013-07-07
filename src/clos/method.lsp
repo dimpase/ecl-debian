@@ -1,6 +1,7 @@
 ;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: CLOS -*-
 ;;;;
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -13,47 +14,116 @@
 
 ;;; ----------------------------------------------------------------------
 
-(defvar *method-size* 32)		; Size of methods hash tables
+(defparameter *method-size* 32)		; Size of methods hash tables
 
 ;;; This holds fake methods created during bootstrap.
 ;;; It is  an alist of:
 ;;;	(method-name {method}+)
-(defvar *early-methods* nil)
+(defparameter *early-methods* nil)
 
 ;;;
 ;;; This is used by combined methods to communicate the next methods to
 ;;; the methods they call.
 ;;;
-(defvar *next-methods* nil)
+(defparameter *next-methods* nil)
+
+;;; Add type declarations for the arguments of a METHOD. This implies
+;;; copying the method arguments because the arguments may be modified.
+(defparameter *add-method-argument-declarations* nil)
 
 
 ;;; ----------------------------------------------------------------------
 ;;; DEFMETHOD
 ;;;
 
-(defmacro defmethod (&whole whole &rest args &environment env)
-  (multiple-value-bind (name qualifiers specialized-lambda-list body)
-      (parse-defmethod args)
+(defun generic-function-method-class (generic-function)
+  (if *clos-booted*
+      (slot-value generic-function 'method-class)
+      (find-class 'standard-method)))
+
+(defmacro defmethod (&whole whole name &rest args &environment env)
+  (declare (notinline make-method-lambda))
+  (let* ((*print-length* 3)
+	 (*print-depth* 2)
+	 (qualifiers (loop while (and args (not (listp (first args))))
+			collect (pop args)))
+	 (specialized-lambda-list
+	  (if args
+	      (pop args)
+	      (error "Illegal defmethod form: missing lambda list")))
+	 (body args))
     (multiple-value-bind (lambda-list required-parameters specializers)
 	(parse-specialized-lambda-list specialized-lambda-list)
-      (multiple-value-bind (fn-form doc plist)
-	  (expand-defmethod name qualifiers lambda-list
-			    required-parameters specializers body env)
-	(declare (ignore required-parameters))
-	(ext:register-with-pde whole
-			       `(install-method ',name ',qualifiers
-						,(list 'si::quasiquote specializers)
-						',lambda-list ',doc
-						',plist ,fn-form))))))
+      (multiple-value-bind (lambda-form declarations documentation)
+	  (make-raw-lambda name lambda-list required-parameters specializers body env)
+	(let* ((generic-function (ensure-generic-function name))
+	       (method-class (generic-function-method-class generic-function))
+	       method)
+	  (when *clos-booted*
+	    (when (symbolp method-class)
+	      (setf method-class (find-class method-class nil)))
+	    (if method-class
+		(setf method (class-prototype method-class))
+		(error "Cannot determine the method class for generic functions of type ~A"
+		       (type-of generic-function))))
+	  (multiple-value-bind (fn-form options)
+	      (make-method-lambda generic-function method lambda-form env)
+	    (when documentation
+	      (setf options (list* :documentation documentation options)))
+	    (multiple-value-bind (wrapped-lambda wrapped-p)
+		(simplify-lambda name fn-form)
+	      (unless wrapped-p
+		(error "Unable to unwrap function"))
+	      (ext:register-with-pde
+	       whole
+	       `(install-method ',name ',qualifiers
+				,(specializers-expression specializers)
+				',lambda-list
+				,(maybe-remove-block wrapped-lambda)
+				,wrapped-p
+				,@(mapcar #'si::maybe-quote options))))))))))
 
-
-;;; ----------------------------------------------------------------------
-;;;                                                  method body expansion
+(defun specializers-expression (specializers)
+  (declare (si::c-local))
+  (list 'si::quasiquote
+	(loop for spec in specializers
+	   collect (if (atom spec)
+		       spec
+		       `(eql ,(let ((value (second spec)))
+				   (if (constantp value)
+				       (eval value)
+				       (list 'si::unquote value))))))))
 
-(defun expand-defmethod (generic-function-name qualifiers lambda-list
-			 required-parameters specializers body env)
-  (declare (ignore qualifiers)
-	   (si::c-local))
+(defun maybe-remove-block (method-lambda)
+  (when (eq (first method-lambda) 'lambda)
+    (multiple-value-bind (declarations body documentation)
+	(si::find-declarations (cddr method-lambda))
+      (let (block)
+	(when (and (null (rest body))
+		   (listp (setf block (first body)))
+		   (eq (first block) 'block))
+	  (setf method-lambda `(ext:lambda-block ,(second block) ,(second method-lambda)
+				,@declarations
+				,@(cddr block)))
+	  ))))
+  method-lambda)
+
+(defun simplify-lambda (method-name fn-form)
+  (let ((aux fn-form))
+    (if (and (eq (pop aux) 'lambda)
+	     (equalp (pop aux) '(.combined-method-args. *next-methods*))
+	     (equalp (pop aux) '(declare (special .combined-method-args. *next-methods*)))
+	     (null (rest aux))
+	     (= (length (setf aux (first aux))) 3)
+	     (eq (first aux) 'apply)
+	     (eq (third aux) '.combined-method-args.)
+	     (listp (setf aux (second aux)))
+	     (eq (first aux) 'lambda))
+	(values aux t)
+	(values fn-form nil))))
+
+(defun make-raw-lambda (name lambda-list required-parameters specializers body env)
+  (declare (si::c-local))
   (multiple-value-bind (declarations real-body documentation)
       (sys::find-declarations body)
     ;; FIXME!! This deactivates the checking of keyword arguments
@@ -70,13 +140,17 @@
 			'(&allow-other-keys)
 			(and x (subseq lambda-list x))
                         nil))))
-    (let* ((class-declarations
-	    (nconc (loop for name in required-parameters
-		      for type in specializers
-		      when (and (not (eq type t)) (symbolp type))
-		      nconc `((type ,type ,name)
-			      (si::no-check-type ,name)))
+    (let* ((copied-variables '())
+	   (class-declarations
+	    (nconc (when *add-method-argument-declarations*
+		     (loop for name in required-parameters
+			for type in specializers
+			when (and (not (eq type t)) (symbolp type))
+			do (push `(,name ,name) copied-variables) and
+			nconc `((type ,type ,name)
+				(si::no-check-type ,name))))
 		   (cdar declarations)))
+	   (block `(block ,(si::function-block-name name) ,@real-body))
 	   (method-lambda
 	    ;; Remove the documentation string and insert the
 	    ;; appropriate class declarations.  The documentation
@@ -85,60 +159,59 @@
 	    ;; second of the method lambda.  The class declarations
 	    ;; are inserted to communicate the class of the method's
 	    ;; arguments to the code walk.
-	    `(ext::lambda-block ,generic-function-name
-	      ,lambda-list
-	      ,@(and class-declarations `((declare ,@class-declarations)))
-	      ,@real-body))
-	   
-	   (aux-bindings ())	; Suffice to say that &aux is one of
-				; damndest things to have put in a
-				; language.
-	   (plist ()))
-      (multiple-value-bind (call-next-method-p next-method-p-p in-closure-p)
-	  (walk-method-lambda method-lambda required-parameters env)
+	    `(lambda ,lambda-list
+	       ,@(and class-declarations `((declare ,@class-declarations)))
+	       ,(if copied-variables
+		    `(let* ,copied-variables ,block)
+		     block))))
+      (values method-lambda declarations documentation))))
 
-	(when (or call-next-method-p next-method-p-p)
-	  (setf plist '(:needs-next-method-p t)))
+(defun make-method-lambda (gf method method-lambda env)
+  (multiple-value-bind (call-next-method-p next-method-p-p in-closure-p)
+      (walk-method-lambda method-lambda env)
+    (values `(lambda (.combined-method-args. *next-methods*)
+	       (declare (special .combined-method-args. *next-methods*))
+	       (apply ,(if in-closure-p
+			   (add-call-next-method-closure method-lambda)
+			   method-lambda)
+		      .combined-method-args.))
+	    nil)))
 
-	(when in-closure-p
-	  (setf plist '(:needs-next-method-p FUNCTION))
-	  (setf real-body
-		`((let* ((.closed-combined-method-args.
-                          (if (listp .combined-method-args.)
-                              .combined-method-args.
-                              (apply #'list .combined-method-args.)))
-			 (.next-methods. *next-methods*))
-		    (flet ((call-next-method (&rest args)
-			     (unless .next-methods.
-			       (error "No next method"))
-			     (funcall (car .next-methods.)
-				      (or args .closed-combined-method-args.)
-				      (rest .next-methods.)))
-			   (next-method-p ()
-			     .next-methods.))
-		      ,@real-body)))))
-	(values
-	 `#'(ext::lambda-block ,generic-function-name
-	      ,lambda-list
-	      ,@(and class-declarations `((declare ,@class-declarations)))
-	      ,@real-body)
-	 documentation
-	 plist)))))
+(defun add-call-next-method-closure (method-lambda)
+  (multiple-value-bind (declarations real-body documentation)
+      (si::find-declarations (cddr method-lambda))
+    `(lambda ,(second method-lambda)
+       (let* ((.closed-combined-method-args.
+	       (if (listp .combined-method-args.)
+		   .combined-method-args.
+		   (apply #'list .combined-method-args.)))
+	      (.next-methods. *next-methods*))
+	 (flet ((call-next-method (&rest args)
+		  (unless .next-methods.
+		    (error "No next method"))
+		  (funcall (car .next-methods.)
+			   (or args .closed-combined-method-args.)
+			   (rest .next-methods.)))
+		(next-method-p ()
+		  .next-methods.))
+	   ,@real-body)))))
 
 (defun environment-contains-closure (env)
   ;;
-  ;; As explained in compiler.d (make_lambda()), we use a symbol with name
-  ;; "FUNCTION" to mark the beginning of a function. If we find that symbol
-  ;; twice, it is quite likely that this form will end up in a closure.
+  ;; As explained in compiler.d (make_lambda()), we use a symbol with
+  ;; name "FUNCTION-BOUNDARY" to mark the beginning of a function. If
+  ;; we find that symbol twice, it is quite likely that this form will
+  ;; end up in a closure.
   ;;
-  (flet ((function-boundary (s)
-	   (and (consp s)
-		(symbolp (setf s (first s)))
-		(null (symbol-package s))
-		(equal (symbol-name s) "FUNCTION"))))
-    (> (count-if #'function-boundary (car env)) 1)))
+  (let ((counter 0))
+    (declare (fixnum counter))
+    (dolist (item (car env))
+      (when (and (consp item)
+		 (eq (first (the cons item)) 'si::function-boundary)
+		 (> (incf counter) 1)) 
+	(return t)))))
 
-(defun walk-method-lambda (method-lambda required-parameters env)
+(defun walk-method-lambda (method-lambda env)
   (declare (si::c-local))
   (let ((call-next-method-p nil)
 	(next-method-p-p nil)
@@ -202,6 +275,12 @@
 	 (values name (nreverse qualifiers) (first args) (rest args)))
       (push (pop args) qualifiers))))
 
+(defun extract-lambda-list (specialized-lambda-list)
+  (values (parse-specialized-lambda-list specialized-lambda-list)))
+
+(defun extract-specializer-names (specialized-lambda-list)
+  (nth-value 2 (parse-specialized-lambda-list specialized-lambda-list)))
+
 (defun parse-specialized-lambda-list (specialized-lambda-list)
   "This function takes a method lambda list and outputs the list of required
 arguments, the list of specializers and a new lambda list where the specializer
@@ -239,12 +318,8 @@ have disappeared."
       ((atom specializer))
       ;; Specializer is (EQL value)
       ((and (eql (first specializer) 'EQL)
-	    (endp (cddr specializer)))
-       (let ((value (second specializer)))
-	 (setf specializer
-	       `(eql ,(if (constantp value)
-			  (eval value)
-			  (list 'si::unquote value))))))
+	    (cdr specializer)
+	    (endp (cddr specializer))))
       ;; Otherwise, syntax error
       (t
        (si::simple-program-error "Syntax error in method specializer ~A" arg)))
@@ -267,99 +342,93 @@ have disappeared."
 ;;; ----------------------------------------------------------------------
 ;;;                                                             operations
 
-(defun add-method-keywords (method)
+(defun compute-method-keywords (lambda-list)
   (multiple-value-bind (reqs opts rest key-flag keywords allow-other-keys)
-      (si::process-lambda-list (method-lambda-list method) t)
-    (setf (method-keywords method)
-          (if allow-other-keys
-              't
-              (loop for k in (rest keywords) by #'cddddr
-                 collect k)))
-    method))
+      (si::process-lambda-list lambda-list t)
+    (declare (ignore reqs opts rest key-flag))
+    (if allow-other-keys
+	't
+	(loop for k in (rest keywords) by #'cddddr
+	   collect k))))
 
-(defun make-method (method-class qualifiers specializers lambda-list
-				 fun plist options)
+(defun make-method (method-class qualifiers specializers lambda-list fun options)
   (declare (ignore options))
-  (let* ((instance-size (+ #.(length +standard-method-slots+)
-			   (if (eq method-class 'standard-method)
-			       0 2)))
-	 (method (si:allocate-raw-instance nil method-class instance-size)))
-    (setf (method-generic-function method) nil
-	  (method-lambda-list method) lambda-list
-	  (method-function method) fun
-	  (method-specializers method) specializers
-	  (method-qualifiers method) qualifiers
-	  (method-plist method) plist)
-    (add-method-keywords method)))
+  (with-early-make-instance
+      ;; We choose the largest list of slots
+      +standard-accessor-method-slots+
+    (method (if (si::instancep method-class)
+		method-class
+		(find-class method-class))
+	    :generic-function nil
+	    :lambda-list lambda-list
+	    :function fun
+	    :specializers specializers
+	    :qualifiers qualifiers
+	    :keywords (compute-method-keywords lambda-list))
+    method))
 
 ;;; early version used during bootstrap
 (defun method-p (x)
   (si::instancep x))
 
-(defun method-needs-next-methods-p (method)
-  (getf (method-plist method) :needs-next-methods-p))
-
 ;;; early version used during bootstrap
 (defun add-method (gf method)
-  (let* ((name (generic-function-name gf))
-	 (method-entry (assoc name *early-methods*)))
-    (unless method-entry
-      (setq method-entry (list name))
-      (push method-entry *early-methods*))
-    (push method (cdr method-entry))
-    (push method (generic-function-methods gf))
-    (setf (method-generic-function method) gf)
-    (unless (si::sl-boundp (generic-function-lambda-list gf))
-      (setf (generic-function-lambda-list gf) (method-lambda-list method))
-      (setf (generic-function-argument-precedence-order gf)
-	    (rest (si::process-lambda-list (method-lambda-list method) t))))
-    (compute-g-f-spec-list gf)
-    (dolist (d (generic-function-dependents gf))
-      (update-dependent gf d 'add-method method))
-    method))
+  (with-early-accessors (+standard-method-slots+ +standard-generic-function-slots+ +standard-class-slots+)
+    (let* ((name (slot-value gf 'name))
+	   (method-entry (assoc name *early-methods*)))
+      (unless method-entry
+	(setq method-entry (list name))
+	(push method-entry *early-methods*))
+      (push method (cdr method-entry))
+      (push method (generic-function-methods gf))
+      (setf (method-generic-function method) gf)
+      (unless (si::sl-boundp (generic-function-lambda-list gf))
+	(setf (generic-function-lambda-list gf) (method-lambda-list method))
+	(setf (generic-function-argument-precedence-order gf)
+	      (rest (si::process-lambda-list (method-lambda-list method) t))))
+      (compute-g-f-spec-list gf)
+      (set-generic-function-dispatch gf)
+      method)))
 
 (defun find-method (gf qualifiers specializers &optional (errorp t))
   (declare (notinline method-qualifiers))
-  (let* ((method-list (generic-function-methods gf))
-	 (required-args (subseq (generic-function-lambda-list gf) 0
-				(length specializers)))
-	 found)
-    (dolist (method method-list)
-      (when (and (equal qualifiers (method-qualifiers method))
-		 (equal specializers (method-specializers method)))
-	(return-from find-method method)))
+  (flet ((filter-specializer (name)
+	   (cond ((typep name 'specializer)
+		  name)
+		 ((atom name)
+		  (let ((class (find-class name nil)))
+		    (unless class
+		      (error "~A is not a valid specializer name" name))
+		    class))
+		 ((and (eq (first name) 'EQL)
+		       (null (cddr name)))
+		  (cdr name))
+		 (t
+		  (error "~A is not a valid specializer name" name))))
+	 (specializer= (cons-or-class specializer)
+	   (if (consp cons-or-class)
+	       (and (eql-specializer-flag specializer)
+		    (eql (car cons-or-class)
+			 (eql-specializer-object specializer)))
+	       (eq cons-or-class specializer))))
+    (when (/= (length specializers)
+	      (length (generic-function-argument-precedence-order gf)))
+      (error
+       "The specializers list~%~A~%does not match the number of required arguments in ~A"
+       specializers (generic-function-name gf)))
+    (loop with specializers = (mapcar #'filter-specializer specializers)
+       for method in (generic-function-methods gf)
+       when (and (equal qualifiers (method-qualifiers method))
+		 (every #'specializer= specializers (method-specializers method)))
+       do (return-from find-method method))
     ;; If we did not find any matching method, then the list of
     ;; specializers might have the wrong size and we must signal
     ;; an error.
-    (cond ((/= (length specializers)
-	       (length (generic-function-argument-precedence-order gf)))
-	   (error
-	    "The specializers list~%~A~%does not match the number of required arguments in ~A"
-	    specializers (generic-function-name gf)))
-	  (errorp
-	   (error "There is no method on the generic function ~S that agrees on qualifiers ~S and specializers ~S"
-		  (generic-function-name gf)
-		  qualifiers specializers)))
-    nil))
-
-
-;;; ----------------------------------------------------------------------
-;;;                                                             with-slots
-
-(defmacro with-slots (slot-entries instance-form &body body)
-  (let* ((temp (gensym))
-	 (accessors
-	  (do ((scan slot-entries (cdr scan))
-	       (res))
-	      ((null scan) (nreverse res))
-	      (if (symbolp (first scan))
-		  (push `(,(first scan) (slot-value ,temp ',(first scan))) res)
-		(push `(,(caar scan)
-			(slot-value ,temp ',(cadar scan))) res)))))
-    `(let ((,temp ,instance-form))
-       (symbol-macrolet ,accessors ,@body))))
-
-;(with-slots (x (y2 y)) inst (setq x y2))
+    (when errorp
+      (error "There is no method on the generic function ~S that agrees on qualifiers ~S and specializers ~S"
+	     (generic-function-name gf)
+	     qualifiers specializers)))
+  nil)
 
 ;;; ----------------------------------------------------------------------
 ;;;                                                         with-accessors

@@ -14,18 +14,12 @@
 
 (in-package "SYSTEM")
 
-(export '(*lisp-init-file-list*
-          *help-message*
-          +default-command-arg-rules+
-          command-args
-          process-command-args))
+(defparameter *command-break-enable* nil)
 
-(defvar *command-break-enable* nil)
-
-(defvar *lisp-init-file-list* '("~/.ecl" "~/.eclrc")
+(defparameter *lisp-init-file-list* '("~/.ecl" "~/.eclrc")
   "List of files automatically loaded when ECL is invoked.")
 
-(defvar *help-message* "
+(defparameter *help-message* "
 Usage: ecl [-? | --help]
            [-dir dir] [-load file] [-shell file] [-eval expr] [-rc | -norc] [-hp | -nohp]
            [--c-stack size] [--lisp-stack size] [--heap-size size] [--frame-stack size]
@@ -38,9 +32,18 @@ Usage: ecl [-? | --help]
  "Prints a help message about command line arguments of ECL")
 
 (defun command-args ()
-  "Returns the command line arguments as list"
+  "Returns the original command line arguments as list. First argument is
+the ECL program itself."
   (loop for i from 0 below (argc)
-	collect (argv i)))
+           collect (argv i)))
+
+(defparameter *command-args*
+  (command-args))
+
+(defparameter *unprocessed-ecl-command-args*
+  nil
+  "As part of ECL's command line rules, this variable stores all arguments which
+appeared after a '--'.")
 
 (defun command-arg-error (str &rest fmt-args)
   ;; Format an error message and quit
@@ -54,7 +57,6 @@ Usage: ecl [-? | --help]
     ("-?" 0 #0# :noloadrc)
     ("-h" 0 #0# :noloadrc)
     ("-norc" 0 nil :noloadrc)
-    ("--" 0 nil :stop)
     ("--version" 0
      (progn (setf quit 0)
             (format *standard-output* "ECL ~A~%" (lisp-implementation-version)))
@@ -62,7 +64,10 @@ Usage: ecl [-? | --help]
     ("-debug" 0 (setf *command-break-enable* t))
     ("-nodebug" 0 (setf *command-break-enable* nil))
     ("-eval" 1 (eval (read-from-string 1)))
-    ("-shell" 1 (progn (setq quit 0) (load 1 :verbose nil)))
+    ("-shell" 1 (progn (setq quit 0)
+		       (setq ext:*unprocessed-ecl-command-args* (rest 1))
+		       (load (first (rest 1)) :verbose nil))
+     :stop)
     ("-load" 1 (load 1 :verbose verbose))
     ("-dir" 1 (setf (logical-pathname-translations "SYS")
 	       `(("**;*.*" ,(merge-pathnames "**/*.*" (truename 1))))))
@@ -108,7 +113,8 @@ Usage: ecl [-? | --help]
     ("-q" 0 (setq verbose nil))
     ("-hp" 0 (setf *relative-package-names* t))
     ("-nohp" 0 (setf *relative-package-names* nil))
-    ("-s" 0 (setq system-p t))))
+    ("-s" 0 (setq system-p t))
+    ("--" 1 (setf ext:*unprocessed-ecl-command-args* (rest 1)) :stop)))
 
 (defun produce-init-code (option-list rules)
   (do* ((commands '())
@@ -133,14 +139,14 @@ Usage: ecl [-? | --help]
 	;; If there is a default rule, group all remaining arguments
 	;; including the unmatched one, and pass them to this rule.
 	(setf rule (assoc "*DEFAULT*" rules :test #'string=)
-	      option-list `('(,option ,@option-list))
 	      stop t)
 	(unless rule
 	  (command-arg-error "Unknown command line option ~A.~%" option)))
       (case (fourth rule)
         (:noloadrc (setf loadrc nil))
         (:loadrc (setf loadrc t))
-        (:stop (setf option-list nil)))
+        (:stop (setf option-list `('(,option ,@option-list))
+                     stop t)))
       (let ((pattern (copy-tree (third rule)))
             (noptions (second rule)))
         (unless (equal noptions 0)
@@ -155,7 +161,7 @@ Usage: ecl [-? | --help]
         (push pattern commands)))))
 
 (defun process-command-args (&key
-			     (args (rest (command-args)))
+			     (args (rest *command-args*))
 			     (rules +default-command-arg-rules+))
 "PROCESS-COMMAND-ARGS takes a list of arguments and processes according
 to a set of rules. These rules are of the format
@@ -179,8 +185,9 @@ An excerpt of the rules used by ECL:
   (\"--\" 0 nil :stop)
   (\"-eval\" 1 (eval (read-from-string 1))))
 "
-  (multiple-value-bind (commands loadrc)
+  (multiple-value-bind (commands loadrc unprocessed-options)
       (produce-init-code args rules)
+    (declare (ignore unprocessed-options))
     (restart-case
         (handler-bind ((error
                         #'(lambda (c)
@@ -195,7 +202,7 @@ An excerpt of the rules used by ECL:
             (when loadrc
               (dolist (file *lisp-init-file-list*)
                 (when (load file :if-does-not-exist nil :search-list nil :verbose nil)
-	      (return))))
+                  (return))))
             (eval commands)))
       (continue ()
         :report "Ignore initialization errors and continue.")

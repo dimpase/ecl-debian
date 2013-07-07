@@ -27,7 +27,7 @@ else
   if test "$GCC" = yes; then
     ac_cv_c_long_long=yes
   else
-    AC_TRY_COMPILE(,[long long int i;],
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,[[long long int i;]])],
     ac_cv_c_long_long=yes,
     ac_cv_c_long_long=no)
   fi
@@ -167,12 +167,12 @@ EOF
   if test "${ECL_TO_RUN}" = "failed"; then
     AC_MSG_ERROR(The program ECL is not installed in your system)
   fi
-  ECL_MIN_TO_RUN=`${ECL_TO_RUN} -eval '(progn (print (truename "sys:ecl_min")) (si:quit))' \
+  ECL_MIN_TO_RUN=`${ECL_TO_RUN} -norc -eval '(progn (print (truename "sys:ecl_min")) (si:quit))' \
 	| grep '\#\P' | sed 's,#P"\(.*\)",\1,'`
   if test -z "${ECL_MIN_TO_RUN}" -o "${ECL_MIN_TO_RUN}" = "failed"  ; then
     AC_MSG_ERROR(The program ECL-MIN is not installed in your system)
   fi
-  DPP_TO_RUN=`${ECL_TO_RUN} -eval '(progn (print (truename "sys:dpp")) (si:quit))' \
+  DPP_TO_RUN=`${ECL_TO_RUN} -norc -eval '(progn (print (truename "sys:dpp")) (si:quit))' \
 	| grep '\#\P' | sed 's,#P"\(.*\)",\1,'`
   if test -z "${DPP_TO_RUN}" -o "${DPP_TO_RUN}" = "failed"  ; then
     AC_MSG_ERROR(The program DPP is not installed in your system)
@@ -236,6 +236,8 @@ AC_SUBST(OBJEXT)dnl	These are set by autoconf
 AC_SUBST(EXEEXT)
 AC_SUBST(INSTALL_TARGET)dnl Which type of installation: flat directory or unix like.
 AC_SUBST(thehost)
+AC_SUBST(ECL_GC_DIR)dnl Which version of the Boehm-Weiser library to use
+ECL_GC_DIR=gc-unstable
 ECL_LDRPATH=''
 SHAREDEXT='so'
 SHAREDPREFIX='lib'
@@ -246,7 +248,7 @@ THREAD_CFLAGS=''
 THREAD_LIBS=''
 THREAD_GC_FLAGS='--enable-threads=posix'
 INSTALL_TARGET='install'
-THREAD_OBJ="$THREAD_OBJ threads/process threads/mutex threads/condition_variable"
+THREAD_OBJ="$THREAD_OBJ threads/process threads/queue threads/mutex threads/condition_variable threads/semaphore threads/barrier threads/mailbox"
 clibs=''
 SONAME=''
 SONAME_LDFLAGS=''
@@ -286,6 +288,16 @@ case "${host_os}" in
 		ECL_LDRPATH='-Wl,--rpath,~A'
 		clibs="-ldl"
 		CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
+		;;
+	dragonfly*)
+		thehost='dragonfly'
+		THREAD_LIBS='-lpthread'
+		SHARED_LDFLAGS="-shared ${LDFLAGS}"
+		BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
+		ECL_LDRPATH="-Wl,--rpath,~A"
+		clibs=""
 		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
 		SONAME_LDFLAGS="-Wl,-soname,SONAME"
 		;;
@@ -337,6 +349,7 @@ case "${host_os}" in
                 fi
 		;;
 	cygwin*)
+		enable_threads='no'
 		thehost='cygwin'
 		shared='yes'
 		THREAD_CFLAGS='-D_THREAD_SAFE'
@@ -391,7 +404,10 @@ case "${host_os}" in
                 fi
                 # The Boehm-Weiser GC library shipped with Fink does not work
                 # well with our signal handler.
-                enable_boehm=included
+		# enable_boehm=included
+                if test `uname -r | cut -d '.' -f 1` -ge 11; then
+                  ECL_GC_DIR=gc-unstable
+                fi
 		SONAME="${SHAREDPREFIX}ecl.SOVERSION.${SHAREDEXT}"
 		SONAME_LDFLAGS="-Wl,-install_name,@libdir\@/SONAME -Wl,-compatibility_version,${PACKAGE_VERSION}"
 		;;
@@ -446,23 +462,20 @@ AC_SUBST(ECL_FILE_CNT)
 if test -z "${ECL_FILE_CNT}"; then
 ECL_FILE_CNT=0
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>]], [[
-int main() {
   FILE *f = fopen("conftestval","w");
   if ((f)->_IO_read_end - (f)->_IO_read_ptr)
     return 1;
-}]])],[ECL_FILE_CNT=1],[])
+]])],[ECL_FILE_CNT=1],[])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>]], [[
-int main() {
   FILE *f = fopen("conftestval","w");
   if ((f)->_r)
     return 1;
-}]])],[ECL_FILE_CNT=2],[])
+]])],[ECL_FILE_CNT=2],[])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>]], [[
-int main() {
   FILE *f = fopen("conftestval","w");
   if ((f)->_cnt)
     return 1;
-}]])],[ECL_FILE_CNT=3],[])
+]])],[ECL_FILE_CNT=3],[])
 fi
 ])
 
@@ -499,10 +512,6 @@ ECL_CHECK_SIZED_INTEGER_TYPE(16)
 ECL_CHECK_SIZED_INTEGER_TYPE(32)
 ECL_CHECK_SIZED_INTEGER_TYPE(64)
 
-if test "${ECL_UINT16_T}${CL_FIXNUM_BITS}" = "16"; then
-  ECL_UINT16_T="cl_index"
-  ECL_INT16_T="cl_fixnum"
-fi
 if test "${ECL_UINT32_T}${CL_FIXNUM_BITS}" = "32"; then
   ECL_UINT32_T="cl_index"
   ECL_INT32_T="cl_fixnum"
@@ -510,6 +519,10 @@ fi
 if test "${ECL_UINT64_T}${CL_FIXNUM_BITS}" = "64"; then
   ECL_UINT64_T="cl_index"
   ECL_INT64_T="cl_fixnum"
+fi
+if test "${ECL_UINT16_T}${CL_FIXNUM_BITS}" = "16"; then
+  ECL_UINT16_T=$ECL_UINT32_T
+  ECL_INT16_T=$ECL_INT32_T
 fi
 
 if test "x${ECL_UINT8_T}" = "x" -o "x${ECL_UINT8_T}" = xno; then
@@ -525,18 +538,28 @@ AC_DEFUN(ECL_STACK_DIRECTION,[
   AC_MSG_CHECKING(whether stack growns downwards)
 if test -z "${ECL_STACK_DIR}" ; then
   AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#include <stdlib.h>
+
 char *f2() {
-  char c;
-  return &c;
+  char c[2];
+  return c;
 }
 
-int f1() {
-  char d;
-  return f2() - &d;
+char *f1() {
+  char c[2];
+  return c+1;
+}
+
+typedef char *(*f_ptr)();
+f_ptr f[2] = { f1, f2 };
+
+int signo() {
+  char d[1];
+  return f[rand() & 1]() - d;
 }
 
 int main() {
-  if (f1() > 0)
+  if (signo() > 0)
     return 1;
   else
     return 0;
@@ -600,12 +623,12 @@ int main() {
     for (bits=1; ((t << 1) >> 1) == t; bits++, t <<= 1);
     l = (~l) << (bits - 3);
 #if 1
-    fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
-    fprintf(f,"CL_FIXNUM_MAX='%ld';",-(l+1));
+    fprintf(f,"CL_FIXNUM_MIN='%ldL';",l);
+    fprintf(f,"CL_FIXNUM_MAX='%ldL';",-(l+1));
 #else
     l++;
-    fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
-    fprintf(f,"CL_FIXNUM_MAX='%ld';",-l);
+    fprintf(f,"CL_FIXNUM_MIN='%ldL';",l);
+    fprintf(f,"CL_FIXNUM_MAX='%ldL';",-l);
 #endif
 #ifdef ECL_LONG_LONG_BITS
   } else if (sizeof(long long) >= sizeof(void*)) {
@@ -615,12 +638,12 @@ int main() {
     for (bits=1; ((t << 1) >> 1) == t; bits++, t <<= 1);
     l = (~l) << (bits - 3);
 # if 1
-    fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
-    fprintf(f,"CL_FIXNUM_MAX='%ld';",-(l+1));
+    fprintf(f,"CL_FIXNUM_MIN='%lldLL';",l);
+    fprintf(f,"CL_FIXNUM_MAX='%lldLL';",-(l+1));
 # else
     l++;
-    fprintf(f,"CL_FIXNUM_MIN='%ld';",l);
-    fprintf(f,"CL_FIXNUM_MAX='%ld';",-l);
+    fprintf(f,"CL_FIXNUM_MIN='%lldLL';",l);
+    fprintf(f,"CL_FIXNUM_MAX='%lldLL';",-l);
 # endif
 #endif
   } else {
@@ -732,36 +755,12 @@ AC_MSG_CHECKING([Linker flags])
 AC_MSG_RESULT([${LDFLAGS}])
 ])
 
-dnl
-dnl ------------------------------------------------------------
-dnl Do we have a non-portable implementation of calls to foreign
-dnl functions?
-dnl
-AC_DEFUN([ECL_FFI],[
-AC_SUBST(ECL_LIBFFI_HEADER)
-AC_CHECK_LIB( ffi, ffi_call, [has_ffi_lib=yes], [has_ffi_lib=no] )
-if test $has_ffi_lib = "yes"; then
-  AC_CHECK_HEADER( [ffi/ffi.h], [ECL_LIBFFI_HEADER='ffi/ffi.h'], [], [] )
-  if test -z "$ECL_LIBFFI_HEADER"; then
-    AC_CHECK_HEADER( [ffi.h], [ECL_LIBFFI_HEADER='ffi.h'], [], [] )
-  fi
-  if test -z "$ECL_LIBFFI_HEADER"; then
-    AC_MSG_WARN([unable to find header file ffi.h; disabling dynamic FFI])
-  else
-    AC_DEFINE(HAVE_LIBFFI)
-    CORE_LIBS="-lffi $CORE_LIBS"
-  fi
-else
-  AC_MSG_WARN([libffi is not installed; disabling dynamic FFI])
-fi
-])
-
 dnl --------------------------------------------------------------
 dnl Provides a test for the existance of the __thread declaration and
 dnl defines WITH___THREAD if it is found
 AC_DEFUN([ECL___THREAD],[
 AC_CACHE_CHECK(for __thread local data, ac_cv_ecl___thread,
-AC_TRY_COMPILE(,[static __thread void *data;],
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,[[static __thread void *data;]])],
    ac_cv_ecl___thread=yes,
    ac_cv_ecl___thread=no))
 dnl We deactivate this test because it seems to slow down ECL A LOT!!!
@@ -771,6 +770,7 @@ dnl --------------------------------------------------------------
 dnl Determine whether GCC supports backtraces
 dnl
 AC_DEFUN([ECL_GCC_BACKTRACE],[
+if test "x${cross_compiling}" != "xyes"; then
 AC_RUN_IFELSE(
   [AC_LANG_SOURCE([[
     void *foo() { return __builtin_return_address(1); }
@@ -779,6 +779,7 @@ AC_RUN_IFELSE(
     }]])],
   [AC_DEFINE(HAVE___BUILTIN_RETURN_ADDRESS)],
   [])
+fi
 ])
 
 dnl ----------------------------------------------------------------------
@@ -810,19 +811,19 @@ dnl
 AC_DEFUN([ECL_SSE],[
 if test "x$with_sse" = xyes; then
  AC_MSG_CHECKING([for SSE intrinsics])
- AC_TRY_LINK([
+ AC_LINK_IFELSE([AC_LANG_PROGRAM([[
 #include <xmmintrin.h>
 #include <emmintrin.h>
-],[__m128 value;
-_mm_getcsr();],[sse_included=yes],[sse_included=no])
+]],[[__m128 value;
+_mm_getcsr();]])],[sse_included=yes],[sse_included=no])
  if test "$sse_included" = "no"; then
   OLD_CFLAGS="$CFLAGS"
   CFLAGS="$CFLAGS -msse2"
-  AC_TRY_LINK([
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
 #include <xmmintrin.h>
 #include <emmintrin.h>
-],[__m128 value;
-_mm_getcsr();],[sse_included=yes],[sse_included=no])
+]],[[__m128 value;
+_mm_getcsr();]])],[sse_included=yes],[sse_included=no])
   if test "$sse_included" = "no"; then
    CFLAGS="$OLD_CFLAGS"
    with_sse=no
@@ -834,29 +835,6 @@ _mm_getcsr();],[sse_included=yes],[sse_included=no])
  else
   AC_MSG_RESULT([no])
  fi
-fi
-])
-
-dnl ----------------------------------------------------------------------
-dnl Check whether we have unnamed POSIX semaphores available
-AC_DEFUN([ECL_POSIX_SEMAPHORES],[
-AC_MSG_CHECKING(working sem_init())
-if test -z "$ECL_WORKING_SEM_INIT"; then
-  AC_RUN_IFELSE([AC_LANG_SOURCE([[
-#include <semaphore.h>
-int main() {
-  sem_t aux;
-  if (sem_init(&aux, 0, 0))
-    exit(1);
-  exit(0);
-}]])],[ECL_WORKING_SEM_INIT=yes],[ECL_WORKING_SEM_INIT=no],[])
-fi
-AC_MSG_RESULT([$ECL_WORKING_SEM_INIT])
-if test $ECL_WORKING_SEM_INIT = yes ; then
-  AC_DEFINE(ECL_SEMAPHORES)
-  AC_DEFINE(HAVE_SEM_INIT)
-  THREAD_OBJ="$THREAD_OBJ threads/semaphore"
-  echo $THREAD_OBJ
 fi
 ])
 
@@ -895,18 +873,43 @@ dnl ----------------------------------------------------------------------
 dnl Configure libatomic-ops
 dnl
 AC_DEFUN([ECL_LIBATOMIC_OPS],[
+case "${enable_libatomic}" in
+  auto|system|included) ;;
+  *) AC_MSG_ERROR( [Invalid value of --enable-libatomic: ${enable_libatomic}] );;
+esac
 if test "x${enable_threads}" != "xno"; then
-  test -d atomic || mkdir atomic
-  (destdir=`${PWDCMD}`; cd atomic && CC="${CC} ${PICFLAG}" \
-   $srcdir/gc/libatomic*/configure --disable-shared --prefix=${destdir} \
+  AC_CHECK_HEADER([atomic_ops.h],[system_libatomic=yes],[system_libatomic=no],[])
+  AC_MSG_CHECKING( [libatomic-ops version] )
+  if test "${enable_libatomic}" = auto; then
+    if test "${system_libatomic}" = yes; then
+      enable_libatomic=system
+    else
+      enable_libatomic=included
+    fi
+  fi
+  if test "${enable_libatomic}" = system; then
+    if test "${system_libatomic}" = no; then
+      AC_MSG_ERROR( [Cannot find libatomic-ops in the system] )
+      enable_libatomic=included
+    fi
+  fi
+  AC_MSG_RESULT( [${enable_libatomic}] )
+  if test "${enable_libatomic}" = included; then
+    test -d atomic || mkdir atomic
+    (destdir=`${PWDCMD}`; cd atomic && CC="${CC} ${PICFLAG}" \
+     $srcdir/${ECL_GC_DIR}/libatomic*/configure --disable-shared --prefix=${destdir} \
 	--infodir=${destdir}/doc --includedir=${destdir}/ecl --with-pic \
         --libdir=${destdir} --build=${build_alias} --host=${host_alias} \
         CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" CC="${CC} \
         ${PICFLAG}")
-  SUBDIRS="${SUBDIRS} atomic"
-  CORE_LIBS="-leclatomic ${CORE_LIBS}"
-  if test "${enable_shared}" = "no"; then
-    LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclatomic.${LIBEXT}"
+    SUBDIRS="${SUBDIRS} atomic"
+    if test "${enable_shared}" = "no"; then
+      LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclatomic.${LIBEXT}"
+    fi
+    AC_DEFINE(ECL_LIBATOMIC_OPS_H)
+    CORE_LIBS="-leclatomic ${CORE_LIBS}"
+  else
+    CORE_LIBS="-latomic_ops ${CORE_LIBS}"
   fi
 fi
 ])
@@ -916,33 +919,144 @@ dnl Configure included Boehm GC if needed
 AC_DEFUN([ECL_BOEHM_GC],[
 AC_SUBST(ECL_BOEHM_GC_HEADER)
 case "${enable_boehm}" in
-  included)
-    AC_MSG_NOTICE([Configuring included Boehm GC library:])
-    test -d gc && rm -rf gc
-    if mkdir gc; then
-     (destdir=`${PWDCMD}`; cd gc; \
-      $srcdir/gc/configure --disable-shared --prefix=${destdir} \
-	--includedir=${destdir}/ecl/ --libdir=${destdir} --build=${build_alias} \
-	--host=${host_alias} --enable-large-config \
-        CC="${CC} ${PICFLAG}" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" \
-        ${boehm_configure_flags})
-      ECL_BOEHM_GC_HEADER='ecl/gc/gc.h'
-    else
-      AC_MSG_ERROR([Unable to create 'gc' directory])
-    fi
-    ;;
-  system)
-    AC_CHECK_HEADER([gc.h],[ECL_BOEHM_GC_HEADER='gc.h'],[],[])
-    if test -z "$ECL_BOEHM_GC_HEADER"; then
-       AC_CHECK_HEADER([gc/gc.h],[ECL_BOEHM_GC_HEADER='gc/gc.h'],[],[])
-    fi
-    if test -z "$ECL_BOEHM_GC_HEADER"; then
-       AC_MSG_ERROR([Boehm-Weiser garbage collector's headers not found])
-    fi
-    ;;
-  no)
-    ECL_BOEHM_GC_HEADER='none';;
-  *)
-    AC_MSG_ERROR([Not a valid argument for --enable-boehm $enable_boehm]);;
+  yes) enable_boehm=auto;;
+  no|auto|system|included) ;;
+  *) AC_MSG_ERROR( [Invalid value of --enable-boehm: ${enable_boehm}] );;
 esac
+if test "${enable_boehm}" = auto -o "${enable_boehm}" = system; then
+ dnl
+ dnl Try first with the prebuilt versions, if installed and accessible
+ dnl
+ if test "${enable_threads}" = no; then
+   AC_CHECK_LIB( [gc], [GC_malloc],
+                 [system_boehm="yes"], [system_boehm="no"] )
+ else
+   AC_CHECK_LIB( [gc], [GC_register_my_thread],
+                 [system_boehm="yes"], [system_boehm="no"] )
+ fi
+ if test "${system_boehm}" = yes; then
+   AC_CHECK_HEADER([gc.h],[ECL_BOEHM_GC_HEADER='gc.h'],[],[])
+   if test -z "$ECL_BOEHM_GC_HEADER"; then
+     AC_CHECK_HEADER([gc/gc.h],[ECL_BOEHM_GC_HEADER='gc/gc.h'],[system_boehm=no],[])
+   fi
+ fi
+ AC_MSG_CHECKING( [whether we can use the existing Boehm-Weiser library] )
+ AC_MSG_RESULT( [${system_boehm}] )
+ if test "${system_boehm}" = "no"; then
+   if test "${enable_boehm}" = "auto"; then
+     enable_boehm="included";
+   else
+     AC_MSG_ERROR([System Boehm GC library requested but not found.])
+   fi
+ else
+   FASL_LIBS="${FASL_LIBS} -lgc"
+   EXTRA_OBJS="${EXTRA_OBJS} alloc_2.${OBJEXT}"
+   AC_DEFINE(GBC_BOEHM, [1], [Use Boehm's garbage collector])
+ fi
+fi
+if test "${enable_boehm}" = "included"; then
+ dnl
+ dnl Try here with the version shipped with ECL. Note that we have to use
+ dnl the same compiler flags and that we will not export this library: it
+ dnl is installed in the build directory.
+ dnl
+ AC_MSG_NOTICE([Configuring included Boehm GC library:])
+ test -d gc && rm -rf gc
+ if mkdir gc; then
+   if (destdir=`${PWDCMD}`; cd gc; \
+       $srcdir/${ECL_GC_DIR}/configure --disable-shared --prefix=${destdir} \
+	 --includedir=${destdir}/ecl/ --libdir=${destdir} --build=${build_alias} \
+	 --host=${host_alias} --enable-large-config \
+         CC="${CC} ${PICFLAG}" CFLAGS="$CFLAGS" \
+	 LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" \
+         ${boehm_configure_flags}); then
+     ECL_BOEHM_GC_HEADER='ecl/gc/gc.h'
+     SUBDIRS="${SUBDIRS} gc"
+     CORE_LIBS="-leclgc ${CORE_LIBS}"
+     EXTRA_OBJS="${EXTRA_OBJS} alloc_2.${OBJEXT}"
+     if test "${enable_shared}" = "no"; then
+       LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclgc.${LIBEXT}"
+     fi
+     AC_DEFINE(GBC_BOEHM, [0], [Use Boehm's garbage collector])
+   fi
+ fi
+ if test -z "${ECL_BOEHM_GC_HEADER}"; then
+   AC_MSG_ERROR([Unable to configure Boehm-Weiser GC])
+ fi
+fi
+if test "${enable_gengc}" != "no" ; then
+  AC_DEFINE(GBC_BOEHM_GENGC)
+fi
+AC_MSG_CHECKING([if we use Boehm-Demers-Weiser precise garbage collector]);
+if test "${enable_precisegc}" != "no" ; then
+  AC_DEFINE(GBC_BOEHM_PRECISE)
+  AC_MSG_RESULT([yes])
+else
+  AC_MSG_RESULT([no])
+fi
 ])
+
+dnl ----------------------------------------------------------------------
+dnl Configure included Boehm GC if needed
+AC_DEFUN([ECL_LIBFFI],[
+AC_SUBST(ECL_LIBFFI_HEADER)
+case "${enable_libffi}" in
+  yes) enable_libffi=auto;;
+  no|auto|system|included) ;;
+  *) AC_MSG_ERROR( [Invalid value of --enable-dffi: ${enable_libffi}] );;
+esac
+if test "${enable_libffi}" = auto -o "${enable_libffi}" = system; then
+ dnl
+ dnl Try first with the prebuilt versions, if installed and accessible
+ dnl
+ AC_CHECK_LIB( ffi, ffi_closure_alloc, [system_libffi=yes], [system_libffi=no] )
+ if test "${system_libffi}" = yes; then
+   AC_CHECK_HEADER([ffi/ffi.h],[ECL_LIBFFI_HEADER='ffi/ffi.h'],[],[])
+   if test -z "$ECL_LIBFFI_HEADER"; then
+     AC_CHECK_HEADER([ffi.h],[ECL_LIBFFI_HEADER='ffi.h'],[system_libffi=no],[])
+   fi
+ fi
+ AC_MSG_CHECKING( [whether we can use the existing libffi library] )
+ AC_MSG_RESULT( [${system_libffi}] )
+ if test "${system_libffi}" = "no"; then
+   if test "${enable_libffi}" = "auto"; then
+     enable_libffi="included";
+   else
+     AC_MSG_ERROR([System libffi library requested but not found.])
+   fi
+ else
+   FASL_LIBS="${FASL_LIBS} -lffi"
+ fi
+fi
+if test "${enable_libffi}" = "included"; then
+ dnl
+ dnl Try here with the version shipped with ECL. Note that we have to use
+ dnl the same compiler flags and that we will not export this library: it
+ dnl is installed in the build directory.
+ dnl
+ AC_MSG_NOTICE([Configuring included libffi library:])
+ test -d libffi && rm -rf libffi
+ if mkdir libffi; then
+   if (destdir=`${PWDCMD}`; cd libffi; \
+       $srcdir/libffi/configure --disable-shared --prefix=${destdir} \
+	 --includedir=${destdir}/ecl/ --libdir=${destdir} --build=${build_alias} \
+	 --host=${host_alias} \
+         CC="${CC} ${PICFLAG}" CFLAGS="$CFLAGS" \
+	 LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS"); then
+     ECL_LIBFFI_HEADER='ecl/ffi.h'
+     SUBDIRS="${SUBDIRS} libffi"
+     CORE_LIBS="-leclffi ${CORE_LIBS}"
+     EXTRA_OBJS="${EXTRA_OBJS} alloc_2.${OBJEXT}"
+     if test "${enable_shared}" = "no"; then
+       LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclffi.${LIBEXT}"
+     fi
+   fi
+ fi
+fi
+if test -z "${ECL_LIBFFI_HEADER}"; then
+  AC_MSG_WARN([Unable to configure or find libffi library; disabling dynamic FFI])
+else
+  AC_DEFINE(HAVE_LIBFFI)
+fi
+])
+

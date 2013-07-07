@@ -30,7 +30,7 @@ cl_abs(cl_object x)
 static cl_object
 ecl_abs_fixnum(cl_object x)
 {
-        return ecl_fixnum_minusp(x)? ecl_make_integer(-fix(x)) : x;
+        return ecl_fixnum_minusp(x)? ecl_make_integer(-ecl_fixnum(x)) : x;
 }
 
 static cl_object
@@ -49,15 +49,15 @@ ecl_abs_rational(cl_object x)
 static cl_object
 ecl_abs_single_float(cl_object x)
 {
-	float f = sf(x);
-        return (f < 0)? ecl_make_singlefloat(-f) : x;
+	float f = ecl_single_float(x);
+        return (f < 0)? ecl_make_single_float(-f) : x;
 }
 
 static cl_object
 ecl_abs_double_float(cl_object x)
 {
-	double f = df(x);
-        return (f < 0)? ecl_make_doublefloat(-f) : x;
+	double f = ecl_double_float(x);
+        return (f < 0)? ecl_make_double_float(-f) : x;
 }
 
 #ifdef ECL_LONG_FLOAT
@@ -65,7 +65,7 @@ static cl_object
 ecl_abs_long_float(cl_object x)
 {
 	long double f = ecl_long_float(x);
-        return (f < 0)? ecl_make_longfloat(-f) : x;
+        return (f < 0)? ecl_make_long_float(-f) : x;
 }
 #endif
 
@@ -88,7 +88,7 @@ ecl_abs_complex(cl_object x)
                         i = r; r = aux;
                 }
                 r = ecl_divide(r, i);
-                r = ecl_plus(MAKE_FIXNUM(1), ecl_times(r, r));
+                r = ecl_plus(ecl_make_fixnum(1), ecl_times(r, r));
                 return ecl_times(cl_sqrt(r), i);
         }
 }

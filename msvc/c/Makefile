@@ -14,22 +14,28 @@ ECL_FPE_CODE=fpe_x86.c
 
 !if "$(ECL_THREADS)" != ""
 ECL_THREADS_FLAG=1
-THREADS_OBJ= process.obj mutex.obj condition_variable.obj rwlock.obj
+THREADS_OBJ= process.obj mutex.obj condition_variable.obj rwlock.obj \
+             semaphore.obj barrier.obj mailbox.obj atomic.obj queue.obj
 !else
 ECL_THREADS_FLAG=0
 THREADS_OBJ=
 !endif
 
 !if "$(ECL_UNICODE)" != ""
-ECL_UNICODE_FLAG=1
+ECL_UNICODE_FLAG=21
+ECL_UCD_OBJ = ucd.obj ucd-0000.obj ucd-0016.obj \
+	      ucd-0032.obj ucd-0048.obj ucd-0064.obj \
+	      ucd-0080.obj ucd-0096.obj
 !else
 ECL_UNICODE_FLAG=0
 !endif
 
 !if "$(ECL_SSE)" != ""
 ECL_SSE_FLAG=1
+ECL_SSE_OBJ=sse2.obj
 !else
 ECL_SSE_FLAG=0
+ECL_SSE_OBJ=
 !endif
 
 # Programs used by "make":
@@ -59,14 +65,16 @@ libdir=$(prefix)\lib\ecl
 HDIR	= $(top_srcdir)\h
 HFILES	= ..\ecl\config.h ..\ecl\atomic_ops.h $(HDIR)\ecl.h $(HDIR)\ecl-cmp.h\
 	$(HDIR)\object.h $(HDIR)\cs.h $(HDIR)\stacks.h\
-	$(HDIR)\external.h $(HDIR)\eval.h\
+	$(HDIR)\external.h $(HDIR)\cons.h $(HDIR)\legacy.h\
 	$(HDIR)\number.h $(HDIR)\page.h $(HDIR)\unify.h\
 	$(HDIR)\internal.h $(HDIR)\ecl-inl.h $(HDIR)\bytecodes.h \
 	$(HDIR)\impl\math_dispatch.h
 
-OBJS	= main.obj symbol.obj package.obj list.obj\
-	apply.obj eval.obj interpreter.obj compiler.obj disassembler.obj \
-	instance.obj gfun.obj reference.obj character.obj\
+OBJS	= main.obj symbol.obj package.obj cons.obj list.obj\
+	apply.obj eval.obj \
+	interpreter.obj compiler.obj disassembler.obj \
+	instance.obj gfun.obj cache.obj accessor.obj \
+	reference.obj character.obj\
 	file.obj read.obj print.obj error.obj string.obj cfun.obj\
 	parse_integer.obj parse_number.obj \
 	float_to_digits.obj float_to_string.obj \
@@ -74,7 +82,7 @@ OBJS	= main.obj symbol.obj package.obj list.obj\
 	write_object.obj write_symbol.obj \
 	write_array.obj write_list.obj write_code.obj \
 	write_sse.obj print_unreadable.obj \
-	libraries.obj backtrace.obj \
+	libraries.obj backtrace.obj mmap.obj cdata.obj \
 	cos.obj sin.obj tan.obj atan.obj \
 	cosh.obj sinh.obj tanh.obj \
 	exp.obj expt.obj log.obj \
@@ -87,13 +95,14 @@ OBJS	= main.obj symbol.obj package.obj list.obj\
 	typespec.obj assignment.obj \
 	predicate.obj big.obj number.obj\
 	num_pred.obj num_arith.obj num_co.obj\
-	num_log.obj num_rand.obj array.obj sequence.obj cmpaux.obj\
+	num_log.obj num_rand.obj array.obj vector_push.obj \
+	sequence.obj cmpaux.obj\
 	macros.obj backq.obj stacks.obj \
 	time.obj unixint.obj\
 	mapfun.obj multival.obj hash.obj format.obj pathname.obj\
 	structure.obj load.obj unixfsys.obj unixsys.obj \
 	ffi.obj alloc_2.obj tcp.obj $(THREADS_OBJ) serialize.obj \
-	$(ECL_FFI_OBJ)
+	$(ECL_FFI_OBJ) $(ECL_UCD_OBJ) $(ECL_SSE_OBJ) mmap.obj cdata.obj
 
 all:	$(DPP) ..\eclmin.lib ..\cinit.obj
 
@@ -103,11 +112,15 @@ all:	$(DPP) ..\eclmin.lib ..\cinit.obj
 	$(DPP) $< $@
 {$(srcdir:\=/)/arch}.d{}.c:
 	$(DPP) $< $@
+{$(srcdir:\=/)/clos/}.d{}.c:
+	$(DPP) $< $@
 {$(srcdir:\=/)/reader}.d{}.c:
 	$(DPP) $< $@
 {$(srcdir:\=/)/printer}.d{}.c:
 	$(DPP) $< $@
 {$(srcdir:\=/)/ffi}.d{}.c:
+	$(DPP) $< $@
+{$(srcdir:\=/)/unicode}.c{}.c:
 	$(DPP) $< $@
 {$(srcdir:\=/)/numbers}.d{}.c:
 	$(DPP) $< $@

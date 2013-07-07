@@ -18,10 +18,10 @@
 
 (in-package #-ecl-new "COMPILER" #+ecl-new "C-ENV")
 
-(defun proper-list-p (x &optional test)
-  (and (listp x)
-       (handler-case (list-length x) (type-error (c) nil))
-       (or (null test) (every test x))))
+(defun valid-form-p (x &optional test)
+  (and (si::proper-list-p x)
+       (or (null test)
+           (every test x))))
 
 (defun type-name-p (name)
   (or (get-sysprop name 'SI::DEFTYPE-DEFINITION)
@@ -54,8 +54,8 @@
 
 (defun collect-declared (type var-list tail)
   (declare (si::c-local))
-  (cmpassert (proper-list-p var-list #'symbolp)
-             "Syntax error in declaration ~s" decl)
+  (cmpassert (valid-form-p var-list #'symbolp)
+             "Syntax error in declaration ~s" `(TYPE ,type ,var-list))
   (loop for var-name in var-list
      do (push (cons var-name type) tail))
   tail)
@@ -71,27 +71,27 @@ and a possible documentation string (only accepted when DOC-P is true)."
        for decl in all-declarations
        for decl-name = (first decl)
        for decl-args = (rest decl)
-       do (cmpassert (and (proper-list-p decl-args) (symbolp decl-name))
+       do (cmpassert (and (valid-form-p decl-args) (symbolp decl-name))
                      "Syntax error in declaration ~s" decl)
        do (case decl-name
             (SPECIAL)
             (IGNORE
-             (cmpassert (proper-list-p decl-args)
+             (cmpassert (valid-form-p decl-args)
                         "Syntax error in declaration ~s" decl)
              (setf ignored (parse-ignore-declaration decl-args -1 ignored)))
             (IGNORABLE
-             (cmpassert (proper-list-p decl-args)
+             (cmpassert (valid-form-p decl-args)
                         "Syntax error in declaration ~s" decl)
              (setf ignored (parse-ignore-declaration decl-args 0 ignored)))
             (TYPE
              (cmpassert (and (consp decl-args)
-                             (proper-list-p (rest decl-args) #'symbolp))
+                             (valid-form-p (rest decl-args) #'symbolp))
                         "Syntax error in declaration ~s" decl)
              (setf types (collect-declared (first decl-args)
                                            (rest decl-args)
                                            types)))
             (OBJECT
-             (cmpassert (proper-list-p decl-args #'symbolp)
+             (cmpassert (valid-form-p decl-args #'symbolp)
                         "Syntax error in declaration ~s" decl)
              (setf types (collect-declared 'OBJECT decl-args types)))
             ((OPTIMIZE FTYPE INLINE NOTINLINE DECLARATION SI::C-LOCAL
@@ -132,15 +132,16 @@ special variable declarations, as these have been extracted before."
              (si::normalize-type (second decl))
            (if (eq type-name 'FUNCTION)
                (dolist (v (cddr decl))
-                 (setf env (add-function-declaration v (first args)
-                                                     (rest args) env)))
+                 (setf env (add-function-declaration v args env)))
                (cmpwarn "In an FTYPE declaration, found ~A which is not a function type."
                         (second decl)))))
      env)
     (INLINE
-      (declare-inline (rest decl) env))
+      (loop for name in (rest decl) do (setf env (declare-inline name env)))
+      env)
     (NOTINLINE
-     (declare-notinline (rest decl) env))
+      (loop for name in (rest decl) do (setf env (declare-notinline name env)))
+      env)
     (DECLARATION
      (validate-alien-declaration (rest decl) #'cmperr)
      (cmp-env-extend-declaration 'alien (rest decl) env))
@@ -158,21 +159,23 @@ special variable declarations, as these have been extracted before."
             env)))))
 
 (defun symbol-macro-declaration-p (name type)
-  (let* ((record (cmp-env-search-variables name 'si::symbol-macro *cmp-env*)))
+  (let* ((record (cmp-env-search-symbol-macro name)))
     (when (and record (functionp record))
       (let* ((expression (funcall record name nil)))
         (cmp-env-register-symbol-macro name `(the ,type ,expression)))
       t)))
 
 (defun check-vdecl (vnames ts is)
-  (loop for (var . type) in ts
-     unless (or (member var vnames :test #'eq)
-                (symbol-macro-declaration-p var type))
+  (loop for (name . type) in ts
+     unless (or (member name vnames :test #'eq)
+                (symbol-macro-declaration-p name type))
      do (cmpwarn "Declaration of type~&~4T~A~&was found for not bound variable ~s."
-                 type var))
-  (loop for (var . expected-uses) in is
-     unless (member var vnames :test #'eq)
+                 type name))
+  (loop for (name . expected-uses) in is
+     unless (or (member name vnames :test #'eq)
+                (cmp-env-search-symbol-macro name)
+                (cmp-env-search-macro name))
      do (cmpwarn (if (minusp expected-uses)
                      "IGNORE declaration was found for not bound variable ~s."
                      "IGNORABLE declaration was found for not bound variable ~s.")
-                 var)))
+                 name)))

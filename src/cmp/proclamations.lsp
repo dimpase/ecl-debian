@@ -158,7 +158,7 @@
   'unsigned-byte)
 (deftype time-zone ()
   t)
-(deftype si::instance ()
+(deftype ext:instance ()
   'standard-object)
 
 
@@ -188,6 +188,8 @@
 
 ;; ECL extensions:
 (proclamation si:specialp (symbol) gen-bool :predicate)
+(proclamation si::do-defsetf (symbol (or symbol function)) t)
+(proclamation si::do-define-setf-method (symbol function) t)
 
 ;;;
 ;;; 4. TYPES AND CLASSES
@@ -224,9 +226,9 @@
 (proclamation eql (t t) gen-bool :pure)
 (proclamation equal (t t) gen-bool :pure)
 (proclamation equalp (t t) gen-bool :pure)
-(proclamation identity (t) t :pure)
-(proclamation complement (function) function :pure)
-(proclamation constantly (t) function :pure)
+(proclamation identity (t) t)
+(proclamation complement (function) function)
+(proclamation constantly (t) function)
 (proclamation every (function-designator sequence &rest sequence) gen-bool)
 (proclamation some (function-designator sequence &rest sequence) t)
 (proclamation notevery (function-designator sequence &rest sequence) gen-bool)
@@ -237,9 +239,10 @@
 ;; ECL extensions
 
 (proclamation si:fset (function-name function &optional gen-bool t) function)
-(proclamation si:compiled-function-name (function) (or null function-name))
+(proclamation si:setf-definition (function-name createp) list)
+(proclamation ext:compiled-function-name (function) (or null function-name))
 (proclamation si:compiled-function-block (function) (or null si::codeblock))
-(proclamation si:compiled-function-file (function) (values t t))
+(proclamation ext:compiled-function-file (function) (values t t))
 
 (proclamation si:ihs-top () si::index)
 (proclamation si:ihs-fun (si::index) (or null function-designator))
@@ -252,6 +255,13 @@
 (proclamation si:bds-var (si::index) symbol)
 (proclamation si:bds-val (si::index) t)
 (proclamation si:sch-frs-base (si::index si::index) (or null si::index))
+
+(proclamation si::ecase-error (t t) t)
+(proclamation si::etypecase-error (t t) t)
+(proclamation si::do-check-type (t t t t) t)
+
+(proclamation si::dm-too-many-arguments (t) t)
+(proclamation si::dm-too-few-arguments (t) t)
 
 ;;;
 ;;; 7. OBJECTS
@@ -277,6 +287,19 @@
 
 ;; Slot accessors:
 ; (proclamation unbound-slot-instance (condition) si::instance :predicate)
+
+#+clos
+(proclamation clos::standard-instance-get (ext:instance t) t)
+#+clos
+(proclamation clos::standard-instance-set (t ext:instance t) t)
+#+clos
+(proclamation clos:std-compute-applicable-methods (generic-function list) list)
+#+clos
+(proclamation clos:std-compute-effective-method (generic-function method-combination list) function)
+#+clos
+(proclamation clos:compute-effective-method-function (generic-function method-combination list) function)
+#+clos
+(proclamation clos::update-instance (ext:instance) (values))
 
 ;;;
 ;;; 8. STRUCTURES
@@ -319,8 +342,8 @@
 (proclamation abort (&optional (or null condition)) (values))
 (proclamation continue (&optional (or null condition)) null)
 (proclamation muffle-warning (&optional (or null condition)) (values))
-(proclamation store-value (value &optional (or null condition)) null)
-(proclamation use-value (value &optional (or null condition)) null)
+(proclamation store-value (t &optional (or null condition)) null)
+(proclamation use-value (t &optional (or null condition)) null)
 
 ;; Slot accessors:
 ;; (proclamation cell-error-name (cell-error) t)
@@ -329,7 +352,9 @@
 ;; (proclamation restart-name (restart) t)
 
 ;; ECL extensions
-(proclamation ext:catch-signal (fixnum gen-bool) null)
+(proclamation ext:catch-signal (fixnum gen-bool &key) null)
+(proclamation si:bind-simple-restarts (t t) list)
+(proclamation si:bind-simple-handlers (t t) list)
 
 ;;;
 ;;; 10. SYMBOLS
@@ -375,7 +400,7 @@
 (proclamation find-symbol (string &optional package-designator)
               (values symbol (member :inherited :external :internal nil)))
 (proclamation find-package (package-designator) (or package null))
-(proclamation find-all-symbols (string) list)
+(proclamation find-all-symbols (string-designator) list)
 (proclamation import (list &optional package-designator) t)
 (proclamation list-all-packages () list)
 (proclamation rename-package (package-designator package-designator
@@ -404,7 +429,7 @@
 (proclamation si:select-package (package-designator) package)
 (proclamation si:package-hash-tables (package-designator)
                    (values hash-table hash-table list) :reader)
-(proclamation si:package-lock (package-designator gen-bool) package)
+(proclamation ext:package-lock (package-designator gen-bool) package)
 
 ;;;
 ;;; 12. NUMBERS
@@ -534,7 +559,7 @@
 
 ;; ECL extensions
 (proclamation si:bit-array-op (t t t t) (array bit))
-(proclamation si:fixnump (t) gen-bool :pure)
+(proclamation ext:fixnump (t) gen-bool :pure)
 
 ;; Virtual functions added by the compiler
 (proclamation shift>> (*) nil :pure)
@@ -710,6 +735,7 @@
 (proclamation si:memq (t proper-list) list)
 (proclamation si:cons-car (cons) t :reader)
 (proclamation si:cons-cdr (cons) t :reader)
+(proclamation si::proper-list-p (t) gen-bool :predicate)
 
 ;;;
 ;;; 15. ARRAYS
@@ -864,7 +890,7 @@
               sequence :no-side-effects)
 (proclamation map (type-specifier function-designator sequence &rest sequence)
               sequence)
-(proclamation map-into (sequence function-designator sequence &rest sequence)
+(proclamation map-into (sequence function-designator &rest sequence)
               sequence)
 (proclamation reduce (function-designator sequence &key) t)
 (proclamation count (t sequence &key) sequence-index)
@@ -1014,10 +1040,11 @@
 (proclamation ext:file-kind (pathname-designator gen-bool) symbol)
 (proclamation ext:chdir (pathname-designator &optional gen-bool) pathname)
 (proclamation ext:getcwd (&optional gen-bool) pathname)
-(proclamation ext:mkdir (pathname-designator unsigned-byte) string)
 (proclamation ext:mkstemp (pathname-designator) (or null pathname))
-(proclamation ext:rmdir (pathname-designator) null)
 (proclamation ext:copy-file (pathname-designator pathname-designator) gen-bool)
+
+(proclamation si:mkdir (pathname-designator unsigned-byte) string)
+(proclamation si:rmdir (pathname-designator) null)
 
 
 ;;;
@@ -1064,20 +1091,20 @@
 (proclamation clear-output (&optional stream-designator) null)
 (proclamation y-or-n-p (&optional format-control &rest t) gen-bool)
 (proclamation yes-or-no-p (&optional format-control &rest t) gen-bool)
-(proclamation make-synonym-stream (symbol) synonym-stream :pure)
-(proclamation synonym-stream-symbol (synonym-stream) symbol :pure)
+(proclamation make-synonym-stream (symbol) synonym-stream)
+(proclamation synonym-stream-symbol (synonym-stream) symbol)
 (proclamation broadcast-stream-streams (broadcast-stream) list :pure)
-(proclamation make-broadcast-stream (&rest stream) broadcast-stream :pure)
-(proclamation make-two-way-stream (stream stream) two-way-stream :pure)
+(proclamation make-broadcast-stream (&rest stream) broadcast-stream)
+(proclamation make-two-way-stream (stream stream) two-way-stream)
 (proclamation two-way-stream-input-stream (two-way-stream) stream :pure)
 (proclamation two-way-stream-output-stream (two-way-stream) stream :pure)
 (proclamation echo-stream-output-stream (echo-stream) stream :pure)
 (proclamation echo-stream-input-stream (echo-stream) stream :pure)
-(proclamation make-echo-stream (stream stream) echo-stream :pure)
+(proclamation make-echo-stream (stream stream) echo-stream)
 (proclamation concatenated-stream-streams (concatenated-stream)
               list :reader)
 (proclamation make-concatenated-stream (&rest stream)
-              concatenated-stream :pure)
+              concatenated-stream)
 (proclamation get-output-stream-string (string-stream) string :reader)
 (proclamation make-string-input-stream (string &optional
                                                ext:array-index
@@ -1290,11 +1317,12 @@
 (proclamation ext:weak-pointer-value (ext:weak-pointer) t)
 
 (proclamation si:unbound () t :pure)
+(proclamation si:traced-old-definition (t) t :no-side-effects)
 
 #+clos
-(proclamation si:allocate-raw-instance (t t fixnum) si:instance)
+(proclamation si:allocate-raw-instance (t t fixnum) ext:instance)
 #+clos
-(proclamation si:instance-ref-safe (t fixnum) t)
+(proclamation clos:safe-instance-ref (t fixnum) t)
 #+clos
 (proclamation si:instance-ref (t fixnum) t :reader)
 #+clos
@@ -1302,7 +1330,7 @@
 #+clos
 (proclamation si:instance-set (t fixnum t) t)
 #+clos
-(proclamation si:instance-class (t) t :reader)
+(proclamation si:instance-class (t) class :reader)
 #+clos
 (proclamation si:instance-class-set (t t) t)
 #+clos
@@ -1320,6 +1348,11 @@
 #+clos
 (proclamation associate-methods-to-gfun (generic-function *)
               generic-function)
+#+clos
+(proclamation clos::need-to-make-load-form-p (t t) gen-bool :pure)
+
+#+clos
+(proclamation clos::load-defclass (t t t t) t)
 
 ;;;
 ;;; A. FFI
@@ -1327,6 +1360,61 @@
 
 (proclamation si:pointer (t) unsigned-byte)
 (proclamation si:foreign-data-p (t) gen-bool :pure)
+
+;;;
+;;; CDR-5 http://cdr.eurolisp.org/document/5/extra-num-types.html
+;;;
+
+(proclamation ext:negative-fixnum-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-fixnum-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-fixnum-p (t) gen-bool :pure) 
+(proclamation ext:positive-fixnum-p (t) gen-bool :pure) 
+(proclamation ext:array-index-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-integer-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-integer-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-integer-p (t) gen-bool :pure) 
+(proclamation ext:positive-integer-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-rational-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-rational-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-rational-p (t) gen-bool :pure) 
+(proclamation ext:positive-rational-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-ratio-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-ratio-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-ratio-p (t) gen-bool :pure) 
+(proclamation ext:positive-ratio-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-real-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-real-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-real-p (t) gen-bool :pure) 
+(proclamation ext:positive-real-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-float-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-float-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-float-p (t) gen-bool :pure) 
+(proclamation ext:positive-float-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-short-float-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-short-float-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-short-float-p (t) gen-bool :pure) 
+(proclamation ext:positive-short-float-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-single-float-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-single-float-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-single-float-p (t) gen-bool :pure) 
+(proclamation ext:positive-single-float-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-double-float-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-double-float-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-double-float-p (t) gen-bool :pure) 
+(proclamation ext:positive-double-float-p (t) gen-bool :pure) 
+
+(proclamation ext:negative-long-float-p (t) gen-bool :pure) 
+(proclamation ext:non-negative-long-float-p (t) gen-bool :pure) 
+(proclamation ext:non-positive-long-float-p (t) gen-bool :pure) 
+(proclamation ext:positive-long-float-p (t) gen-bool :pure) 
 
 ))) ; eval-when
 

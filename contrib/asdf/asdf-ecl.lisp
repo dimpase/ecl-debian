@@ -1,21 +1,21 @@
-;;; Copyright (c) 2005, Michael Goffioul (michael dot goffioul at swing dot be)
+;;; Copyright (c) 2005 - 2007, Michael Goffioul (michael dot goffioul at swing dot be)
+;;; Copyright (c) 2008, Juan Jose Garcia Ripoll
 ;;;
 ;;;   This program is free software; you can redistribute it and/or
 ;;;   modify it under the terms of the GNU Library General Public
 ;;;   License as published by the Free Software Foundation; either
 ;;;   version 2 of the License, or (at your option) any later version.
 ;;;
-;;;   See file '../../Copyright' for full details.
+;;;   See file 'ecl/Copyright' for full details.
 ;;;
 ;;; ECL SPECIFIC OPERATIONS FOR ASDF
 ;;;
 #+xcvb (module (:depends-on ("asdf")))
 
 (in-package :asdf)
-(require 'cmp)
 
 ;;;
-;;; COMPILE-OP / LOAD-OP
+;;; COMPILE-OP / LOAD-OP (in asdf.lisp)
 ;;;
 ;;; In ECL, these operations produce both FASL files and the
 ;;; object files that they are built from. Having both of them allows
@@ -36,7 +36,8 @@
   ((type :reader bundle-op-type)
    (monolithic :initform nil :reader bundle-op-monolithic-p)
    (name-suffix :initarg :name-suffix :initform nil)
-   (build-args :initarg :args :initform nil :accessor bundle-op-build-args)))
+   (build-args :initarg :args :initform nil :accessor bundle-op-build-args)
+   (lisp-files :initform nil :accessor bundle-op-lisp-files)))
 
 (defclass fasl-op (bundle-op)
   ((type :initform :fasl)))
@@ -72,10 +73,12 @@
           (if (bundle-op-monolithic-p instance) "-mono" "")))
   (when (typep instance 'monolithic-bundle-op)
     (destructuring-bind (&rest original-initargs
-                         &key prologue-code epilogue-code &allow-other-keys)
+                         &key lisp-files prologue-code epilogue-code
+                         &allow-other-keys)
         (slot-value instance 'original-initargs)
       (setf (slot-value instance 'original-initargs)
-            (remove-keys '(epilogue-code prologue-code) original-initargs)
+            (remove-keys '(lisp-files epilogue-code prologue-code) original-initargs)
+            (bundle-op-lisp-files instance) lisp-files
             (monolithic-op-prologue-code instance) prologue-code
             (monolithic-op-epilogue-code instance) epilogue-code)))
   (setf (bundle-op-build-args instance)
@@ -101,11 +104,11 @@
          (*force-load-p* t)
          (tree (traverse (make-instance 'load-op) system)))
     (append
-     (loop for (op . component) in tree
-        when (and (typep op 'load-op)
+     (loop :for (op . component) :in tree
+       :when (and (typep op 'load-op)
                   (typep component filter-type)
                   (or (not filter-system) (eq (component-system component) filter-system)))
-        collect (progn
+       :collect (progn
                   (when (eq component system) (setf include-self nil))
                   (cons operation component)))
      (and include-self (list (cons operation system))))))
@@ -140,6 +143,10 @@
 (defmethod bundle-sub-operations ((o lib-op) c)
   (gather-components 'compile-op c
                      :filter-system (and (not (bundle-op-monolithic-p o)) c)
+                     :filter-type '(not system)))
+(defmethod bundle-sub-operations ((o monolithic-lib-op) c)
+  (gather-components 'compile-op c
+                     :filter-system nil
                      :filter-type '(not system)))
 ;;;
 ;;; SHARED LIBRARIES
@@ -202,7 +209,8 @@
                                :key #'pathname-type :test #'string=))
          (output (output-files o c)))
     (ensure-directories-exist (first output))
-    (apply #'c::builder (bundle-op-type o) (first output) :lisp-files object-files
+    (apply #'c::builder (bundle-op-type o) (first output)
+           :lisp-files (append object-files (bundle-op-lisp-files o))
            (append (bundle-op-build-args o)
                    (when (and (typep o 'monolithic-bundle-op)
                               (monolithic-op-prologue-code o))
@@ -295,11 +303,13 @@
 
 (defclass compiled-file (component) ())
 (defmethod component-relative-pathname ((component compiled-file))
-  (compile-file-pathname
-   (merge-component-name-type
-    (or (slot-value component 'relative-pathname)
-        (component-name component))
-    :type "fas")))
+  (let* ((pathname (or (slot-value component 'relative-pathname)
+		       (component-name component))))
+    (coerce-pathname
+     pathname
+     :type (or (pathname-type pathname)
+	       (compile-file-pathname pathname))
+     :defaults (component-parent-pathname component))))
 
 (defmethod output-files (o (c compiled-file))
   (declare (ignore o c))
@@ -325,8 +335,7 @@
 
 (defmethod output-files ((o lib-op) (c prebuilt-system))
   (declare (ignore o))
-  (values (list (compile-file-pathname (prebuilt-system-static-library c)
-                                       :type :lib))
+  (values (list (prebuilt-system-static-library c))
           t ; Advertise that we do not want this path renamed
           ))
 
@@ -360,12 +369,10 @@
   ())
 
 (defun binary-op-dependencies (o s)
-  (let (lib-op fasl-op)
-    (if (bundle-op-monolithic-p o)
-        (setf lib-op 'monolithic-lib-op
-              fasl-op 'monolithic-fasl-op)
-        (setf lib-op 'lib-op
-              fasl-op 'fasl-op))
+  (multiple-value-bind (lib-op fasl-op)
+      (if (bundle-op-monolithic-p o)
+          (values 'monolithic-lib-op 'monolithic-fasl-op)
+          (values 'lib-op 'fasl-op))
     (list (list (make-instance lib-op :args (bundle-op-build-args o))
                 s)
           (list (make-instance fasl-op :args (bundle-op-build-args o))
@@ -417,10 +424,13 @@
 ;;;
 
 (export '(make-build load-fasl-op prebuilt-system))
-(push '("fasb" . si::load-binary) si::*load-hooks*)
+(push '("fasb" . si::load-binary) ext:*load-hooks*)
 
-(require 'cmp)
+(defun register-pre-built-system (name)
+  (register-system (make-instance 'system :name (string name) :source-file nil)))
+
 (defvar *require-asdf-operator* 'load-op)
+(export '*require-asdf-operator*)
 
 (defun module-provide-asdf (name)
   (handler-bind ((style-warning #'muffle-warning))
@@ -430,19 +440,15 @@
         (asdf:operate *require-asdf-operator* name)
         t))))
 
-(defun register-pre-built-system (name)
-  (register-system name (make-instance 'system :name name
-                                       :source-file nil)))
-
-(setf si::*module-provider-functions*
-      (loop for f in si::*module-provider-functions*
-         unless (eq f 'module-provide-asdf)
-         collect #'(lambda (name)
+(setf ext:*module-provider-functions*
+      (loop :for f :in ext:*module-provider-functions*
+        :unless (eq f 'module-provide-asdf)
+        :collect #'(lambda (name)
                      (let ((l (multiple-value-list (funcall f name))))
                        (and (first l) (register-pre-built-system name))
                        (values-list l)))))
-#+win32 (push '("asd" . si::load-source) si::*load-hooks*)
+#+win32 (setf ext:*load-hooks* (append ext:*load-hooks* '(("asd" . si::load-source))))
 (pushnew 'module-provide-asdf ext:*module-provider-functions*)
 (pushnew (translate-logical-pathname "SYS:") *central-registry*)
 
-(provide 'asdf)
+(provide :asdf)

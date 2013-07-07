@@ -90,7 +90,7 @@
 ;;; DO NOT EVEN THINK OF ATTEMPTING TO UNDERSTAND THIS CODE WITHOUT READING 
 ;;; THE PAPER!
 
-(defvar *digits* "0123456789")
+(defparameter *digits* "0123456789")
 
 (defun flonum-to-string (x &optional width fdigits scale fmin)
   (declare (type float x))
@@ -168,11 +168,47 @@
 ;;; scaling is always done with long float arithmetic, which helps printing of
 ;;; lesser precisions as well as avoiding generic arithmetic.
 ;;;
-;;;    When computing our initial scale factor using EXPT, we pull out part of
-;;; the computation to avoid over/under flow.  When denormalized, we must pull
-;;; out a large factor, since there is more negative exponent range than
-;;; positive range.
-;;;
+(defun scale-exponent (original-x)
+  (declare (optimize (debug 0) (safety 0)))
+  (let* ((x (coerce original-x 'long-float))
+	 (delta 0))
+    (declare (long-float x)
+	     (fixnum delta))
+    (multiple-value-bind (sig exponent)
+	(decode-float x)
+      (declare (ignore sig)
+	       (fixnum exponent)
+	       (long-float sig))
+      (when (zerop x)
+	(return-from scale-exponent (values (float 0.0l0 original-x) 1)))
+      ;; When computing our initial scale factor using EXPT, we pull out part of
+      ;; the computation to avoid over/under flow.  When denormalized, we must pull
+      ;; out a large factor, since there is more negative exponent range than
+      ;; positive range.
+      (when (and (minusp exponent)
+		 (< least-negative-normalized-long-float x
+		    least-positive-normalized-long-float))
+	#+long-float
+	(setf x (* x 1.0l18) delta -18)
+	#-long-float
+	(setf x (* x 1.0l16) delta -16))
+      ;; We find the appropriate factor that keeps the output within (0.1,1]
+      ;; Note that we have to compute the exponential _every_ _time_ in the loop
+      ;; because multiplying just by 10.0l0 every time would lead to a greater
+      ;; loss of precission.
+      (loop with ex of-type fixnum
+	   = (round (* exponent #.(log 2l0 10)))
+	 for y of-type long-float
+	   = (if (minusp ex)
+		 (* x (the long-float (expt 10.0l0 (- ex))))
+		 (/ x (the long-float (expt 10.0l0 ex))))
+	 do (cond ((<= y 0.1l0)
+		   (decf ex))
+		  ((> y 1.0l0)
+		   (incf ex))
+		  (t
+		   (return (values y (the fixnum (+ delta ex))))))))))
+#+(or)
 (defun scale-exponent (original-x)
   (let* ((x (coerce original-x 'long-float)))
     (multiple-value-bind (sig exponent)
@@ -225,18 +261,18 @@
 		  :end (format-directive-end struct))))
 
 #+formatter
-(defvar *format-directive-expanders*
+(defparameter *format-directive-expanders*
   (make-array char-code-limit :initial-element nil))
-(defvar *format-directive-interpreters*
+(defparameter *format-directive-interpreters*
   (make-array char-code-limit :initial-element nil))
 
-(defvar *default-format-error-control-string* nil)
-(defvar *default-format-error-offset* nil)
+(defparameter *default-format-error-control-string* nil)
+(defparameter *default-format-error-offset* nil)
 
 ;; If this flag is 1, directives ~W, ~_, ~<...~:>, ~I or ~T were found.
 ;; If the flag is 2, directive ~<...~:;...~> was found.
 ;; NIL otherwise.
-(defvar *output-layout-mode* nil)
+(defparameter *output-layout-mode* nil)
 
 ;; The condition FORMAT-ERROR is found later in conditions.lsp
 
@@ -358,14 +394,14 @@
 ;;; Used both by the expansion stuff and the interpreter stuff.  When it is
 ;;; non-NIL, up-up-and-out (~:^) is allowed.  Otherwise, ~:^ isn't allowed.
 ;;;
-(defvar *up-up-and-out-allowed* nil)
+(defparameter *up-up-and-out-allowed* nil)
 
 ;;; *LOGICAL-BLOCK-POPPER* -- internal.
 ;;;
 ;;; Used by the interpreter stuff.  When it non-NIL, its a function that will
 ;;; invoke PPRINT-POP in the right lexical environemnt.
 ;;;
-(defvar *logical-block-popper* nil)
+(defparameter *logical-block-popper* nil)
 
 ;;; *EXPANDER-NEXT-ARG-MACRO* -- internal.
 ;;;
@@ -373,7 +409,7 @@
 ;;; can change it.
 ;;;
 #+formatter
-(defvar *expander-next-arg-macro* 'expander-next-arg)
+(defparameter *expander-next-arg-macro* 'expander-next-arg)
 
 ;;; *ONLY-SIMPLE-ARGS* -- internal.
 ;;;
@@ -390,7 +426,7 @@
 ;;; again with it bound to T.  If this is T, we don't try to do anything
 ;;; fancy with args.
 ;;; 
-(defvar *orig-args-available* nil)
+(defparameter *orig-args-available* nil)
 
 ;;; *SIMPLE-ARGS* -- internal.
 ;;;

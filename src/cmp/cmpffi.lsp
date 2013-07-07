@@ -17,12 +17,32 @@
 ;; REPRESENTATION TYPES
 ;;
 
+(defconstant +all-integer-rep-type-pairs+
+  '((:byte . -8)
+    (:unsigned-byte . 8)
+    (:unsigned-short . #.(logcount ffi:c-ushort-max))
+    (:short . #.(- (logcount ffi:c-ushort-max)))
+    (:unsigned-int . #.(logcount ffi:c-uint-max))
+    (:int . #.(logcount ffi:c-uint-max))
+    (:unsigned-long . #.(logcount ffi:c-ulong-max))
+    (:long . #.(logcount ffi:c-ulong-max))
+    #+long-long
+    (:unsigned-long-long . #.(logcount ffi:c-ulong-long-max))
+    #+long-long
+    (:long-long . #.(logcount ffi:c-ulong-long-max))
+    (:cl-index . #.si::cl-fixnum-bits)
+    (:fixnum . #.(- si::cl-fixnum-bits))
+    (:uint8-t . 8)
+    (:int8-t . -8)
+    (:uint16-t . 16)
+    (:int16-t . -16)
+    (:uint32-t . 32)
+    (:int32-t . -32)
+    (:uint64-t . 64)
+    (:int64-t . -64)))
+
 (defconstant +all-integer-rep-types+
-  '(:byte :unsigned-byte :short :unsigned-short :int :unsigned-int
-	  :long :unsigned-long :fixnum :cl-index
-	  :long-long :unsigned-long-long
-	  :int8-t :uint8-t :int16-t :uint16-t :int32-t :uint32-t
-	  :int64-t :uint64-t))
+  (mapcar #'car +all-integer-rep-type-pairs+))
 
 (defconstant +all-number-rep-types+
   (append +all-integer-rep-types+ '(:float :double :long-double)))
@@ -31,48 +51,50 @@
   '(;; These types can be used by ECL to unbox data
     ;; They are sorted from the most specific, to the least specific one.
     :byte
-    #1=((signed-byte 8) "int8_t" "ecl_make_int8_t" "ecl_to_int8_t" "fix")
+    #1=((signed-byte 8) "int8_t" "ecl_make_int8_t" "ecl_to_int8_t" "ecl_fixnum")
     :unsigned-byte
-    #2=((unsigned-byte 8) "uint8_t" "ecl_make_uint8_t" "ecl_to_uint8_t" "fix")
+    #2=((unsigned-byte 8) "uint8_t" "ecl_make_uint8_t" "ecl_to_uint8_t" "ecl_fixnum")
     :fixnum
-    (fixnum "cl_fixnum" "MAKE_FIXNUM" "ecl_to_fixnum" "fix")
+    (fixnum "cl_fixnum" "ecl_make_fixnum" "ecl_to_fixnum" "ecl_fixnum")
     :int
-    ((integer #.si:c-int-min #.si:c-int-max) "int"
+    ((integer #.ffi:c-int-min #.ffi:c-int-max) "int"
      "ecl_make_int" "ecl_to_int" "ecl_to_int")
     :unsigned-int
-    ((integer 0 #.si:c-uint-max) "unsigned int"
+    ((integer 0 #.ffi:c-uint-max) "unsigned int"
      "ecl_make_uint" "ecl_to_uint" "ecl_to_uint")
     :long
-    ((integer #.si:c-long-min #.si:c-long-max) "long"
-     "ecl_make_long" "ecl_to_long" "ecl_to_long")
+    ((integer #.ffi:c-long-min #.ffi:c-long-max) "long" "ecl_make_long" "ecl_to_long"
+     #.(if (<= most-negative-fixnum ffi:c-long-min ffi:c-long-max most-positive-fixnum)
+	   "ecl_fixnum"
+	   "ecl_to_long"))
     :unsigned-long
-    ((integer 0 #.si:c-ulong-max) "unsigned long"
-     "ecl_make_ulong" "ecl_to_ulong" "ecl_to_ulong")
+    ((integer 0 #.ffi:c-ulong-max) "unsigned long"
+     "ecl_make_ulong" "ecl_to_ulong"
+     #.(if (<= most-positive-fixnum ffi:c-long-max) "ecl_fixnum" "ecl_to_ulong"))
     :cl-index
     ((integer 0 #.most-positive-fixnum) "cl_index"
-     "ecl_make_unsigned_integer" "fixnnint" "fix")
+     "ecl_make_unsigned_integer" "ecl_to_cl_index" "ecl_fixnum")
     #+long-long
     :long-long
     #+long-long
-    ((signed-byte #.si:c-long-long-bit) "ecl_long_long_t" "ecl_make_long_long"
+    ((signed-byte #.ffi:c-long-long-bit) "ecl_long_long_t" "ecl_make_long_long"
      "ecl_to_long_long" "ecl_to_long_long")
     #+long-long
     :unsigned-long-long
     #+long-long
-    ((unsigned-byte #.si:c-long-long-bit) "ecl_ulong_long_t"
-         "ecl_make_unsigned_long_long"
-         "ecl_to_unsigned_long_long" "ecl_to_unsigned_long_long")
+    ((unsigned-byte #.ffi:c-long-long-bit) "ecl_ulong_long_t"
+         "ecl_make_ulong_long"
+         "ecl_to_ulong_long" "ecl_to_ulong_long")
     :float
-    (single-float "float" "ecl_make_singlefloat" "ecl_to_float" "ecl_to_float")
+    (single-float "float" "ecl_make_single_float" "ecl_to_float" "ecl_single_float")
     :double
-    (double-float "double" "ecl_make_doublefloat" "ecl_to_double" "ecl_to_double")
+    (double-float "double" "ecl_make_double_float" "ecl_to_double" "ecl_double_float")
     #+:long-float
     :long-double
     #+:long-float
-    (long-float "long double" "ecl_make_longfloat" "ecl_to_long_double"
-                   "ecl_to_long_double")
+    (long-float "long double" "ecl_make_long_float" "ecl_to_long_double" "ecl_long_float")
     :unsigned-char
-    (base-char "char" "CODE_CHAR" "ecl_base_char_code" "CHAR_CODE")
+    (base-char "unsigned char" "CODE_CHAR" "ecl_base_char_code" "CHAR_CODE")
     :char
     (base-char "char" "CODE_CHAR" "ecl_base_char_code" "CHAR_CODE")
     :wchar
@@ -113,33 +135,37 @@
     #+:uint16-t
     :int16-t
     #+:uint16-t
-    ((signed-byte 16) "ecl_int16_t" "ecl_make_int16_t" "ecl_to_int16_t" "fix")
+    ((unsigned-byte 16) "ecl_int16_t" "ecl_make_int16_t" "ecl_to_int16_t"
+     #.(if (subtypep '(unsigned-byte 16) 'fixnum) "ecl_fixnum" "ecl_to_int32_t"))
     #+:uint16-t
     :uint16-t
     #+:uint16-t
-    ((signed-byte 16) "ecl_uint16_t" "ecl_make_uint16_t" "ecl_to_uint16_t" "fix")
+    ((signed-byte 16) "ecl_uint16_t" "ecl_make_uint16_t" "ecl_to_uint16_t" "ecl_fixnum"
+     #.(if (subtypep '(signed-byte 16) 'fixnum) "ecl_fixnum" "ecl_to_unt16_t"))
     #+:uint32-t
     :int32-t
     #+:uint32-t
-    ((signed-byte 32) "ecl_int32_t" "ecl_make_int32_t" "ecl_to_int32_t" "fix")
+    ((unsigned-byte 32) "ecl_int32_t" "ecl_make_int32_t" "ecl_to_int32_t"
+     #.(if (subtypep '(unsigned-byte 32) 'fixnum) "ecl_fixnum" "ecl_to_int32_t"))
     #+:uint32-t
     :uint32-t
     #+:uint32-t
-    ((signed-byte 32) "ecl_uint32_t" "ecl_make_uint32_t" "ecl_to_uint32_t" "fix")
+    ((signed-byte 32) "ecl_uint32_t" "ecl_make_uint32_t" "ecl_to_uint32_t"
+     #.(if (subtypep '(signed-byte 32) 'fixnum) "ecl_fixnum" "ecl_to_uint32_t"))
     #+:uint64-t
     :int64-t
     #+:uint64-t
-    ((signed-byte 64) "ecl_int64_t" "ecl_make_int64_t" "ecl_to_int64_t" "fix")
+    ((signed-byte 64) "ecl_int64_t" "ecl_make_int64_t" "ecl_to_int64_t" "ecl_to_int64_t")
     #+:uint64-t
     :uint64-t
     #+:uint64-t
-    ((signed-byte 64) "ecl_uint64_t" "ecl_make_uint64_t" "ecl_to_uint64_t" "fix")
+    ((signed-byte 64) "ecl_uint64_t" "ecl_make_uint64_t" "ecl_to_uint64_t" "ecl_to_uint64_t")
     :short
-    ((integer #.si:c-short-min #.si:c-short-max) "short"
-     "ecl_make_short" "ecl_to_short" "fix")
+    ((integer #.ffi:c-short-min #.ffi:c-short-max) "short"
+     "ecl_make_short" "ecl_to_short" "ecl_fixnum")
     :unsigned-short
-    ((integer 0 #.si:c-ushort-max) "unsigned short"
-     "ecl_make_ushort" "ecl_to_ushort" "fix")
+    ((integer 0 #.ffi:c-ushort-max) "unsigned short"
+     "ecl_make_ushort" "ecl_to_ushort" "ecl_fixnum")
     ))
 
 (defparameter +representation-type-hash+
@@ -157,8 +183,20 @@
 (defun c-number-rep-type-p (rep-type)
   (member rep-type +all-number-rep-types+))
 
+(defun c-integer-rep-type-p (rep-type)
+  (member rep-type +all-integer-rep-types+))
+
+(defun c-integer-rep-type-bits (rep-type)
+  (abs (cdr (assoc rep-type +all-integer-rep-type-pairs+))))
+
 (defun c-number-type-p (type)
   (c-number-rep-type-p (lisp-type->rep-type type)))
+
+(defun c-integer-type-p (type)
+  (c-integer-rep-type-p (lisp-type->rep-type type)))
+
+(defun c-integer-type-bits (type)
+  (c-number-rep-type-bits (lisp-type->rep-type type)))
 
 (defun rep-type-record (rep-type)
   (gethash rep-type +representation-type-hash+))
@@ -249,6 +287,8 @@
                              (t (rep-type->lisp-type type)))))
 	   (BIND (var-type (second loc)))
 	   (LCL (or (third loc) T))
+	   (THE (second loc))
+	   (CALL-NORMAL (fourth loc))
 	   (otherwise T)))))
 
 (defun loc-representation-type (loc)
@@ -272,6 +312,7 @@
 	   (BIND (var-rep-type (second loc)))
 	   (LCL (lisp-type->rep-type (or (third loc) T)))
            ((JUMP-TRUE JUMP-FALSE) :bool)
+	   (THE (loc-representation-type (third loc)))
 	   (otherwise :object)))))
 
 (defun wt-coerce-loc (dest-rep-type loc)
@@ -326,7 +367,7 @@
 	   (#.+all-number-rep-types+ ; number type
 	    (wt "1"))
 	   ((:object)
-	    (wt "(" loc ")!=Cnil"))
+	    (wt "(" loc ")!=ECL_NIL"))
 	   (otherwise
 	    (coercion-error))))
 	((:object)
@@ -391,7 +432,7 @@
   (unless (every #'stringp args)
     (cmperr "The argument to CLINES, ~s, is not a list of strings." args))
   (setf *clines-string-list* (nconc *clines-string-list* (copy-list args)))
-  (c1expr '(progn)))
+  '(progn))
 
 (defun output-clines (output-stream)
   (flet ((parse-one-string (s output-stream)
@@ -467,8 +508,8 @@
       (unless (and (listp arguments)
 		   (listp arg-types)
 		   (stringp c-expression))
-	(cmperr "C-INLINE: wrong type of arguments ~S"
-		arguments arg-types c-expression))
+	(cmperr "C-INLINE: syntax error in ~S"
+		(list* 'c-inline args)))
       (do ((processed-arguments '())
 	   (processed-arg-types '()))
 	  ((and (endp arguments) (endp arg-types))
@@ -538,8 +579,7 @@
 	     (let ((var (make-lcl-var :rep-type type)))
 	       (wt-nl (rep-type-name type) " " var ";")
 	       var)))
-      (incf *inline-blocks*)
-      (wt-nl "{")
+      (open-inline-block)
       (let ((output-vars (mapcar #'make-output-var output-rep-type)))
 	(wt-c-inline-loc output-rep-type c-expression coerced-arguments side-effects output-vars)
 	(cond ((= (length output-vars) 1)
@@ -551,7 +591,8 @@
 	       (wt "cl_env_copy->nvalues=" (length output-vars) ";")
 	       'VALUES))))))
 
-(defun c2c-inline (arguments &rest rest)
+(defun c2c-inline (c1form arguments &rest rest)
+  (declare (ignore c1form))
   (let ((*inline-blocks* 0)
         (*temp* *temp*))
     (unwind-exit (apply #'produce-inline-loc (inline-args arguments) rest))
@@ -572,8 +613,7 @@
 	     (let ((lcl (make-lcl-var :rep-type rep-type)))
 	       (wt-nl)
 	       (unless block-opened
-		 (incf *inline-blocks*)
-		 (wt-nl "{"))
+		 (open-inline-block))
 	       (wt (rep-type-name rep-type) " " lcl "= ")
 	       (wt-coerce-loc rep-type loc)
 	       (wt ";")
@@ -616,8 +656,17 @@
 		 ((< index (length coerced-arguments))
 		  (wt (nth index coerced-arguments)))
 		 (t
-                  (print k)
-                  (print index)
 		  (cmperr "C-INLINE: Variable code exceeds number of arguments")))))
 	(otherwise
 	 (write-char c *compiler-output1*))))))
+
+(defun c-inline-safe-string (constant-string)
+  ;; Produce a text representation of a string that can be used
+  ;; in a C-INLINE form, without triggering the @ or # escape
+  ;; characters
+  (c-filtered-string
+   (concatenate 'string
+		(loop for c across constant-string
+		   when (member c '(#\# #\@))
+		   collect c
+		   collect c))))

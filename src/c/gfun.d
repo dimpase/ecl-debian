@@ -17,7 +17,7 @@
 #include <ecl/ecl.h>
 #include <ecl/ecl-inl.h>
 #include <ecl/internal.h>
-#include "newhash.h"
+#include <ecl/cache.h>
 
 static cl_object generic_function_dispatch_vararg(cl_narg, ...);
 
@@ -45,9 +45,9 @@ user_function_dispatch(cl_narg narg, ...)
 	cl_object fun = env->function;
 	struct ecl_stack_frame frame_aux;
 	const cl_object frame = ecl_stack_frame_open(env, (cl_object)&frame_aux, narg);
-        cl_va_list args; cl_va_start(args, narg, narg, 0);
+        ecl_va_list args; ecl_va_start(args, narg, narg, 0);
         for (i = 0; i < narg; i++) {
-                ECL_STACK_FRAME_SET(frame, i, cl_va_arg(args));
+                ECL_STACK_FRAME_SET(frame, i, ecl_va_arg(args));
         }
         fun = fun->instance.slots[fun->instance.length - 1];
         output = ecl_apply_from_stack_frame(frame, fun);
@@ -59,7 +59,7 @@ static void
 reshape_instance(cl_object x, int delta)
 {
 	cl_fixnum size = x->instance.length + delta;
-	cl_object aux = ecl_allocate_instance(CLASS_OF(x), size);
+	cl_object aux = ecl_allocate_instance(ECL_CLASS_OF(x), size);
         /* Except for the different size, this must match si_copy_instance */
         aux->instance.sig = x->instance.sig;
 	memcpy(aux->instance.slots, x->instance.slots,
@@ -78,12 +78,23 @@ clos_set_funcallable_instance_function(cl_object x, cl_object function_or_t)
 		reshape_instance(x, -1);
 		x->instance.isgf = ECL_NOT_FUNCALLABLE;
 	}
-	if (function_or_t == Ct) {
+	if (function_or_t == ECL_T) {
 		x->instance.isgf = ECL_STANDARD_DISPATCH;
                 x->instance.entry = generic_function_dispatch_vararg;
-	} else if (function_or_t == Cnil) {
+	} else if (function_or_t == @'standard-generic-function') {
+		x->instance.isgf = ECL_RESTRICTED_DISPATCH;
+                x->instance.entry = generic_function_dispatch_vararg;
+	} else if (function_or_t == ECL_NIL) {
 		x->instance.isgf = ECL_NOT_FUNCALLABLE;
                 x->instance.entry = FEnot_funcallable_vararg;
+	} else if (function_or_t == @'clos::standard-optimized-reader-method') {
+		/* WARNING: We assume that f(a,...) behaves as f(a,b) */
+		x->instance.isgf = ECL_READER_DISPATCH;
+		x->instance.entry = (cl_objectfn)ecl_slot_reader_dispatch;
+	} else if (function_or_t == @'clos::standard-optimized-writer-method') {
+		/* WARNING: We assume that f(a,...) behaves as f(a,b) */
+		x->instance.isgf = ECL_WRITER_DISPATCH;
+		x->instance.entry = (cl_objectfn)ecl_slot_writer_dispatch;
 	} else if (Null(cl_functionp(function_or_t))) {
 		FEwrong_type_argument(@'function', function_or_t);
 	} else {
@@ -98,245 +109,106 @@ clos_set_funcallable_instance_function(cl_object x, cl_object function_or_t)
 cl_object
 si_generic_function_p(cl_object x)
 {
-	@(return ((ECL_INSTANCEP(x) && (x->instance.isgf))? Ct : Cnil))
-}
-
-/**********************************************************************
- * METHOD HASH
- */
-
-#define RECORD_KEY(e) ((e)[0])
-#define RECORD_VALUE(e) ((e)[1])
-#define RECORD_GEN(e) fix((e+2)[0])
-#define RECORD_GEN_SET(e,v) ((e+2)[0]=MAKE_FIXNUM(v))
-
-static cl_object
-do_clear_method_hash(struct cl_env_struct *env, cl_object target)
-{
-	cl_object table = env->method_hash;
-	cl_index i, total_size = table->vector.dim;
-	if (target == Ct) {
-		env->method_generation = 0;
-		for (i = 0; i < total_size; i+=3) {
-			table->vector.self.t[i] = OBJNULL;
-			table->vector.self.t[i+1] = OBJNULL;
-			table->vector.self.fix[i+2] = 0;
-		}
-#ifdef ECL_THREADS
-		env->method_hash_clear_list = Cnil;
-#endif
-	} else {
-		for (i = 0; i < total_size; i+=3) {
-			cl_object key = table->vector.self.t[i];
-			if (key != OBJNULL) {
-				if (target == key->vector.self.t[0]) {
-					table->vector.self.t[i] = OBJNULL;
-					table->vector.self.fix[i+2] = 0;
-				}
-			}
-		}
-	}
-}
-
-void
-_ecl_set_method_hash_size(struct cl_env_struct *env, cl_index size)
-{
-	env->method_spec_vector =
-		si_make_vector(Ct, /* element type */
-			       MAKE_FIXNUM(64), /* Maximum size */
-			       Ct, /* adjustable */
-			       MAKE_FIXNUM(0), /* fill pointer */
-			       Cnil, /* displaced */
-			       Cnil);
-	env->method_hash =
-		si_make_vector(Ct, /* element type */
-			       MAKE_FIXNUM(3*size), /* Maximum size */
-			       Cnil, /* adjustable */
-			       Cnil, /* fill pointer */
-			       Cnil, /* displaced */
-			       Cnil);
-	do_clear_method_hash(env, Ct);
-}
-
-cl_object
-si_clear_gfun_hash(cl_object what)
-{
-	/*
-	 * This function clears the generic function call hashes selectively.
-	 *	what = Ct means clear the hash completely
-	 *	what = generic function, means cleans only these entries
-	 * If we work on a multithreaded environment, we simply enqueue these
-	 * operations and wait for the destination thread to update its own hash.
-	 */
-#ifdef ECL_THREADS
-        const cl_env_ptr the_env = ecl_process_env();
-	ECL_WITH_GLOBAL_LOCK_BEGIN(the_env) {
-                cl_object list = cl_core.processes;
-                loop_for_on_unsafe(list) {
-                        cl_object process = ECL_CONS_CAR(list);
-                        struct cl_env_struct *env = process->process.env;
-                        env->method_hash_clear_list =
-                                CONS(what, env->method_hash_clear_list);
-                } end_loop_for_on_unsafe(list);
-        } ECL_WITH_GLOBAL_LOCK_END;
-#else
-	do_clear_method_hash(&cl_env, what);
-#endif
-}
-
-static cl_index
-vector_hash_key(cl_object keys)
-{
-	cl_index c, n, a = GOLDEN_RATIO, b = GOLDEN_RATIO;
-	for (c = 0, n = keys->vector.fillp; n >= 3; ) {
-		c += keys->vector.self.index[--n];
-		b += keys->vector.self.index[--n];
-		a += keys->vector.self.index[--n];
-		mix(a, b, c);
-	}
-	switch (n) {
-	case 2:	b += keys->vector.self.index[--n];
-	case 1:	a += keys->vector.self.index[--n];
-		c += keys->vector.dim;
-		mix(a,b,c);
-	}
-	return c;
-}
-
-
-/*
- * variation of ecl_gethash from hash.d, which takes an array of objects as key
- * It also assumes that entries are never removed except by clrhash.
- */
-
-static cl_object *
-search_method_hash(cl_env_ptr env, cl_object keys)
-{
-	cl_object table = env->method_hash;
-	cl_index argno = keys->vector.fillp;
-	cl_index i = vector_hash_key(keys);
-	cl_index total_size = table->vector.dim;
-	cl_fixnum min_gen, gen;
-	cl_object *min_e;
-	int k;
-	i = i % total_size;
-	i = i - (i % 3);
-	min_gen = env->method_generation;
-	min_e = 0;
-	for (k = 20; k--; ) {
-		cl_object *e = table->vector.self.t + i;
-		cl_object hkey = RECORD_KEY(e);
-		if (hkey == OBJNULL) {
-			min_gen = -1;
-			min_e = e;
-			if (RECORD_VALUE(e) == OBJNULL) {
-				/* This record is not only deleted but empty
-				 * Hence we cannot find our method ahead */
-				break;
-			}
-			/* Else we only know that the record has been
-			 * delete, but we might find our data ahead. */
-		} else if (argno == hkey->vector.fillp) {
-			cl_index n;
-			for (n = 0; n < argno; n++) {
-				if (keys->vector.self.t[n] !=
-				    hkey->vector.self.t[n])
-					goto NO_MATCH;
-			}
-			min_e = e;
-			goto FOUND;
-		} else if (min_gen >= 0) {
-		NO_MATCH:
-			/* Unless we have found a deleted record, keep
-			 * looking for the oldest record that we can
-			 * overwrite with the new data. */
-			gen = RECORD_GEN(e);
-			if (gen < min_gen) {
-				min_gen = gen;
-				min_e = e;
-			}
-		}
-		i += 3;
-		if (i >= total_size) i = 0;
-	}
-	if (min_e == 0) {
-		ecl_internal_error("search_method_hash");
-	}
-	RECORD_KEY(min_e) = OBJNULL;
-	env->method_generation++;
- FOUND:
-	/*
-	 * Once we have reached here, we set the new generation of
-	 * this record and perform a global shift so that the total
-	 * generation number does not become too large and we can
-	 * expire some elements.
-	 */
-	gen = env->method_generation;
-	RECORD_GEN_SET(min_e, gen);
-	if (gen >= total_size/2) {
-		cl_object *e = table->vector.self.t;
-		gen = 0.5*gen;
-		env->method_generation -= gen;
-		for (i = table->vector.dim; i; i-= 3, e += 3) {
-			cl_fixnum g = RECORD_GEN(e) - gen;
-			if (g <= 0) {
-				RECORD_KEY(e) = OBJNULL;
-				RECORD_VALUE(e) = Cnil;
-				g = 0;
-			}
-			RECORD_GEN_SET(e, g);
-		}
-	}
-	return min_e;
+	@(return ((ECL_INSTANCEP(x) && (x->instance.isgf))? ECL_T : ECL_NIL))
 }
 
 static cl_object
-get_spec_vector(cl_env_ptr env, cl_object frame, cl_object gf)
+fill_spec_vector(cl_object vector, cl_object frame, cl_object gf)
 {
 	cl_object *args = frame->frame.base;
 	cl_index narg = frame->frame.size;
 	cl_object spec_how_list = GFUN_SPEC(gf);
-	cl_object vector = env->method_spec_vector;
 	cl_object *argtype = vector->vector.self.t;
 	int spec_no = 1;
 	argtype[0] = gf;
 	loop_for_on_unsafe(spec_how_list) {
 		cl_object spec_how = ECL_CONS_CAR(spec_how_list);
 		cl_object spec_type = ECL_CONS_CAR(spec_how);
-		int spec_position = fix(ECL_CONS_CDR(spec_how));
-		if (spec_position >= narg)
+		int spec_position = ecl_fixnum(ECL_CONS_CDR(spec_how));
+		unlikely_if (spec_position >= narg)
 			FEwrong_num_arguments(gf);
+		unlikely_if (spec_no >= vector->vector.dim)
+			ecl_internal_error("Too many arguments to fill_spec_vector()");
 		argtype[spec_no++] =
-			(ATOM(spec_type) ||
+			(!ECL_LISTP(spec_type) ||
 			 Null(ecl_memql(args[spec_position], spec_type))) ?
 			cl_class_of(args[spec_position]) :
 			args[spec_position];
-		if (spec_no > vector->vector.dim)
-			return OBJNULL;
 	} end_loop_for_on_unsafe(spec_how_list);
 	vector->vector.fillp = spec_no;
 	return vector;
 }
 
 static cl_object
-compute_applicable_method(cl_object frame, cl_object gf)
+frame_to_list(cl_object frame)
 {
-	/* method not cached */
-	cl_object methods, arglist, func;
-	cl_object *p;
-	for (p = frame->frame.base + frame->frame.size, arglist = Cnil;
+	cl_object arglist, *p;
+	for (p = frame->frame.base + frame->frame.size, arglist = ECL_NIL;
              p != frame->frame.base; ) {
 		arglist = CONS(*(--p), arglist);
 	}
-	methods = funcall(3, @'compute-applicable-methods', gf, arglist);
-	if (methods == Cnil) {
-		func = funcall(3, @'no-applicable-method', gf, arglist);
-		frame->frame.base[0] = OBJNULL;
-		return func;
-	} else {
-		return funcall(4, @'clos::compute-effective-method', gf,
-			       GFUN_COMB(gf), methods);
+	return arglist;
+}
+
+static cl_object
+frame_to_classes(cl_object frame)
+{
+	cl_object arglist, *p;
+	for (p = frame->frame.base + frame->frame.size, arglist = ECL_NIL;
+             p != frame->frame.base; ) {
+		arglist = CONS(cl_class_of(*(--p)), arglist);
 	}
+	return arglist;
+}
+
+static cl_object
+generic_compute_applicable_method(cl_env_ptr env, cl_object frame, cl_object gf)
+{
+	/* method not cached */
+	cl_object memoize;
+	cl_object methods = _ecl_funcall3(@'clos::compute-applicable-methods-using-classes',
+					  gf, frame_to_classes(frame));
+	unlikely_if (Null(memoize = env->values[1])) {
+		cl_object arglist = frame_to_list(frame);
+		methods = _ecl_funcall3(@'compute-applicable-methods',
+					gf, arglist);
+		unlikely_if (methods == ECL_NIL) {
+			cl_object func = _ecl_funcall3(@'no-applicable-method',
+						       gf, arglist);
+			frame->frame.base[0] = OBJNULL;
+			env->values[1] = ECL_NIL;
+			return func;
+		}
+	}
+	methods = clos_compute_effective_method_function(gf, GFUN_COMB(gf), methods);
+	env->values[1] = ECL_T;
+	return methods;
+}
+
+static cl_object
+restricted_compute_applicable_method(cl_env_ptr env, cl_object frame, cl_object gf)
+{
+	/* method not cached */
+	cl_object arglist = frame_to_list(frame);
+	cl_object methods = clos_std_compute_applicable_methods(gf, arglist);
+	unlikely_if (methods == ECL_NIL) {
+		cl_object func = _ecl_funcall3(@'no-applicable-method', gf, arglist);
+		frame->frame.base[0] = OBJNULL;
+		env->values[1] = ECL_NIL;
+		return func;
+	}
+	methods = clos_std_compute_effective_method(gf, GFUN_COMB(gf), methods);
+	env->values[1] = ECL_T;
+	return methods;
+}
+
+static cl_object
+compute_applicable_method(cl_env_ptr env, cl_object frame, cl_object gf)
+{
+	if (gf->instance.isgf == ECL_RESTRICTED_DISPATCH)
+		return restricted_compute_applicable_method(env, frame, gf);
+	else
+		return generic_compute_applicable_method(env, frame, gf);
 }
 
 cl_object
@@ -344,6 +216,8 @@ _ecl_standard_dispatch(cl_object frame, cl_object gf)
 {
 	cl_object func, vector;
         const cl_env_ptr env = frame->frame.env;
+	ecl_cache_ptr cache = env->method_cache;
+	ecl_cache_record_ptr e;
 	/*
 	 * We have to copy the frame because it might be stored in cl_env.values
 	 * which will be wiped out by the next function call. However this only
@@ -358,38 +232,26 @@ _ecl_standard_dispatch(cl_object frame, cl_object gf)
 	}
 #endif
 	
-#ifdef ECL_THREADS
-	/* See whether we have to clear the hash from some generic functions right now. */
-	if (env->method_hash_clear_list != Cnil) {
-		ECL_WITH_GLOBAL_LOCK_BEGIN(env) {
-                        cl_object clear_list = env->method_hash_clear_list;
-                        loop_for_on_unsafe(clear_list) {
-                                do_clear_method_hash(&cl_env, ECL_CONS_CAR(clear_list));
-                        } end_loop_for_on_unsafe(clear_list);
-                        env->method_hash_clear_list = Cnil;
-                } ECL_WITH_GLOBAL_LOCK_END;
-	}
-#endif
-	vector = get_spec_vector(env, frame, gf);
-	if (vector == OBJNULL) {
-		func = compute_applicable_method(frame, gf);
+	vector = fill_spec_vector(cache->keys, frame, gf);
+	e = ecl_search_cache(cache);
+	if (e->key != OBJNULL) {
+		func = e->value;
 	} else {
-		cl_object *e = search_method_hash(env, vector);
-		if (RECORD_KEY(e) != OBJNULL) {
-			func = RECORD_VALUE(e);
-		} else {
+		/* The keys and the cache may change while we
+		 * compute the applicable methods. We must save
+		 * the keys and recompute the cache location if
+		 * it was filled. */
+		func = compute_applicable_method(env, frame, gf);
+		if (env->values[1] != ECL_NIL) {
 			cl_object keys = cl_copy_seq(vector);
-			func = compute_applicable_method(frame, gf);
-			if (RECORD_KEY(e) != OBJNULL) {
-				/* The cache might have changed while we
-				 * computed applicable methods */
-				e = search_method_hash(env, vector);
+			if (e->key != OBJNULL) {
+				e = ecl_search_cache(cache);
 			}
-			RECORD_KEY(e) = keys;
-			RECORD_VALUE(e) = func;
+			e->key = keys;
+			e->value = func;
 		}
 	}
-	func = cl_funcall(3, func, frame, Cnil);
+	func = _ecl_funcall3(func, frame, ECL_NIL);
 	/* Only need to close the copy */
 #if !defined(ECL_USE_VARARG_AS_POINTER)
 	if (frame == (cl_object)&frame_aux)
@@ -402,8 +264,36 @@ static cl_object
 generic_function_dispatch_vararg(cl_narg narg, ...)
 {
         cl_object output;
-        ECL_STACK_FRAME_VARARGS_BEGIN(narg, narg, frame);
-	output = _ecl_standard_dispatch(frame, frame->frame.env->function);
-        ECL_STACK_FRAME_VARARGS_END(frame);
+        ECL_STACK_FRAME_VARARGS_BEGIN(narg, narg, frame) {
+		output = _ecl_standard_dispatch(frame, frame->frame.env->function);
+	} ECL_STACK_FRAME_VARARGS_END(frame);
         return output;
+}
+
+
+cl_object
+si_clear_gfun_hash(cl_object what)
+{
+	/*
+	 * This function clears the generic function call hashes selectively.
+	 *	what = ECL_T means clear the hash completely
+	 *	what = generic function, means cleans only these entries
+	 * If we work on a multithreaded environment, we simply enqueue these
+	 * operations and wait for the destination thread to update its own hash.
+	 */
+	cl_env_ptr the_env = ecl_process_env();
+#ifdef ECL_THREADS
+	cl_object list;
+	for (list = mp_all_processes(); !Null(list); list = ECL_CONS_CDR(list)) {
+		cl_object process = ECL_CONS_CAR(list);
+		struct cl_env_struct *env = process->process.env;
+		if (the_env != env) {
+			ecl_cache_remove_one(env->method_cache, what);
+			ecl_cache_remove_one(env->slot_cache, what);
+		}
+	}
+#endif
+	ecl_cache_remove_one(the_env->method_cache, what);
+	ecl_cache_remove_one(the_env->slot_cache, what);
+        ecl_return0(the_env);
 }

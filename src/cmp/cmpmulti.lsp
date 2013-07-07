@@ -21,7 +21,8 @@
   (check-args-number 'MULTIPLE-VALUE-CALL args 1)
   (cond
    ;; (M-V-C #'FUNCTION) => (FUNCALL #'FUNCTION)
-   ((endp (rest args)) (c1funcall args))
+   ((endp (rest args))
+    (c1funcall args))
    ;; (M-V-C #'FUNCTION (VALUES A ... Z)) => (FUNCALL #'FUNCTION A ... Z)
    ((and (= (length args) 2)
 	 (consp (setq forms (second args)))
@@ -29,22 +30,21 @@
     (c1funcall (list* (first args) (rest forms))))
    ;; More complicated case.
    (t
-    (c1expr
-     (let ((function (gensym))
-	   (frame (gensym)))
-     `(with-stack ,frame
-       (let* ((,function ,(first args)))
-	 ,@(loop for i in (rest args)
-	      collect `(stack-push-values ,frame ,i))
-	 (si::apply-from-stack-frame ,frame ,function))))))))
+    (let ((function (gensym))
+	  (frame (gensym)))
+      `(with-stack ,frame
+	 (let* ((,function ,(first args)))
+	   ,@(loop for i in (rest args)
+		collect `(stack-push-values ,frame ,i))
+	   (si::apply-from-stack-frame ,frame ,function)))))))
 
 (defun c1multiple-value-prog1 (args)
   (check-args-number 'MULTIPLE-VALUE-PROG1 args 1)
-  (c1expr (let ((frame (gensym)))
-	    `(with-stack ,frame
-	       (stack-push-values ,frame ,(first args))
-	       ,@(rest args)
-	       (stack-pop ,frame)))))
+  (let ((frame (gensym)))
+    `(with-stack ,frame
+       (stack-push-values ,frame ,(first args))
+       ,@(rest args)
+       (stack-pop ,frame))))
 )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -58,7 +58,8 @@
 (defun c1values (args)
   (make-c1form* 'VALUES :args (c1args* args)))
 
-(defun c2values (forms)
+(defun c2values (c1form forms)
+  (declare (ignore c1form))
   (when (and (eq *destination* 'RETURN-OBJECT)
              (rest forms)
              (consp *current-form*)
@@ -81,10 +82,12 @@
    ;; of a function.
    ((endp forms)
     (cond ((eq *destination* 'RETURN)
-	   (wt-nl "value0=Cnil; cl_env_copy->nvalues=0;")
+	   (wt-nl "value0 = ECL_NIL;")
+	   (wt-nl "cl_env_copy->nvalues = 0;")
 	   (unwind-exit 'RETURN))
 	  ((eq *destination* 'VALUES)
-	   (wt-nl "cl_env_copy->values[0]=Cnil; cl_env_copy->nvalues=0;")
+	   (wt-nl "cl_env_copy->values[0] = ECL_NIL;")
+	   (wt-nl "cl_env_copy->nvalues = 0;")
 	   (unwind-exit 'VALUES))
 	  (t
 	   (unwind-exit 'NIL))))
@@ -107,12 +110,12 @@
 	   (forms (nreverse (coerce-locs (inline-args forms)))))
       ;; By inlining arguments we make sure that VL has no call to funct.
       ;; Reverse args to avoid clobbering VALUES(0)
-      (wt-nl "cl_env_copy->nvalues=" nv ";")
+      (wt-nl "cl_env_copy->nvalues = " nv ";")
       (do ((vl forms (rest vl))
 	   (i (1- (length forms)) (1- i)))
 	  ((null vl))
 	(declare (fixnum i))
-	(wt-nl "cl_env_copy->values[" i "]=" (first vl) ";"))
+	(wt-nl "cl_env_copy->values[" i "] = " (first vl) ";"))
       (unwind-exit 'VALUES)
       (close-inline-blocks)))))
 
@@ -121,24 +124,29 @@
   (check-args-number 'MULTIPLE-VALUE-SETQ args 2 2)
   (dolist (var (reverse (first args)))
     (cmpck (not (symbolp var)) "The variable ~s is not a symbol." var)
-    (setq var (chk-symbol-macrolet var))
-    (cond ((symbolp var)
-	   (cmpck (constantp var)
-		  "The constant ~s is being assigned a value." var)
-	   (push var vars))
-	  (t (let ((new-var (gensym)))
-	       (push new-var vars)
-	       (push new-var temp-vars)
-	       (push `(setf ,var ,new-var) late-bindings)))))
+    (let* ((var-or-form (chk-symbol-macrolet var))
+	   (type t))
+      (unless (when (symbolp var-or-form)
+		(cmpck (constantp var-or-form)
+		       "The constant ~s is being assigned a value." var-or-form)
+		(when (or (not (policy-type-assertions))
+			  (trivial-type-p
+			   (setf type (variable-type-in-env var-or-form))))
+		  (push var-or-form vars)
+		  t))
+	(let ((new-var (gensym)))
+	  (push new-var vars)
+	  (push new-var temp-vars)
+	  (push `(setf ,var-or-form (checked-value ,type ,new-var)) late-bindings)))))
   (let ((value (second args)))
     (cond (temp-vars
-	   (c1expr `(let* (,@temp-vars)
-		     (multiple-value-setq ,vars ,value)
-		     ,@late-bindings)))
+	   `(let* (,@temp-vars)
+	      (multiple-value-setq ,vars ,value)
+	      ,@late-bindings))
 	  ((endp vars)
-	   (c1expr `(values ,value)))
+	   `(values ,value))
 	  ((= (length vars) 1)
-	   (c1expr `(setq ,(first vars) ,value)))
+	   `(setq ,(first vars) ,value))
 	  (t
 	   (setq value (c1expr value)
 		 vars (mapcar #'c1vref vars))
@@ -163,7 +171,7 @@
   (dolist (v vars)
     (if use-bind
 	(bind (c1form-arg 0 (default-init v)) v)
-	(set-var '(C-INLINE (:object) "Cnil" () t nil) v)))
+	(set-var '(C-INLINE (:object) "ECL_NIL" () t nil) v)))
   output)
 
 (defun do-m-v-setq-any (min-values max-values vars use-bind)
@@ -187,7 +195,8 @@
     ;; If there are more variables, we have to check whether there
     ;; are enough values left in the stack.
     (when vars
-      (wt-nl "{int " nr "=cl_env_copy->nvalues-" min-values ";")
+      (wt-nl-open-brace) ;; Brace [1]
+      (wt-nl "int " nr " = cl_env_copy->nvalues-" min-values ";")
       ;;
       ;; Loop for assigning values to variables
       ;;
@@ -208,18 +217,20 @@
       ;; Loop for setting default values when there are less output than vars.
       ;;
       (let ((label (next-label)))
-	(wt-nl) (wt-go label) (wt "}")
+	(wt-nl) (wt-go label)
+	(wt-nl-close-brace) ;; Matches [1]
 	(push label labels)
 	(setq labels (nreverse labels))
 	(dolist (v vars)
 	  (when labels (wt-label (pop labels)))
 	  (if use-bind
-	      (bind '(C-INLINE (:object) "Cnil" () t nil) v)
-	      (set-var '(C-INLINE (:object) "Cnil" () t nil) v)))
+	      (bind '(C-INLINE (:object) "ECL_NIL" () t nil) v)
+	      (set-var '(C-INLINE (:object) "ECL_NIL" () t nil) v)))
 	(when labels (wt-label label))))
     output))
 
-(defun c2multiple-value-setq (vars form)
+(defun c2multiple-value-setq (c1form vars form)
+  (declare (ignore c1form))
   (multiple-value-bind (min-values max-values)
       (c1form-values-number form)
     (unwind-exit 
@@ -236,8 +247,8 @@
          (init-form (pop args)))
     (when (= (length variables) 1)
       (return-from c1multiple-value-bind
-        (c1expr `(let* ((,(first variables) ,init-form))
-                   ,@args))))
+        `(let* ((,(first variables) ,init-form))
+	   ,@args)))
     (multiple-value-bind (body ss ts is other-decls)
         (c1body args nil)
       (c1declare-specials ss)
@@ -252,7 +263,8 @@
                       :local-vars vars
                       :args vars init-form body)))))
 
-(defun c2multiple-value-bind (vars init-form body)
+(defun c2multiple-value-bind (c1form vars init-form body)
+  (declare (ignore c1form))
   ;; 0) Compile the form which is going to give us the values
   (let ((*destination* 'VALUES)) (c2expr* init-form))
 
@@ -265,7 +277,7 @@
 	 (nr (make-lcl-var :type :int))
 	 min-values max-values)
     ;; 1) Retrieve the number of output values
-    (wt-nl "{")
+    (wt-nl-open-brace)
     (multiple-value-setq (min-values max-values)
       (c1form-values-number init-form))
 
@@ -295,6 +307,5 @@
     (c2expr body)
 
     ;; 6) Close the C expression.
-    (wt "}"))
-  )
+    (wt-nl-close-brace)))
 

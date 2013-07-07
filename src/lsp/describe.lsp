@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -13,12 +14,12 @@
 
 (in-package "SYSTEM")
 
-(defvar *inspect-level* 0)
-(defvar *inspect-history* nil)
-(defvar *inspect-mode* nil)
+(defparameter *inspect-level* 0)
+(defparameter *inspect-history* nil)
+(defparameter *inspect-mode* nil)
 
-(defvar *old-print-level* nil)
-(defvar *old-print-length* nil)
+(defparameter *old-print-level* nil)
+(defparameter *old-print-length* nil)
 
 
 ;; Either the inspector reads and writes everything on *standard-output*,
@@ -446,25 +447,32 @@ q (or Q):             quits the inspection.~%~
 	       ((sys:instancep object) (inspect-instance object))
                (t (format t "~S - ~S" object (type-of object))))))
 
-
-(defun inspect (object &aux (*inspect-mode* t)
-                            (*inspect-level* 0)
-                            (*inspect-history* nil)
-                            (*old-print-level* *print-level*)
-                            (*old-print-length* *print-length*)
-                            (*print-level* 3)
-                            (*print-length* 3))
+(defun default-inspector (object)
   "Args: (object)
 Shows the information about OBJECT interactively.  See the ECL Report for the
 inspect commands, or type '?' to the inspector."
+  (declare (si::c-local))
   ;;(read-line)
-  (terpri)
-  (princ "Inspection mode: Type ? followed by #\\Newline for help.")
-  (terpri)
-  (terpri)
-  (catch 'QUIT-INSPECT (inspect-object object))
-  (terpri)
-  (values))
+  (let ((*inspect-mode* t)
+        (*inspect-level* 0)
+        (*inspect-history* nil)
+        (*old-print-level* *print-level*)
+        (*old-print-length* *print-length*)
+        (*print-level* 3)
+        (*print-length* 3))
+    (terpri)
+    (princ "Inspection mode: Type ? followed by #\\Newline for help.")
+    (terpri)
+    (terpri)
+    (catch 'QUIT-INSPECT (inspect-object object))
+    (terpri)
+    (values)))
+
+(defun inspect (object)
+  (if ext:*inspector-hook*
+      (funcall *inspector-hook* object)
+      (default-inspector object))
+  object)
 
 (defun describe (object &optional (stream *standard-output*)
 			&aux (*inspect-mode* nil)
@@ -534,16 +542,6 @@ Prints information about OBJECT to STREAM."
 
     (cond ((setq x (si::get-documentation symbol 'SETF))
            (doc1 x "[Setf]"))
-          ((setq x (get-sysprop symbol 'SETF-UPDATE-FN))
-           (let ((*package* (good-package)))
-             (doc1 (format nil "~%Defined as: ~S~%See the doc of DEFSETF."
-                           `(defsetf ,symbol ,(get-sysprop symbol 'SETF-UPDATE-FN)))
-                   "[Setf]")))
-          ((setq x (get-sysprop symbol 'SETF-LAMBDA))
-           (let ((*package* (good-package)))
-             (doc1 (format nil "~%Defined as: ~S~%See the doc of DEFSETF."
-                           `(defsetf ,symbol ,@(get-sysprop symbol 'SETF-LAMBDA)))
-                   "[Setf]")))
           ((setq x (get-sysprop symbol 'SETF-METHOD))
            (let ((*package* (good-package)))
              (doc1

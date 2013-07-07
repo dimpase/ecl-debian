@@ -1,0 +1,24 @@
+Description: correct small typo
+Author: Peter Van Eynde <pvaneynd@debian.org>
+Forwarded: http://thread.gmane.org/gmane.lisp.ecl.general/8249
+
+--- ecl.orig/src/clx/image.lisp
++++ ecl/src/clx/image.lisp
+@@ -1308,7 +1308,7 @@
+ 	    (image-xy (eq format :xy-pixmap))
+ 	    (image-z (eq format :z-pixmap))
+ 	    (image-x t))
+-    (error "Result-type ~s is incompatable with format ~s"
++    (error "Result-type ~s is incompatible with format ~s"
+ 	   result-type format))
+   (unless plane-mask (setq plane-mask #xffffffff))
+   (let ((display (drawable-display drawable)))
+@@ -2647,7 +2647,7 @@
+     (unless (= depth image-depth)
+       (if (= image-depth 1)
+ 	  (unless gcontext (xlib::required-arg gcontext))
+-	(error "Pixmap depth ~d incompatable with image depth ~d"
++	(error "Pixmap depth ~d incompatible with image depth ~d"
+ 	       depth image-depth)))	       
+     (put-image pixmap gc image :x 0 :y 0 :bitmap-p (and (= image-depth 1)
+ 							gcontext))

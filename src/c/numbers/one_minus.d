@@ -21,15 +21,15 @@
 static cl_object
 ecl_one_minus_fix(cl_object x)
 {
-        if (x == MAKE_FIXNUM(MOST_NEGATIVE_FIXNUM))
+        if (x == ecl_make_fixnum(MOST_NEGATIVE_FIXNUM))
                 return ecl_make_integer(MOST_NEGATIVE_FIXNUM-1);
-        return (cl_object)((cl_fixnum)x - ((cl_fixnum)MAKE_FIXNUM(1) - FIXNUM_TAG));
+        return (cl_object)((cl_fixnum)x - ((cl_fixnum)ecl_make_fixnum(1) - ECL_FIXNUM_TAG));
 }
 
 static cl_object
 ecl_one_minus_big(cl_object x)
 {
-        return ecl_minus(x, MAKE_FIXNUM(1));
+        return ecl_minus(x, ecl_make_fixnum(1));
 }
 
 static cl_object
@@ -41,20 +41,20 @@ ecl_one_minus_ratio(cl_object x)
 static cl_object
 ecl_one_minus_single_float(cl_object x)
 {
-        return ecl_make_singlefloat(ecl_single_float(x) - 1);
+        return ecl_make_single_float(ecl_single_float(x) - 1);
 }
 
 static cl_object
 ecl_one_minus_double_float(cl_object x)
 {
-        return ecl_make_doublefloat(ecl_double_float(x) - 1);
+        return ecl_make_double_float(ecl_double_float(x) - 1);
 }
 
 #ifdef ECL_LONG_FLOAT
 static cl_object
 ecl_one_minus_long_float(cl_object x)
 {
-        return ecl_make_longfloat(ecl_long_float(x) - 1);
+        return ecl_make_long_float(ecl_long_float(x) - 1);
 }
 #endif
 

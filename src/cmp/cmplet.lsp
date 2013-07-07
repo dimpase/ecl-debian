@@ -87,13 +87,13 @@
               (check-args-number "LET/LET* binding" form 1 2)
               (setf name (first form) form (rest form))))
         (let* ((var (c1make-var name specials ignoreds types))
-               (init (if form
-                         (and-form-type (var-type var)
-                                        (c1expr (setf form (first form)))
-                                        form
-                                        :unsafe
-                                        "In LET/LET* bindings")
-                         (default-init var))))
+	       (type (var-type var))
+               (init (cond ((null form)
+			    (default-init var))
+			   ((trivial-type-p type)
+			    (c1expr (first form)))
+			   (t
+			    (c1expr `(checked-value ,type ,(first form)))))))
           ;; :read-only variable handling. Beppe
           (if (read-only-variable-p name other-decls)
 	      (if (global-var-p var)
@@ -170,7 +170,9 @@
   ;;  - the value of e2 is not modified in e3 nor in following expressions
   (when (eq (c1form-name form) 'VAR)
     (let ((other-var (c1form-arg 0 form)))
-      (unless (or (member other-var rest-vars)
+      (unless (or (and (global-var-p other-var)
+		       (> (var-ref var) 1))
+		  (member other-var rest-vars)
                   (var-changed-in-form-list other-var rest-forms))
         (cmpdebug "Replacing variable ~A by its value ~A" (var-name var) form)
         (nsubst-var var form)
@@ -241,8 +243,9 @@
     (baboon :format-control "In REPLACEABLE, variable ~A not found. Form:~%~A"
             :format-arguments (list (var-name var) *current-form*))))
 
-(defun c2let* (vars forms body
+(defun c2let* (c1form vars forms body
 	       &aux
+	       (*volatile* (c1form-volatile* c1form))
 	       (*unwind-exit* *unwind-exit*)
 	       (*env* *env*)
 	       (*env-lvl* *env-lvl*)
@@ -263,16 +266,16 @@
      for kind = (local var)
      when kind
      do (progn
-	  (wt-nl)(maybe-open-inline-block)
+	  (maybe-open-inline-block)
 	  (bind (next-lcl) var)
-	  (wt *volatile* (rep-type-name kind) " " var ";")
+	  (wt-nl *volatile* (rep-type-name kind) " " var ";")
 	  (wt-comment (var-name var))))
 
   ;; Create closure bindings for closed-over variables
   (when (some #'var-ref-ccb vars)
-    (wt-nl) (maybe-open-inline-block)
+    (maybe-open-inline-block)
     (let ((env-lvl *env-lvl*))
-      (wt *volatile* "cl_object env" (incf *env-lvl*) " = env" env-lvl ";")))
+      (wt-nl *volatile* "cl_object env" (incf *env-lvl*) " = env" env-lvl ";")))
 
   ;; Assign values
   (loop for form in forms
@@ -290,11 +293,11 @@
   ;; Optionally register the variables with the IHS frame for debugging
   (if (policy-debug-variable-bindings)
       (let ((*unwind-exit* *unwind-exit*))
-        (wt-nl "{")
+        (wt-nl-open-brace)
         (let* ((env (build-debug-lexical-env vars)))
           (when env (push 'IHS-ENV *unwind-exit*))
           (c2expr body)
-          (wt-nl "}")
+          (wt-nl-close-brace)
           (when env (pop-debug-lexical-env))))
       (c2expr body))
 

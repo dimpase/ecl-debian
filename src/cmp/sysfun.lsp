@@ -24,6 +24,7 @@
 
 (defun def-inline (name safety arg-types return-rep-type expansion
                    &key (one-liner t) (exact-return-type nil) (inline-or-warn nil)
+		   (multiple-values t)
                    &aux arg-rep-types)
   (setf safety
 	(case safety
@@ -49,6 +50,7 @@
                             :return-type return-type
                             :arg-types arg-types
                             :exact-return-type exact-return-type
+			    :multiple-values multiple-values
                             ;; :side-effects (not (get-sysprop name 'no-side-effects))
                             :one-liner one-liner
                             :expansion expansion))
@@ -69,11 +71,11 @@
 ;;;
 
 (def-inline aref :unsafe (t t t) t
- "@0;ecl_aref_unsafe(#0,fix(#1)*(#0)->array.dims[1]+fix(#2))")
+ "@0;ecl_aref_unsafe(#0,ecl_fixnum(#1)*(#0)->array.dims[1]+ecl_fixnum(#2))")
 (def-inline aref :unsafe ((array t) t t) t
- "@0;(#0)->array.self.t[fix(#1)*(#0)->array.dims[1]+fix(#2)]")
+ "@0;(#0)->array.self.t[ecl_fixnum(#1)*(#0)->array.dims[1]+ecl_fixnum(#2)]")
 (def-inline aref :unsafe ((array bit) t t) :fixnum
- "@0;ecl_aref_bv(#0,fix(#1)*(#0)->array.dims[1]+fix(#2))")
+ "@0;ecl_aref_bv(#0,ecl_fixnum(#1)*(#0)->array.dims[1]+ecl_fixnum(#2))")
 (def-inline aref :unsafe ((array t) fixnum fixnum) t
  "@0;(#0)->array.self.t[#1*(#0)->array.dims[1]+#2]")
 (def-inline aref :unsafe ((array bit) fixnum fixnum) :fixnum
@@ -87,10 +89,10 @@
 (def-inline aref :unsafe ((array fixnum) fixnum fixnum) :fixnum
  "@0;(#0)->array.self.fix[#1*(#0)->array.dims[1]+#2]")
 
-(def-inline aref :always (t t) t "ecl_aref1(#0,fixint(#1))")
+(def-inline aref :always (t t) t "ecl_aref1(#0,ecl_to_size(#1))")
 (def-inline aref :always (t fixnum) t "ecl_aref1(#0,#1)")
-(def-inline aref :unsafe (t t) t "ecl_aref1(#0,fix(#1))")
-(def-inline aref :unsafe ((array bit) t) :fixnum "ecl_aref_bv(#0,fix(#1))")
+(def-inline aref :unsafe (t t) t "ecl_aref1(#0,ecl_fixnum(#1))")
+(def-inline aref :unsafe ((array bit) t) :fixnum "ecl_aref_bv(#0,ecl_fixnum(#1))")
 (def-inline aref :unsafe ((array bit) fixnum) :fixnum "ecl_aref_bv(#0,#1)")
 #+unicode
 (def-inline aref :unsafe ((array character) fixnum) :wchar
@@ -104,11 +106,11 @@
 (def-inline aref :unsafe ((array fixnum) fixnum) :fixnum
  "(#0)->array.self.fix[#1]")
 
-(def-inline row-major-aref :always (t t) t "ecl_aref(#0,fixint(#1))")
+(def-inline row-major-aref :always (t t) t "ecl_aref(#0,ecl_to_size(#1))")
 (def-inline row-major-aref :always (t fixnum) t "ecl_aref(#0,#1)")
-(def-inline row-major-aref :unsafe (t t) t "ecl_aref_unsafe(#0,fix(#1))")
+(def-inline row-major-aref :unsafe (t t) t "ecl_aref_unsafe(#0,ecl_fixnum(#1))")
 (def-inline row-major-aref :unsafe (t fixnum) t "ecl_aref_unsafe(#0,#1)")
-(def-inline row-major-aref :unsafe ((array bit) t) :fixnum "ecl_aref_bv(#0,fix(#1))")
+(def-inline row-major-aref :unsafe ((array bit) t) :fixnum "ecl_aref_bv(#0,ecl_fixnum(#1))")
 (def-inline row-major-aref :unsafe ((array bit) fixnum) :fixnum "ecl_aref_bv(#0,#1)")
 #+unicode
 (def-inline row-major-aref :unsafe ((array character) fixnum) :wchar
@@ -144,14 +146,14 @@
 (def-inline row-major-aref :unsafe ((array fixnum) fixnum) :fixnum
  "(#0)->array.self.fix[#1]")
 
-(def-inline si:row-major-aset :always (t t t) t "ecl_aset(#0,fixint(#1),#2)")
+(def-inline si:row-major-aset :always (t t t) t "ecl_aset(#0,ecl_to_size(#1),#2)")
 (def-inline si:row-major-aset :always (t fixnum t) t "ecl_aset(#0,#1,#2)")
-(def-inline si:row-major-aset :unsafe (t t t) t "ecl_aset_unsafe(#0,fix(#1),#2)")
+(def-inline si:row-major-aset :unsafe (t t t) t "ecl_aset_unsafe(#0,ecl_fixnum(#1),#2)")
 (def-inline si:row-major-aset :unsafe (t fixnum t) t "ecl_aset_unsafe(#0,#1,#2)")
 (def-inline si:row-major-aset :unsafe ((array t) fixnum t) t
  "(#0)->vector.self.t[#1]= #2")
 (def-inline si:row-major-aset :unsafe ((array bit) fixnum t) :fixnum
- "ecl_aset_bv(#0,#1,fix(#2))")
+ "ecl_aset_bv(#0,#1,ecl_fixnum(#2))")
 (def-inline si:row-major-aset :unsafe ((array bit) fixnum fixnum) :fixnum
  "ecl_aset_bv(#0,#1,#2)")
 (def-inline si:row-major-aset :unsafe ((array base-char) fixnum base-char) :unsigned-char
@@ -188,11 +190,17 @@
 (def-inline si:row-major-aset :unsafe ((array fixnum) fixnum fixnum) :fixnum
  "(#0)->array.self.fix[#1]= #2")
 
+(def-inline si:copy-subarray :always (array ext:array-index array ext:array-index
+				      ext:array-index) array
+ "@0;(ecl_copy_subarray(#0,#1,#2,#3,#4),#0)")
+
 (def-inline array-rank :unsafe (array) :fixnum
  "@0;(((#0)->d.t == t_array)?(#0)->array.rank:1)")
+(def-inline array-rank :always (array) :fixnum
+ "ecl_array_rank(#0)")
 
 (def-inline array-dimension :always (t t) fixnum
- "ecl_array_dimension(#0,fixint(#1))")
+ "ecl_array_dimension(#0,ecl_to_size(#1))")
 (def-inline array-dimension :always (t fixnum) fixnum
  "ecl_array_dimension(#0,#1)")
 
@@ -201,14 +209,14 @@
 (def-inline adjustable-array-p :always (t) :bool "@0;(ECL_ARRAYP(#0)? (void)0: FEtype_error_array(#0),ECL_ADJUSTABLE_ARRAY_P(#0))")
 (def-inline adjustable-array-p :unsafe (array) :bool "ECL_ADJUSTABLE_ARRAY_P(#0)")
 
-(def-inline svref :always (t t) t "ecl_aref1(#0,fixint(#1))")
+(def-inline svref :always (t t) t "ecl_aref1(#0,ecl_to_size(#1))")
 (def-inline svref :always (t fixnum) t "ecl_aref1(#0,#1)")
-(def-inline svref :unsafe (t t) t "(#0)->vector.self.t[fix(#1)]")
+(def-inline svref :unsafe (t t) t "(#0)->vector.self.t[ecl_fixnum(#1)]")
 (def-inline svref :unsafe (t fixnum) t "(#0)->vector.self.t[#1]")
 
-(def-inline si:svset :always (t t t) t "ecl_aset1(#0,fixint(#1),#2)")
+(def-inline si:svset :always (t t t) t "ecl_aset1(#0,ecl_to_size(#1),#2)")
 (def-inline si:svset :always (t fixnum t) t "ecl_aset1(#0,#1,#2)")
-(def-inline si:svset :unsafe (t t t) t "((#0)->vector.self.t[fix(#1)]=(#2))")
+(def-inline si:svset :unsafe (t t t) t "((#0)->vector.self.t[ecl_fixnum(#1)]=(#2))")
 (def-inline si:svset :unsafe (t fixnum t) t "(#0)->vector.self.t[#1]= #2")
 
 (def-inline array-has-fill-pointer-p :always (t) :bool "@0;(ECL_ARRAYP(#0)?(void)0:FEtype_error_array(#0),ECL_ARRAY_HAS_FILL_POINTER_P(#0))")
@@ -272,106 +280,107 @@
 
 (def-inline output-stream-p :always (stream) :bool "ecl_output_stream_p(#0)")
 
+;; file hash.d
+
+(def-inline gethash :always (t t t) t "ecl_gethash_safe(#0,#1,#2)" :multiple-values nil)
+(def-inline gethash :always (t t) t "ecl_gethash_safe(#0,#1,ECL_NIL)" :multiple-values nil)
+
 ;; file list.d
 
 (def-inline car :unsafe (cons) t "ECL_CONS_CAR(#0)")
-(def-inline car :unsafe (t) t "CAR(#0)")
+(def-inline car :unsafe (t) t "_ecl_car(#0)")
 
-(def-inline si::cons-car :always (t) t "CAR(#0)")
+(def-inline si::cons-car :always (t) t "_ecl_car(#0)")
 (def-inline si::cons-car :unsafe (t) t "ECL_CONS_CAR(#0)")
 
 (def-inline cdr :unsafe (cons) t "ECL_CONS_CDR(#0)")
-(def-inline cdr :unsafe (t) t "CDR(#0)")
+(def-inline cdr :unsafe (t) t "_ecl_cdr(#0)")
 
-(def-inline si::cons-cdr :always (t) t "CDR(#0)")
+(def-inline si::cons-cdr :always (t) t "_ecl_cdr(#0)")
 (def-inline si::cons-cdr :unsafe (t) t "ECL_CONS_CDR(#0)")
 
-(def-inline caar :unsafe (t) t "CAAR(#0)")
+;; BEGIN-GENERATED (gen-cons-sysfun)
 
-(def-inline cadr :unsafe (t) t "CADR(#0)")
-
-(def-inline cdar :unsafe (t) t "CDAR(#0)")
-
-(def-inline cddr :unsafe (t) t "CDDR(#0)")
-
-(def-inline caaar :unsafe (t) t "CAAAR(#0)")
-
-(def-inline caadr :unsafe (t) t "CAADR(#0)")
-
-(def-inline cadar :unsafe (t) t "CADAR(#0)")
-
-(def-inline caddr :unsafe (t) t "CADDR(#0)")
-
-(def-inline cdaar :unsafe (t) t "CDAAR(#0)")
-
-(def-inline cdadr :unsafe (t) t "CDADR(#0)")
-
-(def-inline cddar :unsafe (t) t "CDDAR(#0)")
-
-(def-inline cdddr :unsafe (t) t "CDDDR(#0)")
-
-(def-inline caaaar :unsafe (t) t "CAAAAR(#0)")
-
-(def-inline caaadr :unsafe (t) t "CAAADR(#0)")
-
-(def-inline caadar :unsafe (t) t "CAADAR(#0)")
-
-(def-inline caaddr :unsafe (t) t "CAADDR(#0)")
-
-(def-inline cadaar :unsafe (t) t "CADAAR(#0)")
-
-(def-inline cadadr :unsafe (t) t "CADADR(#0)")
-
-(def-inline caddar :unsafe (t) t "CADDAR(#0)")
-
-(def-inline cadddr :unsafe (t) t "CADDDR(#0)")
-
-(def-inline cdaaar :unsafe (t) t "CDAAAR(#0)")
-
-(def-inline cdaadr :unsafe (t) t "CDAADR(#0)")
-
-(def-inline cdadar :unsafe (t) t "CDADAR(#0)")
-
-(def-inline cdaddr :unsafe (t) t "CDADDR(#0)")
-
-(def-inline cddaar :unsafe (t) t "CDDAAR(#0)")
-
-(def-inline cddadr :unsafe (t) t "CDDADR(#0)")
-
-(def-inline cdddar :unsafe (t) t "CDDDAR(#0)")
-
-(def-inline cddddr :unsafe (t) t "CDDDDR(#0)")
+(def-inline car :always (t) t "ecl_car(#0)")
+(def-inline car :unsafe (t) t "_ecl_car(#0)")
+(def-inline cdr :always (t) t "ecl_cdr(#0)")
+(def-inline cdr :unsafe (t) t "_ecl_cdr(#0)")
+(def-inline caar :always (t) t "ecl_caar(#0)")
+(def-inline caar :unsafe (t) t "_ecl_caar(#0)")
+(def-inline cdar :always (t) t "ecl_cdar(#0)")
+(def-inline cdar :unsafe (t) t "_ecl_cdar(#0)")
+(def-inline cadr :always (t) t "ecl_cadr(#0)")
+(def-inline cadr :unsafe (t) t "_ecl_cadr(#0)")
+(def-inline cddr :always (t) t "ecl_cddr(#0)")
+(def-inline cddr :unsafe (t) t "_ecl_cddr(#0)")
+(def-inline caaar :always (t) t "ecl_caaar(#0)")
+(def-inline caaar :unsafe (t) t "_ecl_caaar(#0)")
+(def-inline cdaar :always (t) t "ecl_cdaar(#0)")
+(def-inline cdaar :unsafe (t) t "_ecl_cdaar(#0)")
+(def-inline cadar :always (t) t "ecl_cadar(#0)")
+(def-inline cadar :unsafe (t) t "_ecl_cadar(#0)")
+(def-inline cddar :always (t) t "ecl_cddar(#0)")
+(def-inline cddar :unsafe (t) t "_ecl_cddar(#0)")
+(def-inline caadr :always (t) t "ecl_caadr(#0)")
+(def-inline caadr :unsafe (t) t "_ecl_caadr(#0)")
+(def-inline cdadr :always (t) t "ecl_cdadr(#0)")
+(def-inline cdadr :unsafe (t) t "_ecl_cdadr(#0)")
+(def-inline caddr :always (t) t "ecl_caddr(#0)")
+(def-inline caddr :unsafe (t) t "_ecl_caddr(#0)")
+(def-inline cdddr :always (t) t "ecl_cdddr(#0)")
+(def-inline cdddr :unsafe (t) t "_ecl_cdddr(#0)")
+(def-inline caaaar :always (t) t "ecl_caaaar(#0)")
+(def-inline caaaar :unsafe (t) t "_ecl_caaaar(#0)")
+(def-inline cdaaar :always (t) t "ecl_cdaaar(#0)")
+(def-inline cdaaar :unsafe (t) t "_ecl_cdaaar(#0)")
+(def-inline cadaar :always (t) t "ecl_cadaar(#0)")
+(def-inline cadaar :unsafe (t) t "_ecl_cadaar(#0)")
+(def-inline cddaar :always (t) t "ecl_cddaar(#0)")
+(def-inline cddaar :unsafe (t) t "_ecl_cddaar(#0)")
+(def-inline caadar :always (t) t "ecl_caadar(#0)")
+(def-inline caadar :unsafe (t) t "_ecl_caadar(#0)")
+(def-inline cdadar :always (t) t "ecl_cdadar(#0)")
+(def-inline cdadar :unsafe (t) t "_ecl_cdadar(#0)")
+(def-inline caddar :always (t) t "ecl_caddar(#0)")
+(def-inline caddar :unsafe (t) t "_ecl_caddar(#0)")
+(def-inline cdddar :always (t) t "ecl_cdddar(#0)")
+(def-inline cdddar :unsafe (t) t "_ecl_cdddar(#0)")
+(def-inline caaadr :always (t) t "ecl_caaadr(#0)")
+(def-inline caaadr :unsafe (t) t "_ecl_caaadr(#0)")
+(def-inline cdaadr :always (t) t "ecl_cdaadr(#0)")
+(def-inline cdaadr :unsafe (t) t "_ecl_cdaadr(#0)")
+(def-inline cadadr :always (t) t "ecl_cadadr(#0)")
+(def-inline cadadr :unsafe (t) t "_ecl_cadadr(#0)")
+(def-inline cddadr :always (t) t "ecl_cddadr(#0)")
+(def-inline cddadr :unsafe (t) t "_ecl_cddadr(#0)")
+(def-inline caaddr :always (t) t "ecl_caaddr(#0)")
+(def-inline caaddr :unsafe (t) t "_ecl_caaddr(#0)")
+(def-inline cdaddr :always (t) t "ecl_cdaddr(#0)")
+(def-inline cdaddr :unsafe (t) t "_ecl_cdaddr(#0)")
+(def-inline cadddr :always (t) t "ecl_cadddr(#0)")
+(def-inline cadddr :unsafe (t) t "_ecl_cadddr(#0)")
+(def-inline cddddr :always (t) t "ecl_cddddr(#0)")
+(def-inline cddddr :unsafe (t) t "_ecl_cddddr(#0)")
+;; END-GENERATED
 
 (def-inline cons :always (t t) t "CONS(#0,#1)")
 
 (def-inline endp :safe (t) :bool "ecl_endp(#0)")
-(def-inline endp :unsafe (t) :bool "#0==Cnil")
+(def-inline endp :unsafe (t) :bool "#0==ECL_NIL")
 
-(def-inline nth :always (t t) t "ecl_nth(fixint(#0),#1)")
+(def-inline nth :always (t t) t "ecl_nth(ecl_to_size(#0),#1)")
 (def-inline nth :always (fixnum t) t "ecl_nth(#0,#1)")
-(def-inline nth :unsafe (t t) t "ecl_nth(fix(#0),#1)")
+(def-inline nth :unsafe (t t) t "ecl_nth(ecl_fixnum(#0),#1)")
 (def-inline nth :unsafe (fixnum t) t "ecl_nth(#0,#1)")
 
-(def-inline first :unsafe (cons) t "ECL_CONS_CAR(#0)")
-(def-inline first :unsafe (t) t "CAR(#0)")
-
-(def-inline second :unsafe (t) t "CADR(#0)")
-
-(def-inline third :unsafe (t) t "CADDR(#0)")
-
-(def-inline fourth :unsafe (t) t "CADDDR(#0)")
-
-(def-inline rest :unsafe (cons) t "ECL_CONS_CDR(#0)")
-(def-inline rest :unsafe (t) t "CDR(#0)")
-
-(def-inline nthcdr :always (t t) t "ecl_nthcdr(fixint(#0),#1)")
+(def-inline nthcdr :always (t t) t "ecl_nthcdr(ecl_to_size(#0),#1)")
 (def-inline nthcdr :always (fixnum t) t "ecl_nthcdr(#0,#1)")
-(def-inline nthcdr :unsafe (t t) t "ecl_nthcdr(fix(#0),#1)")
+(def-inline nthcdr :unsafe (t t) t "ecl_nthcdr(ecl_fixnum(#0),#1)")
 (def-inline nthcdr :unsafe (fixnum t) t "ecl_nthcdr(#0,#1)")
 
 (def-inline last :always (t) t "ecl_last(#0,1)")
 
-(def-inline list :always nil t "Cnil")
+(def-inline list :always nil t "ECL_NIL")
 (def-inline list :always (t) t "ecl_list1(#0)")
 
 (def-inline list* :always (t) t "#0")
@@ -388,11 +397,13 @@
 ;; file num_arith.d
 
 (def-inline 1+ :always (t) t "ecl_one_plus(#0)")
+(def-inline 1+ :always (fixnum) t "ecl_make_integer((#0)+1)")
 (def-inline 1+ :always (double-loat) :double "(double)(#0)+1")
 (def-inline 1+ :always (single-float) :float "(float)(#0)+1")
 (def-inline 1+ :always (fixnum) :fixnum "(#0)+1" :exact-return-type t)
 
 (def-inline 1- :always (t) t "ecl_one_minus(#0)")
+(def-inline 1- :always (fixnum) t "ecl_make_integer((#0)-1)")
 (def-inline 1- :always (double-float) :double "(double)(#0)-1")
 (def-inline 1- :always (single-float) :float "(float)(#0)-1")
 (def-inline 1- :always (fixnum) :fixnum "(#0)-1" :exact-return-type t)
@@ -401,13 +412,15 @@
 
 (def-inline float :always (t single-float) :float "ecl_to_float(#0)")
 (def-inline float :always (t double-float) :double "ecl_to_double(#0)")
+#+long-float
+(def-inline float :always (t long-float) :long-double "ecl_to_long_double(#0)")
 (def-inline float :always (fixnum-float) :double "((double)(#0))" :exact-return-type t)
 (def-inline float :always (fixnum-float) :float "((float)(#0))" :exact-return-type t)
 
 (def-inline numerator :unsafe (integer) integer "(#0)")
 (def-inline numerator :unsafe (ratio) integer "(#0)->ratio.num")
 
-(def-inline denominator :unsafe (integer) integer "MAKE_FIXNUM(1)")
+(def-inline denominator :unsafe (integer) integer "ecl_make_fixnum(1)")
 (def-inline denominator :unsafe (ratio) integer "(#0)->ratio.den")
 
 (def-inline floor :always (t) (values &rest t) "ecl_floor1(#0)")
@@ -468,7 +481,7 @@
 
 ;; file num_log.d
 
-(def-inline logand :always nil t "MAKE_FIXNUM(-1)")
+(def-inline logand :always nil t "ecl_make_fixnum(-1)")
 (def-inline logand :always nil :fixnum "-1")
 (def-inline logand :always (t t) t "ecl_boole(ECL_BOOLAND,(#0),(#1))")
 (def-inline logand :always (fixnum fixnum) :fixnum "((#0) & (#1))")
@@ -479,12 +492,12 @@
 (def-inline logandc2 :always (t t) t "ecl_boole(ECL_BOOLANDC2,(#0),(#1))")
 (def-inline logandc2 :always (fixnum fixnum) :fixnum "((#0) & ~(#1))")
 
-(def-inline logeqv :always nil t "MAKE_FIXNUM(-1)")
+(def-inline logeqv :always nil t "ecl_make_fixnum(-1)")
 (def-inline logeqv :always nil :fixnum "-1")
 (def-inline logeqv :always (t t) t "ecl_boole(ECL_BOOLEQV,(#0),(#1))")
 (def-inline logeqv :always (fixnum fixnum) :fixnum "(~( (#0) ^ (#1) ))")
 
-(def-inline logior :always nil t "MAKE_FIXNUM(0)")
+(def-inline logior :always nil t "ecl_make_fixnum(0)")
 (def-inline logior :always nil :fixnum "0")
 (def-inline logior :always (t t) t "ecl_boole(ECL_BOOLIOR,(#0),(#1))")
 (def-inline logior :always (fixnum fixnum) :fixnum "((#0) | (#1))")
@@ -495,7 +508,7 @@
 (def-inline lognor :always (t t) t "ecl_boole(ECL_BOOLNOR,(#0),(#1))")
 (def-inline lognor :always (fixnum fixnum) :fixnum "(~( (#0) | (#1) ))")
 
-(def-inline lognot :always (t) t "ecl_boole(ECL_BOOLXOR,(#0),MAKE_FIXNUM(-1))")
+(def-inline lognot :always (t) t "ecl_boole(ECL_BOOLXOR,(#0),ecl_make_fixnum(-1))")
 (def-inline lognot :always (fixnum) :fixnum "(~(#0))")
 
 (def-inline logorc1 :always (t t) t "ecl_boole(ECL_BOOLORC1,(#0),(#1))")
@@ -504,7 +517,7 @@
 (def-inline logorc2 :always (t t) t "ecl_boole(ECL_BOOLORC2,(#0),(#1))")
 (def-inline logorc2 :always (fixnum fixnum) :fixnum "((#0) | ~(#1))")
 
-(def-inline logxor :always nil t "MAKE_FIXNUM(0)")
+(def-inline logxor :always nil t "ecl_make_fixnum(0)")
 (def-inline logxor :always nil :fixnum "0")
 (def-inline logxor :always (t t) t "ecl_boole(ECL_BOOLXOR,(#0),(#1))")
 (def-inline logxor :always (fixnum fixnum) :fixnum "((#0) ^ (#1))")
@@ -576,7 +589,7 @@
 
 ;; file pathname.d
 
-(def-inline null :always (t) :bool "#0==Cnil")
+(def-inline null :always (t) :bool "#0==ECL_NIL")
 
 (def-inline symbolp :always (t) :bool "@0;ECL_SYMBOLP(#0)")
 
@@ -592,9 +605,9 @@
 
 (def-inline floatp :always (t) :bool "floatp(#0)")
 
-(def-inline characterp :always (t) :bool "CHARACTERP(#0)")
+(def-inline characterp :always (t) :bool "ECL_CHARACTERP(#0)")
 
-(def-inline base-char-p :always (character) :bool "BASE_CHAR_P(#0)")
+(def-inline base-char-p :always (character) :bool "ECL_BASE_CHAR_P(#0)")
 
 (def-inline stringp :always (t) :bool "@0;ECL_STRINGP(#0)")
 
@@ -610,8 +623,8 @@
 (def-inline eq :always (fixnum fixnum) :bool "(#0)==(#1)")
 
 (def-inline eql :always (t t) :bool "ecl_eql(#0,#1)")
-(def-inline eql :always (character t) :bool "(CODE_CHAR(#0)==(#1))")
-(def-inline eql :always (t character) :bool "((#0)==CODE_CHAR(#1))")
+(def-inline eql :always (character t) :bool "(ECL_CODE_CHAR(#0)==(#1))")
+(def-inline eql :always (t character) :bool "((#0)==ECL_CODE_CHAR(#1))")
 (def-inline eql :always (character character) :bool "(#0)==(#1)")
 (def-inline eql :always ((not (or complex bignum ratio float)) t) :bool
  "(#0)==(#1)")
@@ -625,31 +638,19 @@
 (def-inline equalp :always (t t) :bool "ecl_equalp(#0,#1)")
 (def-inline equalp :always (fixnum fixnum) :bool "(#0)==(#1)")
 
-(def-inline not :always (t) :bool "(#0)==Cnil")
+(def-inline not :always (t) :bool "(#0)==ECL_NIL")
 
 ;; file print.d, read.d
 
-(def-inline clear-output :always (stream) NULL "(ecl_clear_output(#0),Cnil)")
+(def-inline clear-output :always (stream) NULL "(ecl_clear_output(#0),ECL_NIL)")
 
-(def-inline finish-output :always (stream) NULL "(ecl_finish_output(#0),Cnil)")
+(def-inline finish-output :always (stream) NULL "(ecl_finish_output(#0),ECL_NIL)")
 
-(def-inline finish-output :always (stream) NULL "(ecl_force_output(#0),Cnil)")
+(def-inline finish-output :always (stream) NULL "(ecl_force_output(#0),ECL_NIL)")
 
-(def-inline prin1 :always (t t) t "ecl_prin1(#0,#1)")
-(def-inline prin1 :always (t) t "ecl_prin1(#0,Cnil)")
+(def-inline write-char :always (t) t "@0;(ecl_princ_char(ecl_char_code(#0),ECL_NIL),(#0))")
 
-(def-inline princ :always (t t) t "ecl_princ(#0,#1)")
-(def-inline princ :always (t) t "ecl_princ(#0,Cnil)")
-
-(def-inline print :always (t t) t "ecl_print(#0,#1)")
-(def-inline print :always (t) t "ecl_print(#0,Cnil)")
-
-(def-inline terpri :always (t) t "ecl_terpri(#0)")
-(def-inline terpri :always nil t "ecl_terpri(Cnil)")
-
-(def-inline write-char :always (t) t "@0;(ecl_princ_char(ecl_char_code(#0),Cnil),(#0))")
-
-(def-inline clear-input :always (stream) NULL "(ecl_clear_input(#0),Cnil)")
+(def-inline clear-input :always (stream) NULL "(ecl_clear_input(#0),ECL_NIL)")
 
 (def-inline copy-readtable :always (null null) t "standard_readtable")
 
@@ -660,16 +661,16 @@
 
 ;; file sequence.d
 
-(def-inline elt :always (t t) t "ecl_elt(#0,fix(#1))")
+(def-inline elt :always (t t) t "ecl_elt(#0,ecl_fixnum(#1))")
 (def-inline elt :always (t fixnum) t "ecl_elt(#0,#1)")
-(def-inline elt :always (vector t) t "ecl_aref1(#0,fix(#1))")
+(def-inline elt :always (vector t) t "ecl_aref1(#0,ecl_fixnum(#1))")
 (def-inline elt :always (vector fixnum) t "ecl_aref1(#0,#1)")
 
-(def-inline elt :unsafe (t t) t "ecl_elt(#0,fix(#1))")
+(def-inline elt :unsafe (t t) t "ecl_elt(#0,ecl_fixnum(#1))")
 (def-inline elt :unsafe (t fixnum) t "ecl_elt(#0,#1)")
-(def-inline elt :unsafe (vector t) t "ecl_aref_unsafe(#0,fix(#1))")
+(def-inline elt :unsafe (vector t) t "ecl_aref_unsafe(#0,ecl_fixnum(#1))")
 (def-inline elt :unsafe (vector fixnum) t "ecl_aref_unsafe(#0,#1)")
-(def-inline aref :unsafe ((array bit) t) :fixnum "ecl_aref_bv(#0,fix(#1))")
+(def-inline aref :unsafe ((array bit) t) :fixnum "ecl_aref_bv(#0,ecl_fixnum(#1))")
 (def-inline aref :unsafe ((array bit) fixnum) :fixnum "ecl_aref_bv(#0,#1)")
 #+unicode
 (def-inline aref :unsafe ((array character) fixnum) :wchar
@@ -683,13 +684,13 @@
 (def-inline aref :unsafe ((array fixnum) fixnum) :fixnum
  "(#0)->array.self.fix[#1]")
 
-(def-inline si:elt-set :always (t t t) t "ecl_elt_set(#0,fixint(#1),#2)")
+(def-inline si:elt-set :always (t t t) t "ecl_elt_set(#0,ecl_to_size(#1),#2)")
 (def-inline si:elt-set :always (t fixnum t) t "ecl_elt_set(#0,#1,#2)")
-(def-inline si:elt-set :always (vector t t) t "ecl_aset1(#0,fixint(#1),#2)")
+(def-inline si:elt-set :always (vector t t) t "ecl_aset1(#0,ecl_to_size(#1),#2)")
 (def-inline si:elt-set :always (vector fixnum t) t "ecl_aset1(#0,#1,#2)")
 
-(def-inline si:elt-set :unsafe (t t t) t "ecl_elt_set(#0,fix(#1),#2)")
-(def-inline si:elt-set :unsafe (vector t t) t "ecl_aset_unsafe(#0,fixint(#1),#2)")
+(def-inline si:elt-set :unsafe (t t t) t "ecl_elt_set(#0,ecl_fixnum(#1),#2)")
+(def-inline si:elt-set :unsafe (vector t t) t "ecl_aset_unsafe(#0,ecl_to_size(#1),#2)")
 (def-inline si:elt-set :unsafe (vector fixnum t) t "ecl_aset_unsafe(#0,#1,#2)")
 
 (def-inline length :always (t) :fixnum "ecl_length(#0)")
@@ -702,7 +703,7 @@
 (def-inline char :always (t fixnum) t "ecl_aref1(#0,#1)")
 (def-inline char :always (t fixnum) :wchar "ecl_char(#0,#1)")
 #-unicode
-(def-inline char :unsafe (t t) t "CODE_CHAR((#0)->base_string.self[fix(#1)])")
+(def-inline char :unsafe (t t) t "ECL_CODE_CHAR((#0)->base_string.self[ecl_fixnum(#1)])")
 #-unicode
 (def-inline char :unsafe (t fixnum) :unsigned-char "(#0)->base_string.self[#1]")
 (def-inline char :unsafe (base-string fixnum) :unsigned-char "(#0)->base_string.self[#1]")
@@ -714,40 +715,40 @@
 (def-inline si:char-set :always (t fixnum character) :wchar "ecl_char_set(#0,#1,#2)")
 #-unicode
 (def-inline si:char-set :unsafe (t t t) t
- "@2;((#0)->base_string.self[fix(#1)]=ecl_char_code(#2),(#2))")
+ "@2;((#0)->base_string.self[ecl_fixnum(#1)]=ecl_char_code(#2),(#2))")
 #-unicode
 (def-inline si:char-set :unsafe (t fixnum character) :unsigned-char
  "(#0)->base_string.self[#1]= #2")
 (def-inline si:char-set :unsafe (base-string t t) t
- "@2;((#0)->base_string.self[fix(#1)]=ecl_char_code(#2),(#2))")
+ "@2;((#0)->base_string.self[ecl_fixnum(#1)]=ecl_char_code(#2),(#2))")
 (def-inline si:char-set :unsafe (base-string fixnum base-char) :unsigned-char
  "(#0)->base_string.self[#1]= #2")
 (def-inline si:char-set :unsafe (ext:extended-string t t) t
- "@2;((#0)->string.self[fix(#1)]=ecl_char_code(#2),(#2))")
+ "@2;((#0)->string.self[ecl_fixnum(#1)]=ecl_char_code(#2),(#2))")
 (def-inline si:char-set :unsafe (ext:extended-string fixnum character) :unsigned-char
  "(#0)->string.self[#1]= #2")
 
-(def-inline schar :always (t t) t "ecl_elt(#0,fixint(#1))")
+(def-inline schar :always (t t) t "ecl_elt(#0,ecl_to_size(#1))")
 (def-inline schar :always (t fixnum) t "ecl_elt(#0,#1)")
 (def-inline schar :always (t fixnum) :wchar "ecl_char(#0,#1)")
-(def-inline schar :unsafe (base-string t) t "CODE_CHAR((#0)->base_string.self[fix(#1)])")
+(def-inline schar :unsafe (base-string t) t "ECL_CODE_CHAR((#0)->base_string.self[ecl_fixnum(#1)])")
 #-unicode
 (def-inline schar :unsafe (t fixnum) :unsigned-char "(#0)->base_string.self[#1]")
 (def-inline schar :unsafe (base-string fixnum) :unsigned-char "(#0)->base_string.self[#1]")
 #+unicode
 (def-inline schar :unsafe (ext:extended-string fixnum) :wchar "(#0)->string.self[#1]")
 
-(def-inline si:schar-set :always (t t t) t "ecl_elt_set(#0,fixint(#1),#2)")
+(def-inline si:schar-set :always (t t t) t "ecl_elt_set(#0,ecl_to_size(#1),#2)")
 (def-inline si:schar-set :always (t fixnum t) t "ecl_elt_set(#0,#1,#2)")
 (def-inline si:schar-set :always (t fixnum character) :wchar "ecl_char_set(#0,#1,#2)")
 #-unicode
 (def-inline si:schar-set :unsafe (t t t) t
- "@2;((#0)->base_string.self[fix(#1)]=ecl_char_code(#2),(#2))")
+ "@2;((#0)->base_string.self[ecl_fixnum(#1)]=ecl_char_code(#2),(#2))")
 #-unicode
 (def-inline si:schar-set :unsafe (t fixnum base-char) :unsigned-char
  "(#0)->base_string.self[#1]= #2")
 (def-inline si:schar-set :unsafe (base-string t t) t
- "@2;((#0)->base_string.self[fix(#1)]=ecl_char_code(#2),(#2))")
+ "@2;((#0)->base_string.self[ecl_fixnum(#1)]=ecl_char_code(#2),(#2))")
 (def-inline si:schar-set :unsafe (base-string fixnum base-char) :unsigned-char
  "(#0)->base_string.self[#1]= #2")
 #+unicode
@@ -761,7 +762,7 @@
 
 ;; file structure.d
 
-(def-inline si:structure-name :always (structure) symbol "SNAME(#0)")
+(def-inline si:structure-name :always (structure) symbol "ECL_STRUCT_NAME(#0)")
 
 (def-inline si:structure-ref :always (t t fixnum) t "ecl_structure_ref(#0,#1,#2)")
 
@@ -771,7 +772,7 @@
 ;; file symbol.d
 
 (def-inline get :always (t t t) t "ecl_get(#0,#1,#2)")
-(def-inline get :always (t t) t "ecl_get(#0,#1,Cnil)")
+(def-inline get :always (t t) t "ecl_get(#0,#1,ECL_NIL)")
 
 (def-inline symbol-name :always (t) string "ecl_symbol_name(#0)")
 
@@ -794,13 +795,13 @@
 #+long-float
 (def-inline long-float-p :always (t) :bool "@0;ECL_LONG_FLOAT_P(#0)")
 
-(def-inline si:fixnump :always (t) :bool "FIXNUMP(#0)")
-(def-inline si:fixnump :always (fixnum) :bool "1")
+(def-inline ext:fixnump :always (t) :bool "ECL_FIXNUMP(#0)")
+(def-inline ext:fixnump :always (fixnum) :bool "1")
 
 (def-inline c::ldb1 :always (fixnum fixnum fixnum) :fixnum
  "((((~((cl_fixnum)-1 << (#0))) << (#1)) & (cl_fixnum)(#2)) >> (#1))")
 (def-inline c::ldb1 :always (fixnum fixnum fixnum) t
- "MAKE_FIXNUM((((~((cl_fixnum)-1 << (#0))) << (#1)) & (cl_fixnum)(#2)) >> (#1))")
+ "ecl_make_fixnum((((~((cl_fixnum)-1 << (#0))) << (#1)) & (cl_fixnum)(#2)) >> (#1))")
 
 ;; Functions only available with threads
 #+threads
@@ -826,7 +827,9 @@
  "(#0)->instance.slots[#1]=(#2)")
 
 #+clos
-(def-inline si:instance-class :always (standard-object) t "CLASS_OF(#0)")
+(def-inline si:instance-class :always (standard-object) t "ECL_CLASS_OF(#0)")
+#+clos
+(def-inline class-of :unsafe (standard-object) t "ECL_CLASS_OF(#0)")
 
 #+clos
 (def-inline si::instancep :always (t) :bool "@0;ECL_INSTANCEP(#0)")
@@ -837,7 +840,7 @@
 (def-inline si:sl-boundp :always (t) :bool "(#0)!=ECL_UNBOUND")
 
 #+clos
-(def-inline clos:standard-instance-access :always (t t) t "ecl_instance_ref((#0),fixnnint(#1))")
+(def-inline clos:standard-instance-access :always (t t) t "ecl_instance_ref((#0),ecl_to_size(#1))")
 #+clos
 (def-inline clos:standard-instance-access :always (t fixnum) t "ecl_instance_ref((#0),(#1))")
 #+clos
@@ -845,7 +848,7 @@
  "(#0)->instance.slots[#1]")
 
 #+clos
-(def-inline clos:funcallable-standard-instance-access :always (t t) t "ecl_instance_ref((#0),fixnnint(#1))")
+(def-inline clos:funcallable-standard-instance-access :always (t t) t "ecl_instance_ref((#0),ecl_to_size(#1))")
 #+clos
 (def-inline clos:funcallable-standard-instance-access :always (t fixnum) t "ecl_instance_ref((#0),(#1))")
 #+clos
@@ -870,13 +873,18 @@
 (in-package "SI")
 
 (defvar c::*in-all-symbols-functions*
-  '(;; arraylib.lsp
+  `(;; arraylib.lsp
     make-array vector array-dimensions array-in-bounds-p array-row-major-index
     bit sbit bit-and bit-ior bit-xor bit-eqv bit-nand bit-nor bit-andc1
     bit-andc2 bit-orc1 bit-orc2 bit-not
-    vector-push vector-push-extend vector-pop adjust-array
+    vector-pop adjust-array
+    ;; assignment.lsp
+    si::setf-definition
     ;; conditions.lsp
-    si::safe-eval
+    si::safe-eval abort continue muffle-warning store-value use-value
+    si::bind-simple-restarts si::bind-simple-handlers
+    ;; describe.lsp
+    describe inspect
     ;; iolib.lsp
     read-from-string write-to-string prin1-to-string princ-to-string
     y-or-n-p yes-or-no-p string-to-object
@@ -911,16 +919,21 @@
     nsubstitute nsubstitute-if nsubstitute-if-not find find-if find-if-not
     position position-if position-if-not remove-duplicates
     delete-duplicates mismatch search sort stable-sort merge constantly
+    ;; setf.lsp
+    si::do-defsetf si::do-define-setf-method
+    ;; process.lsp
+    ext:system
     ;; pprint.lsp
     pprint-fill copy-pprint-dispatch pprint-dispatch
     pprint-linear pprint-newline pprint-tab pprint-tabular
-    set-pprint-dispatch pprint-indent .
-    #-clos
-    nil
+    set-pprint-dispatch pprint-indent 
     #+clos
-    (;; combin.lsp
+    ,@'(;; combin.lsp
      method-combination-error
      invalid-method-error
+     clos:std-compute-applicable-methods
+     clos:std-compute-effective-method
+     clos:compute-effective-method-function
      ;; standard-instance-access ; this function is a synonym for si:instance-ref
      ;; funcallable-standard-instance-access ; same for this one
      subclassp of-class-p
@@ -929,15 +942,41 @@
      slot-makunbound
      slot-value
      slot-exists-p
+     clos::need-to-make-load-form-p
+     ;; defclass
+     clos:load-defclass
      )
+
+    ;; cdr-5
+    ext:array-index-p
+    ext:negative-fixnum-p ext:non-negative-fixnum-p
+    ext:non-positive-fixnum-p ext:positive-fixnum-p
+    ext:negative-integer-p ext:non-negative-integer-p
+    ext:non-positive-integer-p ext:positive-integer-p 
+    ext:negative-rational-p ext:non-negative-rational-p
+    ext:non-positive-rational-p ext:positive-rational-p 
+    ext:negative-ratio-p ext:non-negative-ratio-p
+    ext:non-positive-ratio-p ext:positive-ratio-p 
+    ext:negative-real-p ext:non-negative-real-p
+    ext:non-positive-real-p ext:positive-real-p 
+    ext:negative-float-p ext:non-negative-float-p
+    ext:non-positive-float-p ext:positive-float-p 
+    ext:negative-short-float-p ext:non-negative-short-float-p
+    ext:non-positive-short-float-p ext:positive-short-float-p 
+    ext:negative-single-float-p ext:non-negative-single-float-p
+    ext:non-positive-single-float-p ext:positive-single-float-p 
+    ext:negative-double-float-p ext:non-negative-double-float-p
+    ext:non-positive-double-float-p ext:positive-double-float-p 
+    ext:negative-long-float-p ext:non-negative-long-float-p
+    ext:non-positive-long-float-p ext:positive-long-float-p 
 ))
 
 (proclaim
   `(si::c-export-fname #+ecl-min ,@c::*in-all-symbols-functions*
     si::ecase-error si::etypecase-error si::do-check-type
     ccase-error typecase-error-string find-documentation find-declarations
-    si::search-keyword si::check-keyword si::check-arg-length
-    si::dm-too-few-arguments si::dm-bad-key
+    si::search-keyword si::check-keyword
+    si::dm-too-many-arguments si::dm-too-few-arguments
     remove-documentation si::get-documentation
     si::set-documentation si::expand-set-documentation
     si::packages-iterator
@@ -947,8 +986,10 @@
     si::sequence-count
     si::structure-type-error si::define-structure
     si::coerce-to-list si::coerce-to-vector
-    si::fill-array-with-seq
     si::assert-failure
+    si::ecase-error si::etypecase-error
+    si::traced-old-definition
+
     #+formatter
     ,@'(
     format-princ format-prin1 format-print-named-character
@@ -962,31 +1003,28 @@
     #+clos
     ,@'(;; defclass.lsp
      clos::ensure-class
+     ;; std-slot-value.lsp
+     clos::standard-instance-get
+     clos::standard-instance-set
+     clos::find-slot-definition
      ;; combin.lsp
      clos::simple-code-walker
      ;; standard.lsp
-     clos::safe-instance-ref
      clos::standard-instance-set
      ;; kernel.lsp
      clos::install-method
-     clos::class-id
-     clos::class-direct-superclasses
-     clos::class-direct-subclasses
-     clos::class-slots
-     clos::class-precedence-list
-     clos::class-direct-slots
      clos::default-initargs-of
-     clos::generic-function-lambda-list
-     clos::generic-function-argument-precedence-order
-     clos::generic-function-method-combination
-     clos::generic-function-method-class
-     clos::generic-function-methods
-     clos::method-generic-function
-     clos::method-lambda-list
-     clos::method-specializers
-     clos::method-qualifiers
-     clos::method-function
-     clos::method-plist
+     ;; clos::generic-function-lambda-list
+     ;; clos::generic-function-argument-precedence-order
+     ;; clos::generic-function-method-combination
+     ;; clos::generic-function-method-class
+     ;; clos::generic-function-methods
+     ;; clos::method-generic-function
+     ;; clos::method-lambda-list
+     ;; clos::method-specializers
+     ;; clos::method-qualifiers
+     ;; clos::method-function
+     ;; clos::method-plist
      clos::associate-methods-to-gfun
      ;; method.lsp
      clos::pop-next-method

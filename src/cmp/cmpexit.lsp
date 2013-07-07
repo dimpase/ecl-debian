@@ -14,22 +14,50 @@
 
 (in-package "COMPILER")
 
+;;; UNWIND-EXIT TAGS	   PURPOSE
+;;;
+;;; number		-> unknown purpose
+;;; JUMP		-> unknown purpose
+;;; FRAME		-> ecl_frs_push()
+;;; IHS			-> ihs push
+;;; IHS-ENV		-> ihs push
+;;; BDS-BIND		-> binding of 1 special variable
+;;; (number . {T|NIL})	-> label
+;;; (LCL n)		-> n local variables
+;;; (STACK n)		-> n elements pushed in stack
+;;; TAIL-RECURSION-MARK	-> TTL: label created
+;;; RETURN*		-> outermost location
+;;;
+;;; (*) also RETURN-FIXNUM, -CHARACTER, -SINGLE-FLOAT
+;;;     -DOUBLE-FLOAT, -OBJECT.
+;;;
 (defun unwind-bds (bds-lcl bds-bind stack-frame ihs-p)
   (declare (fixnum bds-bind))
-  (when stack-frame
-    (if (stringp stack-frame)
-	(wt-nl "ecl_stack_frame_close(" stack-frame ");")
-	(wt-nl "ECL_STACK_SET_INDEX(cl_env_copy," stack-frame ");")))
-  (when bds-lcl
-    (wt-nl "ecl_bds_unwind(cl_env_copy," bds-lcl ");"))
-  (if (< bds-bind 4)
-      (dotimes (n bds-bind)
-	(declare (fixnum n))
-	(wt-nl "ecl_bds_unwind1(cl_env_copy);"))
-      (wt-nl "ecl_bds_unwind_n(cl_env_copy," bds-bind ");"))
-  (case ihs-p
-    (IHS (wt-nl "ecl_ihs_pop(cl_env_copy);"))
-    (IHS-ENV (wt-nl "ihs.lex_env = _ecl_debug_env;"))))
+  (let ((some nil))
+    (when stack-frame
+      (setf some t)
+      (if (stringp stack-frame)
+	  (wt-nl "ecl_stack_frame_close(" stack-frame ");")
+	  (wt-nl "ECL_STACK_SET_INDEX(cl_env_copy," stack-frame ");")))
+    (when bds-lcl
+      (setf some t)
+      (wt-nl "ecl_bds_unwind(cl_env_copy," bds-lcl ");"))
+    (cond ((< bds-bind 4)
+	   (dotimes (n bds-bind)
+	     (declare (fixnum n))
+	     (setf some t)
+	     (wt-nl "ecl_bds_unwind1(cl_env_copy);")))
+	  (t
+	   (setf some t)
+	   (wt-nl "ecl_bds_unwind_n(cl_env_copy," bds-bind ");")))
+    (case ihs-p
+      (IHS
+       (setf some t)
+       (wt-nl "ecl_ihs_pop(cl_env_copy);"))
+      (IHS-ENV
+       (setf some t)
+       (wt-nl "ihs.lex_env = _ecl_debug_env;")))
+    some))
 
 (defun unwind-exit (loc &optional (jump-p nil) &aux (bds-lcl nil) (bds-bind 0) (stack-frame nil) (ihs-p nil))
   (declare (fixnum bds-bind))
@@ -111,9 +139,11 @@
 			      loc))
 	      (if (or bds-lcl (plusp bds-bind))
 		  (let ((lcl (make-lcl-var :type (second loc))))
-		    (wt-nl "{cl_fixnum " lcl "= " loc ";")
+		    (wt-nl-open-brace)
+		    (wt-nl "cl_fixnum " lcl "= " loc ";")
 		    (unwind-bds bds-lcl bds-bind stack-frame ihs-p)
-		    (wt-nl "return(" lcl ");}"))
+		    (wt-nl "return(" lcl ");")
+		    (wt-nl-close-brace))
 		  (progn
 		    (wt-nl "return(" loc ");")))
 	      (return)))
@@ -136,41 +166,36 @@
   (baboon :format-control "The value of unwind exit~%~A~%found in *UNWIND-EXIT*~%~A~%is not valid."
           :format-arguments (list ue *unwind-exit*)))
 
-(defun unwind-no-exit (exit &aux (bds-lcl nil) (bds-bind 0) (stack-frame nil) (ihs-p nil))
-  (declare (fixnum bds-bind))
-  (dolist (ue *unwind-exit* (baboon-improper-*exit*))
-    (cond
-       ((consp ue)
-	(cond ((eq ue exit)
-	       (unwind-bds bds-lcl bds-bind stack-frame ihs-p)
-	       (return))
-	      ((eq (first ue) 'STACK)
-	       (setf stack-frame (second ue)))))
-       ((numberp ue) (setq bds-lcl ue bds-bind 0))
-       ((eq ue 'BDS-BIND) (incf bds-bind))
-       ((member ue '(RETURN RETURN-OBJECT RETURN-FIXNUM RETURN-CHARACTER
-                            RETURN-DOUBLE-FLOAT RETURN-SINGLE-FLOAT))
-        (if (eq exit ue)
-            (progn (unwind-bds bds-lcl bds-bind stack-frame ihs-p)
-                   (return))
-            (baboon-unwind-exit ue))
-        ;;; Never reached
-        )
-       ((eq ue 'FRAME) (wt-nl "ecl_frs_pop(cl_env_copy);"))
-       ((eq ue 'TAIL-RECURSION-MARK)
-        (if (eq exit 'TAIL-RECURSION-MARK)
-            (progn (unwind-bds bds-lcl bds-bind stack-frame ihs-p)
-                   (return))
-            (baboon-unwind-exit ue))
-        ;;; Never reached
-        )
-       ((eq ue 'JUMP))
-       ((eq ue 'IHS-ENV)
-        (setf ihs-p ue))
-       (t (baboon-unwind-exit ue))
-       ))
-  ;;; Never reached
-  )
+(defun unwind-no-exit-until (last-cons)
+  (loop with bds-lcl = nil
+     with bds-bind = 0
+     with stack-frame = nil
+     with ihs-p = nil
+     for unwind-exit on *unwind-exit*
+     for ue = (car unwind-exit)
+     until (eq unwind-exit last-cons)
+     do (cond
+	  ((consp ue)
+	   (when (eq (first ue) 'STACK)
+	     (setf stack-frame (second ue))))
+	  ((numberp ue)
+	   (setq bds-lcl ue bds-bind 0))
+	  ((eq ue 'BDS-BIND)
+	   (incf bds-bind))
+	  ((eq ue 'FRAME)
+	   (wt-nl "ecl_frs_pop(cl_env_copy);"))
+	  ((eq ue 'JUMP))
+	  ((eq ue 'IHS-ENV)
+	   (setf ihs-p ue))
+	  (t (baboon-unwind-exit ue)))
+     finally (return (unwind-bds bds-lcl bds-bind stack-frame ihs-p))))
+
+(defun unwind-no-exit (exit)
+  (let ((where (member exit *unwind-exit* :test #'eq)))
+    (unless where
+      (baboon :format-control "Unwind-exit label ~A not found"
+	      :format-arguments (list exit)))
+    (unwind-no-exit-until where)))
 
 ;;; Tail-recursion optimization for a function F is possible only if
 ;;;	1. F receives only required parameters, and
@@ -204,7 +229,8 @@
     (let* ((*destination* 'TRASH)
 	   (*exit* (next-label))
 	   (*unwind-exit* (cons *exit* *unwind-exit*)))
-      (c2psetq (cdr *tail-recursion-info*) args)
+      (c2psetq nil ;; We do not provide any C2FORM
+	       (cdr *tail-recursion-info*) args)
       (wt-label *exit*))
     (unwind-no-exit 'TAIL-RECURSION-MARK)
     (wt-nl "goto TTL;")

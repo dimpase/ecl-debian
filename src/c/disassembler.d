@@ -16,6 +16,7 @@
 #include <ecl/ecl.h>
 #include <ecl/ecl-inl.h>
 #include <ecl/bytecodes.h>
+#include <ecl/internal.h>
 
 static cl_opcode *disassemble(cl_object bytecodes, cl_opcode *vector);
 
@@ -23,27 +24,33 @@ static cl_opcode *base = NULL;
 
 static void
 print_noarg(const char *s) {
-	ecl_princ_str(s, Cnil);
+	ecl_princ_str(s, ECL_NIL);
 }
 
 static void
 print_oparg(const char *s, cl_fixnum n) {
-	ecl_princ_str(s, Cnil);
-	ecl_princ(MAKE_FIXNUM(n), Cnil);
+	ecl_princ_str(s, ECL_NIL);
+	ecl_princ(ecl_make_fixnum(n), ECL_NIL);
 }
 
 static void
 print_arg(const char *s, cl_object x) {
-	ecl_princ_str(s, Cnil);
-	ecl_princ(x, Cnil);
+	ecl_princ_str(s, ECL_NIL);
+	ecl_princ(x, ECL_NIL);
 }
 
 static void
 print_oparg_arg(const char *s, cl_fixnum n, cl_object x) {
-	ecl_princ_str(s, Cnil);
-	ecl_princ(MAKE_FIXNUM(n), Cnil);
-	ecl_princ_str(",", Cnil);
-	ecl_princ(x, Cnil);
+	ecl_princ_str(s, ECL_NIL);
+	ecl_princ(ecl_make_fixnum(n), ECL_NIL);
+	ecl_princ_str(",", ECL_NIL);
+	ecl_princ(x, ECL_NIL);
+}
+
+#define GET_DATA(r,v,data) { \
+	cl_oparg ndx; \
+	GET_OPARG(ndx, v); \
+	r = data[ndx]; \
 }
 
 static void
@@ -52,10 +59,11 @@ disassemble_lambda(cl_object bytecodes) {
 	cl_object *data;
 	cl_opcode *vector;
 
-	ecl_bds_bind(env, @'*print-pretty*', Cnil);
+	ecl_bds_bind(env, @'*print-pretty*', ECL_NIL);
 
 	/* Print required arguments */
-	data = bytecodes->bytecodes.data;
+	data = bytecodes->bytecodes.data->vector.self.t;
+	cl_print(1,bytecodes->bytecodes.data);
 
 	/* Name of LAMBDA */
 	print_arg("\nName:\t\t", bytecodes->bytecodes.name);
@@ -64,10 +72,6 @@ disassemble_lambda(cl_object bytecodes) {
 		print_noarg("\nEvaluated form:");
 		goto NO_ARGS;
 	}
-
-	/* Print aux arguments */
-	print_arg("\nDocumentation:\t", *(data++));
-	print_arg("\nDeclarations:\t", *(data++));
 
  NO_ARGS:
 	base = vector = (cl_opcode *)bytecodes->bytecodes.code;
@@ -86,14 +90,13 @@ disassemble_lambda(cl_object bytecodes) {
 */
 static cl_opcode *
 disassemble_flet(cl_object bytecodes, cl_opcode *vector) {
-	cl_index nfun, first;
-	cl_object *data;
+	cl_index nfun;
+	cl_object *data = bytecodes->bytecodes.data->vector.self.t;
 	GET_OPARG(nfun, vector);
-	GET_OPARG(first, vector);
-	data = bytecodes->bytecodes.data + first;
 	print_noarg("FLET");
 	while (nfun--) {
-		cl_object fun = *(data++);
+		cl_object fun;
+		GET_DATA(fun, vector, data);
 		print_arg("\n\tFLET\t", fun->bytecodes.name);
 	}
 	return vector;
@@ -107,14 +110,13 @@ disassemble_flet(cl_object bytecodes, cl_opcode *vector) {
 */
 static cl_opcode *
 disassemble_labels(cl_object bytecodes, cl_opcode *vector) {
-	cl_index nfun, first;
-	cl_object *data;
+	cl_index nfun;
+	cl_object *data = bytecodes->bytecodes.data->vector.self.t;
 	GET_OPARG(nfun, vector);
-	GET_OPARG(first, vector);
-	data = bytecodes->bytecodes.data + first;
 	print_noarg("LABELS");
 	while (nfun--) {
-		cl_object fun = *(data++);
+		cl_object fun;
+		GET_DATA(fun, vector, data);
 		print_arg("\n\tLABELS\t", fun->bytecodes.name);
 	}
 	return vector;
@@ -154,10 +156,10 @@ disassemble_tagbody(cl_object bytecodes, cl_opcode *vector) {
 	print_noarg("TAGBODY");
 	for (i=0; i<ntags; i++) {
 		GET_LABEL(destination, vector);
-		ecl_princ_str("\n\tTAG\t", Ct);
-		ecl_princ(MAKE_FIXNUM(i), Ct);
-		ecl_princ_str(" @@ ", Ct);
-		ecl_princ(MAKE_FIXNUM(destination - base), Ct);
+		ecl_princ_str("\n\tTAG\t", ECL_T);
+		ecl_princ(ecl_make_fixnum(i), ECL_T);
+		ecl_princ_str(" @@ ", ECL_T);
+		ecl_princ(ecl_make_fixnum(destination - base), ECL_T);
 	}
 	vector = disassemble(bytecodes, vector);
 	print_noarg("\t\t; tagbody");
@@ -171,25 +173,25 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	cl_object o;
 	cl_fixnum n, m;
 	cl_object line_format;
-	cl_object *data = bytecodes->bytecodes.data;
+	cl_object *data = bytecodes->bytecodes.data->vector.self.t;
 	cl_object line_no;
 
-	if (cl_fboundp(@'si::formatter-aux') != Cnil)
+	if (cl_fboundp(@'si::formatter-aux') != ECL_NIL)
 		line_format = make_constant_base_string("~%~4d\t");
 	else
-		line_format = Cnil;
+		line_format = ECL_NIL;
  BEGIN:
 	if (1) {
-		line_no = MAKE_FIXNUM(vector-base);
+		line_no = ecl_make_fixnum(vector-base);
 	} else {
 		line_no = @'*';
 	}
-	if (line_format != Cnil) {
-		cl_format(3, Ct, line_format, line_no);
+	if (line_format != ECL_NIL) {
+		cl_format(3, ECL_T, line_format, line_no);
 	} else {
-		ecl_princ_char('\n', Ct);
-		ecl_princ(line_no, Ct);
-		ecl_princ_char('\t', Ct);
+		ecl_princ_char('\n', ECL_T);
+		ecl_princ(line_no, ECL_T);
+		ecl_princ_char('\t', ECL_T);
 	}
 	switch (GET_OPCODE(vector)) {
 
@@ -212,6 +214,13 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	case OP_QUOTE:		string = "QUOTE\t";
 				GET_DATA(o, vector, data);
 				goto ARG;
+
+	/* OP_CSET	n{arg}
+		Replace constant with a computed value
+	*/
+	case OP_CSET:		string = "CSET\t";
+		                GET_OPARG(n, vector);
+				goto OPARG;
 
 	/* OP_VAR	n{arg}
 		Sets NVALUES=1 and VALUES(0) to the value of the n-th local.
@@ -292,7 +301,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	case OP_CATCH:		string = "CATCH\tREG0";
 				goto NOARG;
 	case OP_DO:		string = "BLOCK\t";
-				o = Cnil;
+				o = ECL_NIL;
 				goto ARG;
 	case OP_FRAME:		string = "FRAME\t";
 				goto JMP;
@@ -407,7 +416,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 				GET_DATA(o, vector, data);
 				goto ARG;
 
-	/* OP_GO	n{arg}
+	/* OP_GO	n{arg}, tag-ndx{arg}
 	   OP_QUOTE	tag-name{symbol}
 		Jumps to the tag which is defined at the n-th position in
 		the lexical environment. TAG-NAME is kept for debugging
@@ -415,7 +424,8 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 	*/
 	case OP_GO:		string = "GO\t";
 				GET_OPARG(n, vector);
-				GET_DATA(o, vector, data);
+				GET_OPARG(m, vector);
+				o = ecl_make_fixnum(m);
 				goto OPARG_ARG;
 
 	/* OP_RETURN	n{arg}
@@ -518,7 +528,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 				goto OPARG;
 	case OP_VSETQ:		string = "VSETQ\t";
 				GET_OPARG(m, vector);
-				o = MAKE_FIXNUM(m);
+				o = ecl_make_fixnum(m);
 				GET_OPARG(n, vector);
 				goto OPARG_ARG;
 	case OP_SETQS:		string = "SETQS\t";
@@ -534,6 +544,8 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 
 	case OP_PROGV:		vector = disassemble_progv(bytecodes, vector);
 				break;
+        case OP_EXIT_PROGV:	print_noarg("PROGV\tEXIT");
+        			return vector;
 
 	/* OP_VALUES	n{arg}
 		Pop N values from the stack and store them in VALUES(...)
@@ -583,7 +595,7 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 				goto ARG;
 
 	default:
-		FEerror("Unknown code ~S", 1, MAKE_FIXNUM(*(vector-1)));
+		FEerror("Unknown code ~S", 1, ecl_make_fixnum(*(vector-1)));
 		return vector;
 	NOARG:			print_noarg(string);
 				break;
@@ -601,33 +613,78 @@ disassemble(cl_object bytecodes, cl_opcode *vector) {
 cl_object
 si_bc_disassemble(cl_object v)
 {
-	if (type_of(v) == t_bclosure) {
+	if (ecl_t_of(v) == t_bclosure) {
 		v = v->bclosure.code;
 	}
-	if (type_of(v) == t_bytecodes) {
+	if (ecl_t_of(v) == t_bytecodes) {
 		disassemble_lambda(v);
 		@(return v)
 	}
-	@(return Cnil)
+	@(return ECL_NIL)
 }
 
 cl_object
 si_bc_split(cl_object b)
 {
-	const cl_env_ptr the_env = ecl_process_env();
-	cl_object vector;
-	cl_object data;
-	cl_object lex = Cnil;
+	cl_object vector, data, name, lex = ECL_NIL;
 
-	if (type_of(b) == t_bclosure) {
+	if (ecl_t_of(b) == t_bclosure) {
 		b = b->bclosure.code;
 		lex = b->bclosure.lex;
 	}
-	if (type_of(b) != t_bytecodes)
-		@(return Cnil Cnil)
-	vector = ecl_alloc_simple_vector(b->bytecodes.code_size, aet_b8);
-	vector->vector.self.b8 = (uint8_t*)b->bytecodes.code;
-	data = ecl_alloc_simple_vector(b->bytecodes.data_size, aet_object);
-	data->vector.self.t = b->bytecodes.data;
-	@(return lex vector data)
+	if (ecl_t_of(b) != t_bytecodes) {
+                vector = ECL_NIL;
+                data = ECL_NIL;
+                name = ECL_NIL;
+        } else {
+                vector = ecl_alloc_simple_vector(b->bytecodes.code_size *
+                                                 sizeof(cl_opcode), ecl_aet_b8);
+                vector->vector.self.b8 = (uint8_t*)b->bytecodes.code;
+                data = cl_copy_seq(b->bytecodes.data);
+                name = b->bytecodes.name;
+        }
+	@(return lex vector data name)
+}
+
+cl_object
+si_bc_join(cl_object lex, cl_object code, cl_object data, cl_object name)
+{
+        cl_object output;
+        if (lex != ECL_NIL) {
+                output = ecl_alloc_object(t_bclosure);
+                output->bclosure.code = si_bc_join(ECL_NIL, code, data, name);
+                output->bclosure.lex = lex;
+                output->bclosure.entry = _ecl_bclosure_dispatch_vararg;
+        } else {
+                /* Ensure minimal sanity of data */
+                unlikely_if (!ECL_VECTORP(code) ||
+                             (code->vector.elttype != ecl_aet_b8)) {
+                        FEwrong_type_nth_arg(@[si::bc-join],
+                                             0, code,
+                                             cl_list(2,
+                                                     @'simple-array',
+                                                     @'ext::byte8'));
+                }
+                unlikely_if (!ECL_VECTORP(code) ||
+                             (data->vector.elttype != ecl_aet_object)) {
+                        FEwrong_type_nth_arg(@[si::bc-join],
+                                             0, code,
+                                             cl_list(2,
+                                                     @'simple-array',
+                                                     ECL_T));
+                }
+                /* Duplicate the vectors and steal their data pointers */
+                code = cl_copy_seq(code);
+                data = cl_copy_seq(data);
+                output = ecl_alloc_object(t_bytecodes);
+                output->bytecodes.name = ECL_NIL;
+                output->bytecodes.definition = ECL_NIL;
+                output->bytecodes.entry = _ecl_bytecodes_dispatch_vararg;
+                output->bytecodes.code_size = code->vector.fillp / sizeof(cl_opcode);
+                output->bytecodes.code = (void*)code->vector.self.b8;
+                output->bytecodes.data = data;
+                output->bytecodes.file = ECL_NIL;
+                output->bytecodes.file_position = ECL_NIL;
+        }
+        @(return output)
 }

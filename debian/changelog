@@ -1,9 +1,47 @@
+ecl (12.12.1-2) experimental; urgency=low
+
+  * Disable gengc which conflicts with threading. Should fix some of the
+    build failures we're seeing
+
+ -- Christoph Egger <christoph@debian.org>  Fri, 14 Dec 2012 14:35:47 -0800
+
+ecl (12.12.1-1) experimental; urgency=low
+
+  * New upstream releasse
+
+ -- Christoph Egger <christoph@debian.org>  Fri, 07 Dec 2012 15:19:14 -0800
+
+ecl (12.2.1-1) experimental; urgency=low
+
+  * New upstream release
+  * Import patch to build on the hurd (Closes: #648993)
+
+ -- Christoph Egger <christoph@debian.org>  Sat, 14 Apr 2012 13:13:12 +0200
+
+ecl (11.1.1-4) unstable; urgency=low
+
+  * disable gengc on ia64 again
+
+ -- Christoph Egger <christoph@debian.org>  Fri, 11 Mar 2011 20:01:14 +0100
+
+ecl (11.1.1-3) unstable; urgency=low
+
+  * build against libgmp-dev instead of libgmp3-dev
+
+ -- Christoph Egger <christoph@debian.org>  Fri, 11 Mar 2011 18:34:26 +0100
+
 ecl (11.1.1-2) unstable; urgency=low
 
-  * Disable gengc in ia64 to fix build
-  * upload to unstable
+  * New upstream.
+  * Move to use quilt
+  * Removed Luca from uploaders
+  * Updated Standards-Version no real changes
+  * Use system boehm libgc again
+  * Fixed format of NEWS file
+  * We forgot to remove the postrm, causing /usr/bin/ecl to get 
+    deleted on upgrades. Fixed this. 
 
- -- Christoph Egger <christoph@debian.org>  Fri, 04 Mar 2011 16:20:16 +0000
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 08 Mar 2011 08:08:56 +0100
 
 ecl (11.1.1-1) experimental; urgency=low
 

@@ -100,7 +100,7 @@
 	  (let* ((slotd (clos:accessor-method-slot-definition reader))
 		 (index (clos::safe-slot-definition-location slotd)))
 	    (when (si::fixnump index)
-	      (c1expr `(clos::safe-instance-ref ,object ,index)))))))))
+	      `(clos::safe-instance-ref ,object ,index))))))))
 
 (defun try-optimize-slot-writer (orig-writers args)
   (let* ((c-args (mapcar #'c1expr args))
@@ -112,8 +112,9 @@
 	  (let* ((slotd (clos:accessor-method-slot-definition writer))
 		 (index (clos::safe-slot-definition-location slotd)))
 	    (when (si::fixnump index)
-	      (c1expr `(si::instance-set ,(second args) ,index ,(first args))))))))))
+	      `(si::instance-set ,(second args) ,index ,(first args)))))))))
 
+#+(or)
 (progn .
   #.(loop for var in '(clos::+standard-generic-function-slots+
                        clos::+standard-method-slots+
@@ -127,5 +128,5 @@
             when accessor
             collect `(define-compiler-macro ,accessor (&whole whole obj &environment env)
                        (if (policy-inline-slot-access env)
-                           `(si::instance-ref ,obj ,,i)
+			   `(clos::safe-instance-ref ,obj ,,i)
                            whole)))))

@@ -105,7 +105,7 @@ of the occurrences in those lists."
 			     values-type))
     (values values-type assumptions)))
 
-(defun p1call-global (c1form assumptions fname args &optional (return-type t))
+(defun p1call-global (c1form assumptions fname args)
   (loop for v in args
      do (multiple-value-bind (arg-type local-ass)
             (p1propagate v assumptions)
@@ -116,7 +116,7 @@ of the occurrences in those lists."
 		       type (c1form-type c1form))
                (return (values type assumptions)))))
 
-(defun p1call-local (c1form assumptions fun args &optional (return-type t))
+(defun p1call-local (c1form assumptions fun args)
   (loop for v in args
      do (multiple-value-bind (arg-type local-ass)
             (p1propagate v assumptions)
@@ -234,11 +234,50 @@ of the occurrences in those lists."
 (defun p1progn (c1form assumptions forms)
   (p1propagate-list forms assumptions))
 
+(defun p1compiler-typecase (c1form assumptions variable expressions)
+  (let ((var-type (var-type variable)))
+    (loop with output-type = t
+       for (a-type c1form) in expressions
+       for c1form-type = (p1propagate c1form assumptions)
+       when (or (member a-type '(t otherwise))
+		(subtypep var-type a-type))
+       do (setf output-type c1form-type)
+       finally (return (values output-type assumptions)))))
+
+(defun p1checked-value (c1form assumptions type value let-form)
+  (let* ((value-type (p1propagate value assumptions))
+	 (alt-type (p1propagate let-form assumptions)))
+    (if (subtypep value-type type)
+	value-type
+	type)))
+
+(defun p1progv (c1form assumptions variables values body)
+  (let (type)
+    (multiple-value-setq (type assumptions)
+      (p1propagate variables assumptions))
+    (multiple-value-setq (type assumptions)
+      (p1propagate values assumptions))
+    (p1propagate body assumptions)))
+
 (defun p1setq (c1form assumptions var c1form)
   (multiple-value-bind (value-type assumptions)
       (p1propagate c1form assumptions)
     (values (type-and (var-type var) (values-type-primary-type value-type))
 	    assumptions)))
+
+(defun p1psetq (c1form assumptions vars c1forms)
+  (loop for form in c1forms
+     do (multiple-value-bind (new-type assumptions)
+	  (p1propagate form assumptions)))
+  (values 'null assumptions))
+
+(defun p1with-stack (c1form assumptions body)
+  (p1propagate body assumptions))
+
+(defun p1stack-push-values (c1form assumptions form inline)
+  (multiple-value-bind (form-type assumptions)
+      (p1propagate form assumptions)
+    (values nil assumptions)))
 
 (defvar *tagbody-depth* -1
   "If n > 0, limit the number of passes to converge tagbody forms. If
@@ -260,8 +299,10 @@ as 2^*tagbody-limit* in the worst cases.")
     (values 'null (append (p1merge-branches nil ass-list) orig-assumptions))))
 
 (defun p1tagbody-one-pass (c1form assumptions tag-loc body)
+  (declare (ignore tag-loc))
   (loop with local-ass = assumptions
      with ass-list = '()
+     with aux
      for f in body
      do (if (tag-p f)
             (let ((diff (ldiff local-ass assumptions)))
@@ -277,6 +318,7 @@ as 2^*tagbody-limit* in the worst cases.")
                      ass-list)))))
 
 (defun p1unwind-protect (c1form assumptions form body)
+  (declare (ignore c1form))
   (multiple-value-bind (output-type assumptions)
       (p1propagate form assumptions)
     (p1propagate body assumptions)
@@ -309,7 +351,8 @@ compute it. This version only handles the simplest cases."
                 ((null (rest array))
                  t)
                 (t
-                 (second array)))
+		 (let ((x (second array)))
+		   (if (eq x '*) t x))))
           array))
 
 (def-type-propagator si::aset (fname array-type &rest indices-and-object)

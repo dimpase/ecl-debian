@@ -19,11 +19,11 @@ cl_object
 _ecl_ensure_buffer(cl_object buffer, cl_fixnum length)
 {
         if (Null(buffer)) {
-                buffer = si_make_vector(@'base-char', MAKE_FIXNUM(length),
-                                        Ct /* adjustable */,
-                                        MAKE_FIXNUM(0) /* fill pointer */,
-                                        Cnil /* displacement */,
-                                        Cnil /* displ. offset */);
+                buffer = si_make_vector(@'base-char', ecl_make_fixnum(length),
+                                        ECL_T /* adjustable */,
+                                        ecl_make_fixnum(0) /* fill pointer */,
+                                        ECL_NIL /* displacement */,
+                                        ECL_NIL /* displ. offset */);
         }
         return buffer;
 }
@@ -49,7 +49,7 @@ static cl_object
 push_base_string(cl_object buffer, cl_object s)
 {
         buffer = _ecl_ensure_buffer(buffer, s->base_string.fillp);
-        _ecl_string_push_c_string(buffer, s->base_string.self);
+        _ecl_string_push_c_string(buffer, (char *)s->base_string.self);
         return buffer;
 }
 
@@ -57,12 +57,12 @@ push_base_string(cl_object buffer, cl_object s)
  * FREE FORMAT (FIXED OR EXPONENT) OF FLOATS
  */
 
-static cl_object
+static void
 print_float_exponent(cl_object buffer, cl_object number, cl_fixnum exp)
 {
         cl_object r = ecl_symbol_value(@'*read-default-float-format*');
         cl_fixnum e;
-        switch (type_of(number)) {
+        switch (ecl_t_of(number)) {
         case t_singlefloat:
                 e = (r == @'single-float' || r == @'short-float')? 'e' : 'f';
                 break;
@@ -81,8 +81,8 @@ print_float_exponent(cl_object buffer, cl_object number, cl_fixnum exp)
         }
         if (e != 'e' || exp != 0) {
                 ecl_string_push_extend(buffer, e);
-                si_integer_to_string(buffer, MAKE_FIXNUM(exp), MAKE_FIXNUM(10),
-                                     Cnil, Cnil);
+                si_integer_to_string(buffer, ecl_make_fixnum(exp), ecl_make_fixnum(10),
+                                     ECL_NIL, ECL_NIL);
         }
 }
 
@@ -101,9 +101,9 @@ si_float_to_string_free(cl_object buffer_or_nil, cl_object number,
                 @(return push_base_string(buffer_or_nil, s));
         }
         base = ecl_length(buffer_or_nil);
-        exp = si_float_to_digits(buffer_or_nil, number, Cnil, Cnil);
+        exp = si_float_to_digits(buffer_or_nil, number, ECL_NIL, ECL_NIL);
         buffer = VALUES(1);
-        e = fix(exp);
+        e = ecl_fixnum(exp);
 
         if (ecl_signbit(number)) {
                 insert_char(buffer, base++, '-');

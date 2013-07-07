@@ -91,7 +91,7 @@ As interrupts are normally allowed WITH-INTERRUPTS only makes sense if there
 is an outer WITHOUT-INTERRUPTS with a corresponding ALLOW-WITH-INTERRUPTS:
 interrupts are not enabled if any outer WITHOUT-INTERRUPTS is not accompanied
 by ALLOW-WITH-INTERRUPTS."
-  (with-unique-names (allowp enablep)
+  (ext:with-unique-names (allowp enablep)
     ;; We could manage without ENABLEP here, but that would require
     ;; taking extra care not to ever have *ALLOW-WITH-INTERRUPTS* NIL
     ;; and *INTERRUPTS-ENABLED* T -- instead of risking future breakage
@@ -102,7 +102,6 @@ by ALLOW-WITH-INTERRUPTS."
        (when (and ,allowp (not ,enablep))
          (si::check-pending-interrupts))
        (locally ,@body))))
-
 
 (defmacro with-lock ((lock-form &rest options) &body body)
   #-threads
@@ -117,13 +116,16 @@ by ALLOW-WITH-INTERRUPTS."
   ;; the get-lock statement, to ensure that the unlocking is done with
   ;; interrupts disabled.
   #+threads
-  (ext:with-unique-names (lock count interrupts)
+  (ext:with-unique-names (lock owner count)
     `(let* ((,lock ,lock-form)
-            (,count (mp:lock-count-mine ,lock)))
+            (,owner (mp:lock-owner ,lock))
+	    (,count (mp:lock-count ,lock)))
        (without-interrupts
            (unwind-protect
                 (with-restored-interrupts
                     (mp::get-lock ,lock)
                   (locally ,@body))
-             (when (> (mp:lock-count-mine ,lock) ,count)
+             (when (and (eq mp:*current-process* (mp:lock-owner ,lock))
+			(or (not (eq ,owner mp:*current-process*))
+			    (> (mp:lock-count ,lock) ,count)))
                (mp::giveup-lock ,lock)))))))

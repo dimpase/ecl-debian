@@ -11,35 +11,10 @@
 
 ;;;; FFI	Symbols used in the foreign function interface
 
-(defpackage "FFI"
-  (:nicknames "UFFI")
-  (:export "CLINES" "DEFENTRY" "DEFLA" "DEFCBODY" "DEFINLINE" "C-INLINE"
-	   "DEFCALLBACK" "CALLBACK"
-
-	   "VOID" "OBJECT" "CHAR*" "INT" "DOUBLE"
-
-	   "DEF-CONSTANT" "DEF-FOREIGN-TYPE" "DEF-ENUM" "DEF-STRUCT"
-	   "DEF-ARRAY-POINTER" "DEF-FUNCTION" "DEF-UNION" "DEF-ARRAY"
-	   "ALLOCATE-FOREIGN-OBJECT" "FREE-FOREIGN-OBJECT" "MAKE-NULL-POINTER"
-	   "GET-SLOT-VALUE" "GET-SLOT-POINTER" "DEREF-ARRAY" "DEREF-POINTER"
-	   "POINTER-ADDRESS" "SIZE-OF-FOREIGN-TYPE" "DEF-FOREIGN-VAR"
-	   "NULL-CHAR-P" "ENSURE-CHAR-CHARACTER" "ENSURE-CHAR-INTEGER"
-	   "NULL-POINTER-P" "+NULL-CSTRING-POINTER+" "WITH-FOREIGN-OBJECTS"
-	   "MAKE-POINTER" "CHAR-ARRAY-TO-POINTER" "CONVERT-TO-FOREIGN-STRING"
-	   "CONVERT-FROM-FOREIGN-STRING" "ALLOCATE-FOREIGN-STRING" 
-           "WITH-FOREIGN-STRING" "WITH-FOREIGN-STRINGS"
-           "FOREIGN-STRING-LENGTH" "WITH-FOREIGN-OBJECT"
-	   "FIND-FOREIGN-LIBRARY" "LOAD-FOREIGN-LIBRARY"
-	   "ENSURE-CHAR-STORABLE" "DEF-TYPE"
-	   "WITH-CSTRING" "CONVERT-TO-CSTRING" "CONVERT-FROM-CSTRING" "FREE-CSTRING"
-           "WITH-CAST-POINTER" "WITH-CSTRINGS"
-
-	   "*USE-DFFI*"
-	   )
-  (:import-from "SYS" "NULL-POINTER-P" "GET-SYSPROP" "PUT-SYSPROP"
-                "FOREIGN-ELT-TYPE-P"))
-
 (in-package "FFI")
+
+(import 'si:null-pointer-p)
+(export 'si:null-pointer-p)
 
 #-ecl-min
 (clines "#include <string.h>")
@@ -55,9 +30,9 @@
 ;;; FOREIGN TYPES
 ;;;
 
-(defvar *ffi-types* (make-hash-table :size 128))
+(defparameter *ffi-types* (make-hash-table :size 128))
 
-(defvar *use-dffi* t)
+(defparameter *use-dffi* t)
 
 (defmacro def-foreign-type (name definition)
   `(eval-when (:compile-toplevel :load-toplevel :execute)
@@ -96,6 +71,7 @@
                  align (apply #'max (mapcar #'(lambda (field)
 	                                        (multiple-value-bind (field-size field-align)
                                                     (size-of-foreign-type (second field))
+						  (declare (ignore field-size))
 						  field-align))
 	                                    (rest type))))
 	   (%align-data size align))
@@ -310,7 +286,7 @@
 ;;; POINTERS
 ;;;
 
-(defvar +null-cstring-pointer+ (si:allocate-foreign-data :pointer-void 0))
+(defparameter +null-cstring-pointer+ (si:allocate-foreign-data :pointer-void 0))
 
 (defun pointer-address (ptr)
   (si::foreign-data-address ptr))
@@ -582,7 +558,7 @@
                (define-symbol-macro ,lisp-name
                  (ffi:deref-pointer (get-sysprop ',lisp-name 'ffi-foreign-var) ',type)
                  )))
-          `(defvar ,lisp-name ,inline-form))
+          `(defparameter ,lisp-name ,inline-form))
       )))
 
 (defun find-foreign-library (names directories &key drive-letters types)
@@ -619,7 +595,7 @@
 	  )))))
   nil)
 
-(defvar +loaded-libraries+ nil)
+(defparameter +loaded-libraries+ nil)
 
 (defun do-load-foreign-library (tmp &optional system-library)
  (let* ((path (cond ((pathnamep tmp) tmp)

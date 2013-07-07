@@ -98,15 +98,18 @@
 
 (define-condition compiler-debug-note (compiler-note) ())
 
-(define-condition compiler-warning (compiler-message simple-condition style-warning)
+(define-condition compiler-warning (compiler-message style-warning)
   ((prefix :initform "Warning")
    (format :initform +warn-format+)))
+
+(define-condition compiler-macro-expansion-failed (compiler-warning)
+  ())
 
 (define-condition compiler-error (compiler-message)
   ((prefix :initform "Error")
    (format :initform +error-format+)))
 
-(define-condition compiler-fatal-error (compiler-message)
+(define-condition compiler-fatal-error (compiler-error)
   ((format :initform +fatal-format+)))
 
 (define-condition compiler-internal-error (compiler-fatal-error)
@@ -143,6 +146,7 @@
 ;;; we can not derive the compiler conditions from SERIOUS-CONDITION.
 ;;;
 (defun handle-compiler-note (c)
+  (declare (ignore c))
   nil)
 
 (defun handle-compiler-warning (c)
@@ -161,6 +165,7 @@
   (setf c (make-condition 'compiler-internal-error
                           :format-control "~A"
                           :format-arguments (list c)))
+  (push c *compiler-conditions*)
   (signal c)
   (print-compiler-message c t)
   (abort))
@@ -236,13 +241,27 @@
     (abort)))
 
 (defun safe-list-length (l)
-  (cond ((null l)
-         0)
-        ((atom l)
-         nil)
-        (t
-         (handler-case (list-length l)
-           (error (c) nil)))))
+  ;; Computes the length of a proper list or returns NIL if it
+  ;; is a circular list or terminates with a non-NIL atom.
+  (declare (optimize (speed 3) (safety 0)))
+  (loop with slow = l
+	with fast = l
+	with flag = t
+	for l of-type fixnum from 0
+	do (cond ((null fast)
+		  (return l))
+		 ((not (consp fast))
+		  (return nil))
+		 (flag
+		  (setf flag nil
+			fast (cdr (truly-the cons fast))))
+		 ((eq slow fast)
+		  (return nil))
+		 (t
+		  (setf flag t
+			slow (cdr (truly-the cons slow))
+			fast (cdr (truly-the cons fast)))))
+	finally (return l)))
 
 (defun check-args-number (operator args &optional (min 0) (max most-positive-fixnum))
 
@@ -350,6 +369,14 @@
               form c)
       (values nil nil))))
   
+(defun cmp-expand-compiler-macro (fd fname args &optional (env *cmp-env*))
+  (handler-case
+      (cmp-expand-macro fd (list* fname args) env)
+    (serious-condition (c)
+      (do-cmpwarn 'compiler-macro-expansion-failed
+	:format-control "The expansion of the compiler macro~%~T~A~%was aborted because of a serious condition~%~A" :format-arguments (list fname c))
+      (values nil nil))))
+
 (defun si::compiler-clear-compiler-properties (symbol)
   #-:CCL
   ;(sys::unlink-symbol symbol)

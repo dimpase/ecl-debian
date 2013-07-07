@@ -42,6 +42,7 @@
 #ifdef ENABLE_DLOPEN
 # ifdef cygwin
 #  include <w32api/windows.h>
+#  include <sys/stat.h>
 # endif
 # ifdef HAVE_DLFCN_H
 #  include <dlfcn.h>
@@ -69,6 +70,34 @@
 #endif /* ENABLE_DLOPEN */
 #include <ecl/ecl-inl.h>
 #include <ecl/internal.h>
+
+#define GC_call_with_alloc_lock(f,arg) f(arg)
+
+cl_object
+ecl_make_codeblock()
+{
+        cl_object block = ecl_alloc(t_codeblock);
+        block = ecl_alloc_object(t_codeblock);
+        block->cblock.self_destruct = 0;
+        block->cblock.locked = 0;
+        block->cblock.handle = NULL;
+        block->cblock.data = NULL;
+        block->cblock.data_size = 0;
+        block->cblock.temp_data = NULL;
+        block->cblock.temp_data_size = 0;
+        block->cblock.data_text = NULL;
+        block->cblock.data_text_size = 0;
+        block->cblock.next = ECL_NIL;
+        block->cblock.name = ECL_NIL;
+        block->cblock.links = ECL_NIL;
+        block->cblock.cfuns_size = 0;
+        block->cblock.cfuns = NULL;
+        block->cblock.source = ECL_NIL;
+	block->cblock.error = ECL_NIL;
+        block->cblock.refs = ecl_make_fixnum(0);
+        si_set_finalizer(block, ECL_T);
+        return block;
+}
 
 static cl_object
 copy_object_file(cl_object original)
@@ -116,9 +145,41 @@ copy_object_file(cl_object original)
 }
 
 #ifdef ENABLE_DLOPEN
+
 static void
-dlopen_wrapper(cl_object filename, cl_object block)
+set_library_error(cl_object block) {
+	cl_object output;
+	ecl_disable_interrupts();
+#ifdef HAVE_DLFCN_H
+	output = make_base_string_copy(dlerror());
+#endif
+#ifdef HAVE_MACH_O_DYLD_H
+	{
+		NSLinkEditErrors c;
+		int number;
+		const char *filename;
+		NSLinkEditError(&c, &number, &filename, &message);
+		output = make_base_string_copy(message);
+	}
+#endif
+#if defined(ECL_MS_WINDOWS_HOST)
+	{
+		const char *message;
+		FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
+			      FORMAT_MESSAGE_ALLOCATE_BUFFER,
+			      0, GetLastError(), 0, (void*)&message, 0, NULL);
+		output = make_base_string_copy(message);
+		LocalFree(message);
+	}
+#endif
+	ecl_enable_interrupts();
+	block->cblock.error = output;
+}
+
+static void
+dlopen_wrapper(cl_object block)
 {
+	cl_object filename = block->cblock.name;
         char *filename_string = (char*)filename->base_string.self;
 #ifdef HAVE_DLFCN_H
 	block->cblock.handle = dlopen(filename_string, RTLD_NOW|RTLD_GLOBAL);
@@ -141,6 +202,8 @@ dlopen_wrapper(cl_object filename, cl_object block)
 #if defined(ECL_MS_WINDOWS_HOST)
 	block->cblock.handle = LoadLibrary(filename_string);
 #endif
+	if (block->cblock.handle == NULL)
+		set_library_error(block);
 }
 
 static void
@@ -164,67 +227,53 @@ static cl_object
 ecl_library_find_by_name(cl_object filename)
 {
 	cl_object l;
-	for (l = cl_core.libraries; l != Cnil; l = ECL_CONS_CDR(l)) {
+	for (l = cl_core.libraries; l != ECL_NIL; l = ECL_CONS_CDR(l)) {
 		cl_object other = ECL_CONS_CAR(l);
 		cl_object name = other->cblock.name;
 		if (!Null(name) && ecl_string_eq(name, filename)) {
 			return other;
 		}
 	}
-	return Cnil;
+	return ECL_NIL;
 }
 
 static cl_object
 ecl_library_find_by_handle(void *handle)
 {
 	cl_object l;
-	for (l = cl_core.libraries; l != Cnil; l = ECL_CONS_CDR(l)) {
+	for (l = cl_core.libraries; l != ECL_NIL; l = ECL_CONS_CDR(l)) {
 		cl_object other = ECL_CONS_CAR(l);
 		if (handle == other->cblock.handle) {
 			return other;
 		}
 	}
-	return Cnil;
+	return ECL_NIL;
 }
 
 static cl_object
 ecl_library_open_inner(cl_object filename, bool self_destruct)
 {
         const cl_env_ptr the_env = ecl_process_env();
-	cl_object other, block = ecl_alloc_object(t_codeblock);
+	cl_object block = ecl_make_codeblock();
 	block->cblock.self_destruct = self_destruct;
-	block->cblock.locked = 0;
-	block->cblock.handle = NULL;
-	block->cblock.entry = NULL;
-	block->cblock.data = NULL;
-	block->cblock.data_size = 0;
-	block->cblock.temp_data = NULL;
-	block->cblock.temp_data_size = 0;
-	block->cblock.data_text = NULL;
-	block->cblock.data_text_size = 0;
 	block->cblock.name = filename;
-	block->cblock.next = Cnil;
-	block->cblock.links = Cnil;
-	block->cblock.cfuns_size = 0;
-	block->cblock.cfuns = NULL;
-        block->cblock.source = Cnil;
-        block->cblock.refs = MAKE_FIXNUM(1);
+        block->cblock.refs = ecl_make_fixnum(1);
 
         ECL_WITH_GLOBAL_LOCK_BEGIN(the_env) {
 	ecl_disable_interrupts();
-        dlopen_wrapper(filename, block);
+        GC_call_with_alloc_lock(dlopen_wrapper, block);
         if (block->cblock.handle != NULL) {
                 /* Have we already loaded this library? If so, then unload this
                  * copy and increase the reference counter so that we can keep
                  * track (in lisp) of how many copies we use.
                  */
                 cl_object other = ecl_library_find_by_handle(block->cblock.handle);
-                if (other != Cnil) {
-                        dlclose_wrapper(block);
+                if (other != ECL_NIL) {
+			GC_call_with_alloc_lock(dlclose_wrapper, block);
                         block = other;
                         block->cblock.refs = ecl_one_plus(block->cblock.refs);
                 } else {
-                        si_set_finalizer(block, Ct);
+                        si_set_finalizer(block, ECL_T);
                         cl_core.libraries = CONS(block, cl_core.libraries);
                 }
         }
@@ -283,7 +332,7 @@ ecl_library_open(cl_object filename, bool force_reload) {
 	 * the case, we close the new copy to ensure we do refcounting
 	 * right.
 	 */
-	if (block->cblock.refs != MAKE_FIXNUM(1)) {
+	if (block->cblock.refs != ecl_make_fixnum(1)) {
                 if (force_reload) {
                         ecl_library_close(block);
                         filename = copy_object_file(filename);
@@ -299,7 +348,7 @@ ecl_library_symbol(cl_object block, const char *symbol, bool lock) {
 	void *p;
 	if (block == @':default') {
 		cl_object l;
-		for (l = cl_core.libraries; l != Cnil; l = ECL_CONS_CDR(l)) {
+		for (l = cl_core.libraries; l != ECL_NIL; l = ECL_CONS_CDR(l)) {
 			cl_object block = ECL_CONS_CAR(l);
 			p = ecl_library_symbol(block, symbol, lock);
 			if (p) return p;
@@ -361,37 +410,14 @@ ecl_library_symbol(cl_object block, const char *symbol, bool lock) {
 			block->cblock.locked |= lock;
 		}
 	}
+	if (!p)
+		set_library_error(block);
 	return p;
 }
 
 cl_object
 ecl_library_error(cl_object block) {
-	cl_object output;
-	ecl_disable_interrupts();
-#ifdef HAVE_DLFCN_H
-	output = make_base_string_copy(dlerror());
-#endif
-#ifdef HAVE_MACH_O_DYLD_H
-	{
-		NSLinkEditErrors c;
-		int number;
-		const char *filename;
-		NSLinkEditError(&c, &number, &filename, &message);
-		output = make_base_string_copy(message);
-	}
-#endif
-#if defined(ECL_MS_WINDOWS_HOST)
-	{
-		const char *message;
-		FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
-			      FORMAT_MESSAGE_ALLOCATE_BUFFER,
-			      0, GetLastError(), 0, (void*)&message, 0, NULL);
-		output = make_base_string_copy(message);
-		LocalFree(message);
-	}
-#endif
-	ecl_enable_interrupts();
-	return output;
+	return block->cblock.error;
 }
 
 void
@@ -399,17 +425,16 @@ ecl_library_close(cl_object block) {
         const cl_env_ptr the_env = ecl_process_env();
         ECL_WITH_GLOBAL_LOCK_BEGIN(the_env) {
                 ecl_disable_interrupts();
-                if (block->cblock.refs != MAKE_FIXNUM(1)) {
+                if (block->cblock.refs != ecl_make_fixnum(1)) {
                         block->cblock.refs = ecl_one_minus(block->cblock.refs);
-                        block = Cnil;
+                        block = ECL_NIL;
                 } else if (block->cblock.handle != NULL) {
-                        dlclose_wrapper(block);
+                        GC_call_with_alloc_lock(dlclose_wrapper, block);
                         cl_core.libraries = ecl_remove_eq(block, cl_core.libraries);
                 }
                 ecl_enable_interrupts();
         } ECL_WITH_GLOBAL_LOCK_END;
-	if (block != Cnil && block->cblock.self_destruct) {
-                const char *filename;
+	if (block != ECL_NIL && block->cblock.self_destruct) {
                 if (!Null(block->cblock.name)) {
                         unlink((char*)block->cblock.name->base_string.self);
                 }
@@ -419,7 +444,7 @@ ecl_library_close(cl_object block) {
 void
 ecl_library_close_all(void)
 {
-	while (cl_core.libraries != Cnil) {
+	while (cl_core.libraries != ECL_NIL) {
 		ecl_library_close(ECL_CONS_CAR(cl_core.libraries));
 	}
 }

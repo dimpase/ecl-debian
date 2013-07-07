@@ -43,9 +43,9 @@ ecl_apply_from_stack_frame(cl_object frame, cl_object x)
 	cl_object fun = x;
       AGAIN:
         frame->frame.env->function = fun;
-	if (ecl_unlikely(fun == OBJNULL || fun == Cnil))
+	if (ecl_unlikely(fun == OBJNULL || fun == ECL_NIL))
 		FEundefined_function(x);
-	switch (type_of(fun)) {
+	switch (ecl_t_of(fun)) {
 	case t_cfunfixed:
 		if (ecl_unlikely(narg != (cl_index)fun->cfun.narg))
 			FEwrong_num_arguments(fun);
@@ -58,22 +58,25 @@ ecl_apply_from_stack_frame(cl_object frame, cl_object x)
 	case t_instance:
 		switch (fun->instance.isgf) {
 		case ECL_STANDARD_DISPATCH:
+		case ECL_RESTRICTED_DISPATCH:
 			return _ecl_standard_dispatch(frame, fun);
 		case ECL_USER_DISPATCH:
 			fun = fun->instance.slots[fun->instance.length - 1];
-                        break;
+                        goto AGAIN;
+		case ECL_READER_DISPATCH:
+		case ECL_WRITER_DISPATCH:
+			return APPLY(narg, fun->instance.entry, sp);
 		default:
 			FEinvalid_function(fun);
 		}
-		goto AGAIN;
 #endif
 	case t_symbol:
-		if (ecl_unlikely(fun->symbol.stype & stp_macro))
+		if (ecl_unlikely(fun->symbol.stype & ecl_stp_macro))
 			FEundefined_function(x);
-		fun = SYM_FUN(fun);
+		fun = ECL_SYM_FUN(fun);
 		goto AGAIN;
 	case t_bytecodes:
-		return ecl_interpret(frame, Cnil, fun);
+		return ecl_interpret(frame, ECL_NIL, fun);
 	case t_bclosure:
 		return ecl_interpret(frame, fun->bclosure.lex, fun->bclosure.code);
 	default:
@@ -86,9 +89,9 @@ ecl_function_dispatch(cl_env_ptr env, cl_object x)
 {
 	cl_object fun = x;
  AGAIN:
-	if (ecl_unlikely(fun == OBJNULL || fun == Cnil))
+	if (ecl_unlikely(fun == OBJNULL || fun == ECL_NIL))
 		FEundefined_function(x);
-	switch (type_of(fun)) {
+	switch (ecl_t_of(fun)) {
 	case t_cfunfixed:
 		env->function = fun;
 		return fun->cfunfixed.entry;
@@ -104,9 +107,9 @@ ecl_function_dispatch(cl_env_ptr env, cl_object x)
                 return fun->instance.entry;
 #endif
 	case t_symbol:
-		if (ecl_unlikely(fun->symbol.stype & stp_macro))
+		if (ecl_unlikely(fun->symbol.stype & ecl_stp_macro))
 			FEundefined_function(x);
-		fun = SYM_FUN(fun);
+		fun = ECL_SYM_FUN(fun);
 		goto AGAIN;
 	case t_bytecodes:
 		env->function = fun;
@@ -134,7 +137,7 @@ cl_funcall(cl_narg narg, cl_object function, ...)
 
 @(defun apply (fun lastarg &rest args)
 @
-	if (narg == 2 && type_of(lastarg) == t_frame) {
+	if (narg == 2 && ecl_t_of(lastarg) == t_frame) {
 		return ecl_apply_from_stack_frame(lastarg, fun);
 	} else {
 		cl_object out;
@@ -145,15 +148,15 @@ cl_funcall(cl_narg narg, cl_object function, ...)
 							     narg -= 2);
 		for (i = 0; i < narg; i++) {
 			ECL_STACK_FRAME_SET(frame, i, lastarg);
-			lastarg = cl_va_arg(args);
+			lastarg = ecl_va_arg(args);
 		}
-		if (type_of(lastarg) == t_frame) {
+		if (ecl_t_of(lastarg) == t_frame) {
 			/* This could be replaced with a memcpy() */
                         for (i = 0; i < lastarg->frame.size; i++) {
 				ecl_stack_frame_push(frame, lastarg->frame.base[i]);
 			}
 		} else loop_for_in (lastarg) {
-                        if (ecl_unlikely(i >= CALL_ARGUMENTS_LIMIT)) {
+                        if (ecl_unlikely(i >= ECL_CALL_ARGUMENTS_LIMIT)) {
 				ecl_stack_frame_close(frame);
 				FEprogram_error_noreturn("CALL-ARGUMENTS-LIMIT exceeded",0);
 			}
@@ -175,21 +178,21 @@ cl_eval(cl_object form)
 @(defun constantp (arg &optional env)
 	cl_object flag;
 @
-	switch (type_of(arg)) {
+	switch (ecl_t_of(arg)) {
 	case t_list:
 		if (Null(arg)) {
-			flag = Ct;
+			flag = ECL_T;
 		} else if (CAR(arg) == @'quote') {
-			flag = Ct;
+			flag = ECL_T;
 		} else {
-			flag = Cnil;
+			flag = ECL_NIL;
 		}
 		break;
 	case t_symbol:
-		flag = (arg->symbol.stype & stp_constant) ? Ct : Cnil;
+		flag = (arg->symbol.stype & ecl_stp_constant) ? ECL_T : ECL_NIL;
 		break;
 	default:
-		flag = Ct;
+		flag = ECL_T;
 	}
 	@(return flag)
 @)

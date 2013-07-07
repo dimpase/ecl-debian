@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -19,15 +20,14 @@
 Returns a list of all symbols that have the specified print name.
 STRING-DESIGNATOR may be a symbol, in which case the print name of the symbol
 is used."
-  (when (symbolp string-or-symbol)
-        (setq string-or-symbol (symbol-name string-or-symbol)))
-  (mapcan #'(lambda (p)
-              (multiple-value-bind (s i)
-                  (find-symbol string-or-symbol p)
-                (if (or (eq i :internal) (eq i :external))
-                    (list s)
-                    nil)))
-          (list-all-packages)))
+  (let ((symbol-name (string string-or-symbol)))
+    (mapcan #'(lambda (p)
+		(multiple-value-bind (s i)
+		    (find-symbol symbol-name p)
+		  (if (or (eq i :internal) (eq i :external))
+		      (list s)
+		      nil)))
+	    (list-all-packages))))
 
 (defun packages-iterator (packages options maybe-list)
   (let ((all-symbols nil))
@@ -56,6 +56,7 @@ is used."
 		AGAIN
 		 (multiple-value-bind (found key value)
 		     (funcall iterator)
+		   (declare (ignore key))
 		   (cond 
 		     (found
 		      (when (eq type :inherited)
@@ -155,16 +156,22 @@ PACKAGE is non-NIL, then only the specified PACKAGE is searched."
   (mapc #'print-symbol-apropos (apropos-list string package))
   (values))
 
-
 (defun apropos-list (string &optional package)
   "Args: (string &optional (package nil))
 Returns a list of all symbols whose print-names contain STRING as substring.
 If PACKAGE is non-NIL, then only the specified PACKAGE is searched."
+  (sort (delete-duplicates (apropos-list-inner string package))
+	#'(lambda (s1 s2)
+	    (string-lessp (prin1-to-string s1)
+			  (prin1-to-string s2)))))
+
+(defun apropos-list-inner (string package)
+  (declare (si::c-local))
   (let* ((list '())
 	 (string (string string)))
     (cond (package
 	   (dolist (p (package-use-list package))
-	     (setf list (nconc (apropos-list string p) list)))
+	     (setf list (nconc (apropos-list-inner string p) list)))
 	   (do-symbols (symbol package)
 	     (when (search string (string symbol) :test #'char-equal)
 	       (setq list (cons symbol list)))))
@@ -199,7 +206,7 @@ If PACKAGE is non-NIL, then only the specified PACKAGE is searched."
                (plusp (length name))
                (char= #\. (char name 0)))
       (let* ((last-dot-position (or (find-non-dot name) (length name)))
-	     (n-dots (the fixnum last-dot-position))
+	     (n-dots (truly-the fixnum last-dot-position))
 	     (name (subseq name last-dot-position)))
 	;; relative to our (- n-dots 1)'th parent
 	(let ((p *package*))

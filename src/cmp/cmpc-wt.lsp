@@ -18,7 +18,9 @@
   (typecase form
     ((or STRING INTEGER CHARACTER)
      (princ form *compiler-output1*))
-    ((or DOUBLE-FLOAT SINGLE-FLOAT)
+    (SINGLE-FLOAT
+     (format *compiler-output1* "(float)~10,,,,,,'eG" form))
+    (DOUBLE-FLOAT
      (format *compiler-output1* "~10,,,,,,'eG" form))
     (LONG-FLOAT
      (format *compiler-output1* "~,,,,,,'eEl" form))
@@ -44,13 +46,53 @@
   (princ form *compiler-output2*))
 
 (defun wt-nl (&rest forms)
-  (wt1 #\Newline)
-  (wt1 #\Tab)
+  (wt-nl-indent)
   (mapc #'wt1 forms))
 
 (defun wt-nl1 (&rest forms)
   (wt1 #\Newline)
   (mapc #'wt1 forms))
+
+;;; Blocks beyond this value will not be indented
+(defvar +max-depth+ 10)
+(defvar +c-newline-indent-strings+
+  #.(coerce (let ((basis (make-array (1+ +max-depth+)
+				     :initial-element #\Space
+				     :element-type 'base-char)))
+	      (setf (aref basis 0) #\Newline)
+	      (loop for i from 0 to +max-depth+
+		 collect (subseq basis 0 (1+ i))))
+	    'vector))
+
+(defun wt-nl-indent ()
+  (wt1 (aref +c-newline-indent-strings+ (min *opened-c-braces* +max-depth+))))
+
+(defun wt-open-brace ()
+  (wt1 #\{)
+  (incf *opened-c-braces*))
+
+(defun wt-nl-open-brace ()
+  (wt-nl-indent)
+  (wt-open-brace))
+
+(defun wt-nl-close-many-braces (final-value)
+  (let ((diff (- *opened-c-braces* final-value)))
+    (when (minusp diff)
+      (baboon :format-control "Mismatch in C blocks"))
+    (loop for i from 0 below diff
+       do (wt-nl-close-brace))))
+
+(defun wt-nl-close-brace ()
+  (if (plusp *opened-c-braces*)
+      (progn
+	(decf *opened-c-braces*)
+	(wt-nl-indent)
+	(wt1 #\}))
+      (baboon :format-control "Mismatch in C blocks")))
+
+(defmacro with-indentation (&body body)
+  `(let ((*opened-c-braces* (1+ *opened-c-braces*)))
+     ,@body))
 
 ;;;
 ;;; LABELS AND JUMPS
@@ -82,10 +124,17 @@
   (let* ((l (1- (length text))))
     (declare (fixnum l))
     (dotimes (n l)
-      (let ((c (schar text n)))
-	(princ c stream)
-	(when (and (char= c #\*) (char= (schar text (1+ n)) #\/))
-	  (princ #\\ stream))))
+      (let* ((c (schar text n))
+             (code (char-code c)))
+        (cond
+          ((or (eq c #\Newline) (eq c #\Tab))
+           (princ c stream))
+	  ((or (< code 32) (> code 127))
+           (format stream "\ux" code))
+          ((and (char= c #\*) (char= (schar text (1+ n)) #\/))
+           (princ #\\ stream))
+          (t
+           (princ c stream)))))
     (princ (schar text l) stream))
   (format stream "~70T*/")
   )
@@ -117,7 +166,20 @@
 
 (defvar *wt-string-size* 0)
 
-(defun wt-filtered-data (string stream &optional one-liner)
+#+unicode
+(defun encode-string (string format)
+  (let* ((output (make-array (round (* 1.2 (length string)))
+			     :element-type 'base-char
+			     :adjustable t
+			     :fill-pointer 0))
+	 (stream (make-sequence-output-stream output :external-format format)))
+    (write-string string stream)
+    output))
+
+(defun wt-filtered-data (string stream &key one-liner
+			 (external-format #-unicode :default #+unicode :utf-8))
+  #+unicode
+  (setf string (encode-string string external-format))
   (let ((N (length string))
 	(wt-data-column 80))
     (incf *wt-string-size* (1+ N)) ; 1+ accounts for a blank space
@@ -145,3 +207,6 @@
     (princ (if one-liner "\""  " \"") stream)
     string))
 
+(defun c-filtered-string (string &rest args)
+  (with-output-to-string (aux-stream)
+    (apply #'wt-filtered-data string aux-stream :one-liner t args)))

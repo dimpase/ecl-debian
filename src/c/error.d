@@ -30,8 +30,8 @@
 static cl_object
 cl_symbol_or_object(cl_object x)
 {
-        if (FIXNUMP(x))
-                return (cl_object)(cl_symbols + fix(x));
+        if (ECL_FIXNUMP(x))
+                return (cl_object)(cl_symbols + ecl_fixnum(x));
         return x;
 }
 
@@ -57,7 +57,7 @@ ecl_internal_error(const char *s)
                         strerror(saved_errno));
         }
 	fflush(stderr);
-        si_dump_c_backtrace(MAKE_FIXNUM(32));
+        si_dump_c_backtrace(ecl_make_fixnum(32));
 #ifdef SIGIOT
 	signal(SIGIOT, SIG_DFL); /* avoid getting into a loop with abort */
 #endif
@@ -91,8 +91,12 @@ ecl_unrecoverable_error(cl_env_ptr the_env, const char *message)
                         ecl_unwind(the_env, destination);
                 }
         }
-        destination = ecl_process_env()->frs_org;
-	ecl_unwind(the_env, destination);
+	if (the_env->frs_org <= the_env->frs_top) {
+		destination = ecl_process_env()->frs_org;
+		ecl_unwind(the_env, destination);
+	} else {
+		ecl_internal_error("\n;;;\n;;; No frame to jump to\n;;; Aborting ECL\n;;;");
+	}
 }
 
 /*****************************************************************************/
@@ -102,11 +106,11 @@ ecl_unrecoverable_error(cl_env_ptr the_env, const char *message)
 void
 FEerror(const char *s, int narg, ...)
 {
-	cl_va_list args;
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_list args;
+	ecl_va_start(args, narg, narg, 0);
 	ecl_enable_interrupts();
 	funcall(4, @'si::universal-error-handler',
-		Cnil,                    /*  not correctable  */
+		ECL_NIL,                    /*  not correctable  */
 		make_constant_base_string(s),	 /*  condition text  */
 		cl_grab_rest_args(args));
         _ecl_unexpected_return();
@@ -115,8 +119,8 @@ FEerror(const char *s, int narg, ...)
 cl_object
 CEerror(cl_object c, const char *err, int narg, ...)
 {
-	cl_va_list args;
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_list args;
+	ecl_va_start(args, narg, narg, 0);
 	ecl_enable_interrupts();
 	return funcall(4, @'si::universal-error-handler',
 		       c,			/*  correctable  */
@@ -132,23 +136,23 @@ void
 FEprogram_error(const char *s, int narg, ...)
 {
 	cl_object real_args, text;
-	cl_va_list args;
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_list args;
+	ecl_va_start(args, narg, narg, 0);
 	text = make_constant_base_string(s);
 	real_args = cl_grab_rest_args(args);
-	if (cl_boundp(@'si::*current-form*') != Cnil) {
+	if (cl_boundp(@'si::*current-form*') != ECL_NIL) {
 	    /* When FEprogram_error is invoked from the compiler, we can
 	     * provide information about the offending form.
 	     */
 	    cl_object stmt = ecl_symbol_value(@'si::*current-form*');
-	    if (stmt != Cnil) {
+	    if (stmt != ECL_NIL) {
 		real_args = @list(3, stmt, text, real_args);
 		text = make_constant_base_string("In form~%~S~%~?");
 	    }
 	}
 	si_signal_simple_error(4, 
 			       @'program-error', /* condition name */
-			       Cnil, /* not correctable */
+			       ECL_NIL, /* not correctable */
 			       text,
 			       real_args);
 }
@@ -157,23 +161,23 @@ void
 FEprogram_error_noreturn(const char *s, int narg, ...)
 {
 	cl_object real_args, text;
-	cl_va_list args;
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_list args;
+	ecl_va_start(args, narg, narg, 0);
 	text = make_constant_base_string(s);
 	real_args = cl_grab_rest_args(args);
-	if (cl_boundp(@'si::*current-form*') != Cnil) {
+	if (cl_boundp(@'si::*current-form*') != ECL_NIL) {
 	    /* When FEprogram_error is invoked from the compiler, we can
 	     * provide information about the offending form.
 	     */
 	    cl_object stmt = ecl_symbol_value(@'si::*current-form*');
-	    if (stmt != Cnil) {
+	    if (stmt != ECL_NIL) {
 		real_args = @list(3, stmt, text, real_args);
 		text = make_constant_base_string("In form~%~S~%~?");
 	    }
 	}
 	si_signal_simple_error(4, 
 			       @'program-error', /* condition name */
-			       Cnil, /* not correctable */
+			       ECL_NIL, /* not correctable */
 			       text,
 			       real_args);
 }
@@ -181,11 +185,11 @@ FEprogram_error_noreturn(const char *s, int narg, ...)
 void
 FEcontrol_error(const char *s, int narg, ...)
 {
-	cl_va_list args;
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_list args;
+	ecl_va_start(args, narg, narg, 0);
 	si_signal_simple_error(4,
 			       @'control-error', /* condition name */
-			       Cnil, /* not correctable */
+			       ECL_NIL, /* not correctable */
 			       make_constant_base_string(s), /* format control */
 			       cl_grab_rest_args(args)); /* format args */
 }
@@ -195,14 +199,14 @@ FEreader_error(const char *s, cl_object stream, int narg, ...)
 {
         cl_object message = make_constant_base_string(s);
         cl_object args_list;
-	cl_va_list args;
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_list args;
+	ecl_va_start(args, narg, narg, 0);
         args_list = cl_grab_rest_args(args);
         if (Null(stream)) {
                 /* Parser error */
                 si_signal_simple_error(4,
                                        @'parse-error', /* condition name */
-                                       Cnil, /* not correctable */
+                                       ECL_NIL, /* not correctable */
                                        message, /* format control */
                                        args_list);
         } else {
@@ -214,7 +218,7 @@ FEreader_error(const char *s, cl_object stream, int narg, ...)
                 args_list = cl_listX(3, stream, position, args_list);
                 si_signal_simple_error(6,
                                        @'reader-error', /* condition name */
-                                       Cnil, /* not correctable */
+                                       ECL_NIL, /* not correctable */
                                        message, /* format control */
                                        args_list, /* format args */
                                        @':stream', stream);
@@ -261,15 +265,15 @@ FEwrong_type_only_arg(cl_object function, cl_object value, cl_object type)
                 "the value of the only argument is~&  ~S~&which is "
                 "not of the expected type ~A";
         cl_env_ptr env = ecl_process_env();
-        struct ihs_frame tmp_ihs;
+        struct ecl_ihs_frame tmp_ihs;
         function = cl_symbol_or_object(function);
         type = cl_symbol_or_object(type);
         if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
-                ecl_ihs_push(env,&tmp_ihs,function,Cnil);
+                ecl_ihs_push(env,&tmp_ihs,function,ECL_NIL);
         }        
         si_signal_simple_error(8,
                                @'type-error', /* condition name */
-                               Cnil, /* not correctable */
+                               ECL_NIL, /* not correctable */
                                make_constant_base_string(message), /* format control */
                                cl_list(3, function, value, type),
                                @':expected-type', type,
@@ -284,17 +288,17 @@ FEwrong_type_nth_arg(cl_object function, cl_narg narg, cl_object value, cl_objec
                 "the value of the ~:R argument is~&  ~S~&which is "
                 "not of the expected type ~A";
         cl_env_ptr env = ecl_process_env();
-        struct ihs_frame tmp_ihs;
+        struct ecl_ihs_frame tmp_ihs;
         function = cl_symbol_or_object(function);
         type = cl_symbol_or_object(type);
         if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
-                ecl_ihs_push(env,&tmp_ihs,function,Cnil);
+                ecl_ihs_push(env,&tmp_ihs,function,ECL_NIL);
         }        
         si_signal_simple_error(8,
                                @'type-error', /* condition name */
-                               Cnil, /* not correctable */
+                               ECL_NIL, /* not correctable */
                                make_constant_base_string(message), /* format control */
-                               cl_list(4, function, MAKE_FIXNUM(narg),
+                               cl_list(4, function, ecl_make_fixnum(narg),
                                        value, type),
                                @':expected-type', type,
                                @':datum', value);
@@ -308,16 +312,16 @@ FEwrong_type_key_arg(cl_object function, cl_object key, cl_object value, cl_obje
                 "the value of the argument ~S is~&  ~S~&which is "
                 "not of the expected type ~A";
         cl_env_ptr env = ecl_process_env();
-        struct ihs_frame tmp_ihs;
+        struct ecl_ihs_frame tmp_ihs;
         function = cl_symbol_or_object(function);
         type = cl_symbol_or_object(type);
         key = cl_symbol_or_object(key);
         if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
-                ecl_ihs_push(env,&tmp_ihs,function,Cnil);
+                ecl_ihs_push(env,&tmp_ihs,function,ECL_NIL);
         }        
         si_signal_simple_error(8,
                                @'type-error', /* condition name */
-                               Cnil, /* not correctable */
+                               ECL_NIL, /* not correctable */
                                make_constant_base_string(message), /* format control */
                                cl_list(4, function, key, value, type),
                                @':expected-type', type,
@@ -337,22 +341,21 @@ FEwrong_index(cl_object function, cl_object a, int which, cl_object ndx,
                 "the ~:R index into the object~% ~A~%"
                 "takes a value ~D out of the range ~A.";
         cl_object limit = ecl_make_integer(nonincl_limit-1);
-	cl_object type = ecl_make_integer_type(MAKE_FIXNUM(0), limit);
+	cl_object type = ecl_make_integer_type(ecl_make_fixnum(0), limit);
         cl_object message = make_constant_base_string((which<0) ? message1 : message2);
         cl_env_ptr env = ecl_process_env();
-        struct ihs_frame tmp_ihs;
+        struct ecl_ihs_frame tmp_ihs;
         function = cl_symbol_or_object(function);
         if (!Null(function) && env->ihs_top && env->ihs_top->function != function) {
-                ecl_ihs_push(env,&tmp_ihs,function,Cnil);
+                ecl_ihs_push(env,&tmp_ihs,function,ECL_NIL);
         }        
-        si_signal_simple_error(8,
-                               @'type-error', /* condition name */
-                               Cnil, /* not correctable */
-                               message, /* format control */
-                               cl_list(5, function, MAKE_FIXNUM(which+1), ndx,
-                                       a, type),
-                               @':expected-type', type,
-                               @':datum', ndx);
+        cl_error(9,
+                 @'simple-type-error', /* condition name */
+                 @':format-control', message,
+                 @':format-arguments',
+                 cl_list(5, function, ecl_make_fixnum(which+1), a, ndx, type),
+                 @':expected-type', type,
+                 @':datum', ndx);
 }
 
 void
@@ -439,11 +442,11 @@ universal_error_handler(cl_object continue_string, cl_object datum,
         recursive_error = 1;
         stream = cl_core.error_output;
         if (!Null(stream)) {
-                ecl_bds_bind(the_env, @'*print-readably*', Cnil);
-                ecl_bds_bind(the_env, @'*print-level*', MAKE_FIXNUM(3));
-                ecl_bds_bind(the_env, @'*print-length*', MAKE_FIXNUM(3));
-                ecl_bds_bind(the_env, @'*print-circle*', Cnil);
-                ecl_bds_bind(the_env, @'*print-base*', MAKE_FIXNUM(10));
+                ecl_bds_bind(the_env, @'*print-readably*', ECL_NIL);
+                ecl_bds_bind(the_env, @'*print-level*', ecl_make_fixnum(3));
+                ecl_bds_bind(the_env, @'*print-length*', ecl_make_fixnum(3));
+                ecl_bds_bind(the_env, @'*print-circle*', ECL_NIL);
+                ecl_bds_bind(the_env, @'*print-base*', ecl_make_fixnum(10));
                 writestr_stream("\n;;; Unhandled lisp initialization error",
                                 stream);
                 writestr_stream("\n;;; Message:\n", stream);
@@ -457,16 +460,17 @@ universal_error_handler(cl_object continue_string, cl_object datum,
 }
 
 void
-FEillegal_index(cl_object x, cl_object i)
-{
-	FEerror("~S is an illegal index to ~S.", 2, i, x);
-}
-
-void
 FEdivision_by_zero(cl_object x, cl_object y)
 {
 	cl_error(5, @'division-by-zero', @':operation', @'/',
 		 @':operands', cl_list(2, x, y));
+}
+
+cl_object
+_ecl_strerror(int code)
+{
+	const char *error = strerror(code);
+	return make_base_string_copy(error);
 }
 
 /*************************************
@@ -480,16 +484,15 @@ FEdivision_by_zero(cl_object x, cl_object y)
 void
 FElibc_error(const char *msg, int narg, ...)
 {
-	cl_va_list args;
-	cl_object rest;
-        const char *error = strerror(errno);
+	ecl_va_list args;
+	cl_object rest, error = _ecl_strerror(errno);
 
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_start(args, narg, narg, 0);
 	rest = cl_grab_rest_args(args);
 
-        printf("%s\n", error);
-	FEerror("~?~%Explanation: ~A.", 3, make_constant_base_string(msg), rest,
-		make_constant_base_string(error));
+	FEerror("~?~%C library explanation: ~A.", 3,
+		make_constant_base_string(msg), rest,
+		error);
 }
 
 #if defined(ECL_MS_WINDOWS_HOST) || defined(cygwin)
@@ -498,7 +501,7 @@ ecl_def_ct_base_string(unknown_error,"[Unable to get error message]",28,static,c
 void
 FEwin32_error(const char *msg, int narg, ...)
 {
-	cl_va_list args;
+	ecl_va_list args;
 	cl_object rest, win_msg_obj;
 	char *win_msg;
 
@@ -510,9 +513,9 @@ FEwin32_error(const char *msg, int narg, ...)
 		LocalFree(win_msg);
 	}
 
-	cl_va_start(args, narg, narg, 0);
+	ecl_va_start(args, narg, narg, 0);
 	rest = cl_grab_rest_args(args);
-	FEerror("~?~%Explanation: ~A.", 3,
+	FEerror("~?~%Windows library explanation: ~A.", 3,
 		make_constant_base_string(msg), rest,
 		win_msg_obj);
 }
@@ -525,7 +528,7 @@ FEwin32_error(const char *msg, int narg, ...)
 @(defun error (eformat &rest args)
 @
 	ecl_enable_interrupts();
-	funcall(4, @'si::universal-error-handler', Cnil, eformat,
+	funcall(4, @'si::universal-error-handler', ECL_NIL, eformat,
                 cl_grab_rest_args(args));
 	_ecl_unexpected_return();
 	@(return);

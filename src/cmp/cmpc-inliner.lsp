@@ -50,7 +50,6 @@
   (and (inline-possible fname)
        (not (gethash fname *c2-dispatch-table*))
        (let* ((dest-rep-type (loc-representation-type *destination*))
-              (dest-type (rep-type->lisp-type dest-rep-type))
               (ii (get-inline-info fname arg-types return-type return-rep-type)))
          ii)))
 
@@ -65,6 +64,7 @@
                         fun side-effects-p one-liner)))
 
 (defun choose-inline-info (ia ib return-type return-rep-type)
+  (declare (ignore return-type))
   (cond
     ;; Only accept inliners that have the right rep type
     ((not (or (eq return-rep-type 'any)
@@ -129,13 +129,16 @@
          'FIXNUM)))
 
 (defun inline-type-matches (inline-info arg-types return-type)
+  (when (and (not (inline-info-multiple-values inline-info))
+	     (member *destination* '(VALUES RETURN)))
+    (return-from inline-type-matches nil))
   (let* ((rts nil)
          (number-max nil))
     ;;
     ;; Check that the argument types match those of the inline expression
     ;;
     (do* ((arg-types arg-types (cdr arg-types))
-          (types (inline-info-arg-types inline-info) (cdr types)))
+	  (types (inline-info-arg-types inline-info) (cdr types)))
          ((or (endp arg-types) (endp types))
           (when (or arg-types types)
             (return-from inline-type-matches nil)))

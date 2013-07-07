@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -35,6 +36,8 @@ successfully, T is returned, else error."
         (setf (logical-pathname-translations host) (read in-str)))
       t)))
 
+(defparameter *do-time-level* -1)
+
 (defun do-time (closure)
   #-boehm-gc
   (let* ((real-start (get-internal-real-time))
@@ -60,7 +63,8 @@ successfully, T is returned, else error."
 	     (/ (- run-end run-start) internal-time-units-per-second)
 	     (/ (- gc-end gc-start) internal-time-units-per-second))))
   #+boehm-gc
-  (let* (real-start
+  (let* ((*do-time-level* (1+ *do-time-level*))
+         real-start
 	 run-start
 	 consed-start
 	 gc-no-start
@@ -70,6 +74,9 @@ successfully, T is returned, else error."
 	 gc-no-end)
     ;; Garbage collection forces the value of counters to be updated
     (si::gc t)
+    ;; If there are no nested calls, we just reset the counters
+    (when (zerop *do-time-level*) (si::gc-stats 0))
+    ;; but in general we copy the previous values.
     (multiple-value-setq (consed-start gc-no-start) (gc-stats t))
     (setq real-start (get-internal-real-time)
 	  run-start (get-internal-run-time))
@@ -128,7 +135,7 @@ Evaluates FORM, outputs the realtime and runtime used for the evaluation to
   mw = timezone/60;
 #else
   struct tm ltm, gtm;
-  time_t when = 0L;
+  time_t when = time(0) /*0L*/;
 
   ltm = *localtime(&when);
   gtm = *gmtime(&when);
@@ -140,7 +147,7 @@ Evaluates FORM, outputs the realtime and runtime used for the evaluation to
   else if (gtm.tm_wday == (ltm.tm_wday + 1) % 7)
     mw += 24*60;
 #endif
-  @(return) = ecl_make_ratio(MAKE_FIXNUM(mw),MAKE_FIXNUM(60));
+  @(return) = ecl_make_ratio(ecl_make_fixnum(mw),ecl_make_fixnum(60));
 }"
 		 :one-liner nil))
 
@@ -253,7 +260,7 @@ Returns the current day-and-time as nine values:
 Sunday is the *last* day of the week!!"
   (decode-universal-time (get-universal-time)))
 
-(defun ensure-directories-exist (pathname &key verbose)
+(defun ensure-directories-exist (pathname &key verbose (mode #o777))
 "Args: (ensure-directories pathname &key :verbose)
 Creates tree of directories specified by the given pathname. Outputs
 	(VALUES pathname created)
@@ -261,20 +268,28 @@ where CREATED is true only if we succeeded on creating all directories."
   (let* ((created nil)
 	 (full-pathname (merge-pathnames pathname))
 	 d)
+    (when (typep full-pathname 'logical-pathname)
+      (setf full-pathname (translate-logical-pathname full-pathname)))
     (when (or (wild-pathname-p full-pathname :directory)
 	      (wild-pathname-p full-pathname :host)
 	      (wild-pathname-p full-pathname :device))
       (error 'file-error :pathname pathname))
-    (dolist (item (pathname-directory full-pathname))
-      (setf d (nconc d (list item)))
-      (let ((p (make-pathname :name nil :type nil :directory d
-						  :defaults full-pathname)))
-	(unless (or (symbolp item) (si::file-kind p nil))
-	  (setf created t)
-	  (when verbose
-	    (format t "~%;;; Making directory ~A" p))
-	  (si::mkdir p #o777))))
-    (values pathname created)))
+    ;; Here we have already a full pathname. We set our own
+    ;; *default-pathname-defaults* to avoid that the user's value,
+    ;; which may contain names or types, clobbers our computations.
+    (let ((*default-pathname-defaults*
+	   (make-pathname :name nil :type nil :directory nil
+			  :defaults full-pathname)))
+      (dolist (item (pathname-directory full-pathname))
+	(setf d (nconc d (list item)))
+	(let* ((p (make-pathname :directory d)))
+	  (unless (or (symbolp item) (si::file-kind p nil))
+	    (setf created t)
+	    (let ((ps (namestring p)))
+	      (when verbose
+		(format t "~%;;; Making directory ~A" ps))
+	      (si::mkdir ps mode)))))
+      (values pathname created))))
 
 (defmacro with-hash-table-iterator ((iterator package) &body body)
 "Syntax: (with-hash-table-iterator (iterator package) &body body)
@@ -288,6 +303,7 @@ hash table; otherwise it signals that we have reached the end of the hash table.
       ,@body)))
 
 (defun sharp-!-reader (stream subchar arg)
+  (declare (ignore arg subchar))
   (read-line stream)
   (values))
 

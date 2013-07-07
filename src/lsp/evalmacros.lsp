@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -18,21 +19,6 @@ If TEST evaluates to NIL, then evaluates FORMs and returns all values of the
 last FORM.  If not, simply returns NIL."
   `(IF (NOT ,pred) (PROGN ,@body)))
 
-(defmacro defun (&whole whole name vl &body body &aux doc-string)
-  ;; Documentation in help.lsp
-  (multiple-value-setq (body doc-string) (remove-documentation body))
-  (let* ((function `#'(ext::lambda-block ,name ,vl ,@body))
-	 (global-function `#'(ext::lambda-block ,name ,vl
-                                                (declare (si::c-global))
-                                                ,@body)))
-    (when *dump-defun-definitions*
-      (print function)
-      (setq function `(si::bc-disassemble ,function)))
-    `(progn
-       ,(ext:register-with-pde whole `(si::fset ',name ,global-function))
-       ,@(si::expand-set-documentation name 'function doc-string)
-       ',name)))
-
 (defmacro defmacro (&whole whole name vl &body body &aux doc-string)
   ;; Documentation in help.lsp
   (multiple-value-bind (function pprint doc-string)
@@ -41,7 +27,7 @@ last FORM.  If not, simply returns NIL."
     (when *dump-defun-definitions*
       (print function)
       (setq function `(si::bc-disassemble ,function)))
-    `(progn
+    `(eval-when (:compile-toplevel :load-toplevel :execute)
        ,(ext:register-with-pde whole `(si::fset ',name ,function t ,pprint))
        ,@(si::expand-set-documentation name 'function doc-string)
        ',name)))
@@ -59,9 +45,11 @@ as a VARIABLE doc and can be retrieved by (documentation 'NAME 'variable)."
 	      (SETQ ,var ,form))))
     ,@(si::expand-set-documentation var 'variable doc-string)
     ,(ext:register-with-pde whole)
-    ,(unless *bytecodes-compiler*
-       `(eval-when (:compile-toplevel)
-          (si::register-global ',var)))
+    ,(if *bytecodes-compiler*
+         `(eval-when (:compile-toplevel)
+            (sys:*make-special ',var))
+         `(eval-when (:compile-toplevel)
+            (si::register-global ',var)))
     ',var))
 
 (defmacro defparameter (&whole whole var form &optional doc-string)
@@ -74,9 +62,11 @@ as a VARIABLE doc and can be retrieved by (documentation 'NAME 'variable)."
     (SETQ ,var ,form)
     ,@(si::expand-set-documentation var 'variable doc-string)
     ,(ext:register-with-pde whole)
-    ,(unless *bytecodes-compiler*
-       `(eval-when (:compile-toplevel)
-          (si::register-global ',var)))
+    ,(if *bytecodes-compiler*
+         `(eval-when (:compile-toplevel)
+            (sys:*make-special ',var))
+         `(eval-when (:compile-toplevel)
+            (si::register-global ',var)))
     ',var))
 
 (defmacro defconstant (&whole whole var form &optional doc-string)
@@ -89,11 +79,32 @@ VARIABLE doc and can be retrieved by (DOCUMENTATION 'SYMBOL 'VARIABLE)."
      (SYS:*MAKE-CONSTANT ',var ,form)
     ,@(si::expand-set-documentation var 'variable doc-string)
     ,(ext:register-with-pde whole)
-    ,(unless *bytecodes-compiler*
-       `(eval-when (:compile-toplevel)
-          (sys:*make-constant ',var ,form)
-          (si::register-global ',var)))
+    ,(if *bytecodes-compiler*
+         `(eval-when (:compile-toplevel)
+            (sys:*make-constant ',var ,form))
+         `(eval-when (:compile-toplevel)
+            (sys:*make-constant ',var ,form)
+            (si::register-global ',var)))
     ',var))
+
+(defparameter *defun-inline-hook* nil)
+
+(defmacro defun (&whole whole name vl &body body &environment env &aux doc-string)
+  ;; Documentation in help.lsp
+  (multiple-value-setq (body doc-string) (remove-documentation body))
+  (let* ((function `#'(ext::lambda-block ,name ,vl ,@body))
+	 (global-function `#'(ext::lambda-block ,name ,vl
+                                                (declare (si::c-global))
+                                                ,@body)))
+    (when *dump-defun-definitions*
+      (print function)
+      (setq function `(si::bc-disassemble ,function)))
+    `(progn
+       ,(ext:register-with-pde whole `(si::fset ',name ,global-function))
+       ,@(si::expand-set-documentation name 'function doc-string)
+       ,(let ((hook *defun-inline-hook*))
+	  (and hook (funcall hook name global-function env)))
+       ',name)))
 
 ;;;
 ;;; This is a no-op unless the compiler is installed
@@ -101,6 +112,7 @@ VARIABLE doc and can be retrieved by (DOCUMENTATION 'SYMBOL 'VARIABLE)."
 (defmacro define-compiler-macro (&whole whole name vl &rest body)
   (multiple-value-bind (function pprint doc-string)
       (sys::expand-defmacro name vl body)
+    (declare (ignore pprint))
     (setq function `(function ,function))
     (when *dump-defun-definitions*
       (print function)
@@ -112,7 +124,7 @@ VARIABLE doc and can be retrieved by (DOCUMENTATION 'SYMBOL 'VARIABLE)."
        ',name)))
 
 (defun compiler-macro-function (name &optional env)
-  (declare (ignore env))
+  (declare (ignorable env))
   (get-sysprop name 'sys::compiler-macro))
 
 ;;; Each of the following macros is also defined as a special form,
@@ -235,11 +247,10 @@ FORM returns no value, NIL."
   (do ((vl vars (cdr vl))
        (sym (gensym))
        (forms nil)
-       (n 0 (1+ n)))
+       (n 0 (truly-the fixnum (1+ n))))
       ((endp vl) `(LET ((,sym (MULTIPLE-VALUE-LIST ,form))) ,@forms))
-      (declare (fixnum n))
-      (push `(SETQ ,(car vl) (NTH ,n ,sym)) forms))
-  )
+    (declare (fixnum n))
+    (push `(SETQ ,(car vl) (NTH ,n ,sym)) forms)))
 
 ;; We do not use this macroexpanso, and thus we do not care whether
 ;; it is efficiently compiled by ECL or not.
@@ -249,6 +260,7 @@ FORM returns no value, NIL."
 Evaluates INIT and binds the N-th VAR to the N-th value of INIT or, if INIT
 returns less than N values, to NIL.  Then evaluates FORMs, and returns all
 values of the last FORM.  If no FORM is given, returns NIL."
+  (declare (notinline mapcar))
   `(multiple-value-call #'(lambda (&optional ,@(mapcar #'list vars)) ,@body) ,form))
 
 (defun while-until (test body jmp-op)
@@ -268,48 +280,56 @@ values of the last FORM.  If no FORM is given, returns NIL."
 (defmacro sys::until (test &body body)
   (while-until test body 'unless))
 
-(defmacro case (keyform &rest clauses &aux (form nil) (key (gensym)))
-  (dolist (clause (reverse clauses)
-	   `(LET ((,key ,keyform))
-;	     (DECLARE (:READ-ONLY ,key)) ; Beppe
-	     ,form))
-    (if (or (eq (car clause) 'T) (eq (car clause) 'OTHERWISE))
-	(setq form `(PROGN ,@(cdr clause)))
-	(if (consp (car clause))
-	    (setq form `(IF (MEMBER ,key ',(car clause))
-			 (PROGN ,@(cdr clause))
-			 ,form))
-	    (if (car clause)
-		(setq form `(IF (EQL ,key ',(car clause))
-			     (PROGN ,@(cdr clause))
-			     ,form))))))
-  )
+(defmacro case (keyform &rest clauses)
+  (let* ((last t)
+	 (form nil)
+	 (key (gensym)))
+    (dolist (clause (reverse clauses)
+	     `(LET ((,key ,keyform))
+		;;(DECLARE (:READ-ONLY ,key)) ; Beppe
+		,form))
+      (let ((selector (car clause)))
+	(cond ((or (eq selector T) (eq selector 'OTHERWISE))
+	       (unless last
+		 (si::signal-simple-error
+		  'program-error nil
+		  "CASE: The selector ~A can only appear at the last position."
+		  (list selector)))
+	       (setq form `(PROGN ,@(cdr clause))))
+	      ((consp selector)
+	       (setq form `(IF (MEMBER ,key ',selector)
+			       (PROGN ,@(cdr clause))
+			       ,form)))
+	      (selector
+	       (setq form `(IF (EQL ,key ',selector)
+			       (PROGN ,@(cdr clause))
+			       ,form))))
+	(setq last nil)))))
 
 (defmacro return (&optional (val nil)) `(RETURN-FROM NIL ,val))
 
 ;; Declarations
+(let ()
 (defmacro declaim (&rest decl-specs)
   (if (cdr decl-specs)
     `(eval-when (:compile-toplevel :load-toplevel :execute)
        (mapcar #'proclaim ',decl-specs))
     `(eval-when (:compile-toplevel :load-toplevel :execute)
        (proclaim ',(car decl-specs)))))
+)
 
+(let ()
 (defmacro c-declaim (&rest decl-specs)
   (if (cdr decl-specs)
     `(eval-when (:compile-toplevel)
        (mapcar #'proclaim ',decl-specs))
     `(eval-when (:compile-toplevel)
        (proclaim ',(car decl-specs)))))
+)
 
 (defmacro in-package (name)
   `(eval-when (:compile-toplevel :load-toplevel :execute)
      (si::select-package ,(string name))))
-
-;; FIXME!
-(defmacro the (type value)
-  (declare (ignore type))
-  value)
 
 (defmacro define-symbol-macro (&whole whole symbol expansion)
   (cond ((not (symbolp symbol))
@@ -343,3 +363,9 @@ values of the last FORM.  If no FORM is given, returns NIL."
 	  (not (eq (first form) 'quote)))
       (list 'quote form)
       form))
+
+(defmacro ext:truly-the (&rest args)
+  `(the ,@args))
+
+(defmacro ext:checked-value (&rest args)
+  `(the ,@args))

@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -58,7 +59,8 @@ contiguous block."
 (defun fill-array-with-seq (array initial-contents)
   (declare (array array)
            (sequence initial-contents)
-           (optimize (safety 0)))
+           (optimize (safety 0))
+	   (si::c-local))
   (labels ((iterate-over-contents (array contents dims written)
 	     (declare (fixnum written)
 		      (array array)
@@ -97,26 +99,33 @@ Returns a list whose N-th element is the length of the N-th dimension of ARRAY."
   (do ((i (array-rank array))
        (d nil))
       ((= i 0) d)
-    (declare (fixnum i))
-    (setq i (1- i))
-    (setq d (cons (array-dimension array i) d))))
+    (declare (fixnum i)
+	     (optimize (safety 0)))
+    (push (array-dimension array (decf i)) d)))
 
 
-(defun array-in-bounds-p (array &rest indices &aux (r (array-rank array)))
+(defun array-in-bounds-p (array &rest indices)
   "Args: (array &rest indexes)
 Returns T if INDEXes are valid indexes of ARRAY; NIL otherwise.  The number of
 INDEXes must be equal to the rank of ARRAY."
-  (when (/= r (length indices))
-        (error "The rank of the array is ~R,~%~
+  (declare (type array array)
+	   (optimize (safety 0))
+           (ext:check-arguments-type))
+  (do* ((indices indices (cons-cdr indices))
+	(r (array-rank array))
+	(i 0 (1+ i)))
+       ((>= i r) t)
+    (declare (type index r i))
+    (if indices
+	(let* ((index (cons-car indices)))
+	  (when (or (not (si::fixnump index))
+		    (minusp (truly-the fixnum index))
+		    (>= (truly-the fixnum index) (array-dimension array i)))
+	    (return nil)))
+	(error "The rank of the array is ~R,~%~
                ~7@Tbut ~R ~:*~[indices are~;index is~:;indices are~] ~
                supplied."
-               r (length indices)))
-  (do ((i 0 (1+ i))
-       (s indices (cdr s)))
-      ((>= i r) t)
-    (when (or (< (car s) 0)
-              (>= (car s) (array-dimension array i)))
-          (return nil))))
+		 r i))))
 
 (defun row-major-index-inner (array indices)
   (declare (optimize (safety 0))
@@ -127,7 +136,7 @@ INDEXes must be equal to the rank of ARRAY."
     (do* ((r (array-rank array))
           (i 0 (1+ i))
           (j 0)
-          (s indices (cdr (the cons s))))
+          (s indices (cons-cdr s)))
          ((null s)
           (when (< i r)
             (indexing-error array indices))
@@ -135,7 +144,7 @@ INDEXes must be equal to the rank of ARRAY."
       (declare (ext:array-index j)
                (fixnum i r))
       (let* ((d (array-dimension array i))
-             (o (car (the cons s)))
+             (o (cons-car s))
              ndx)
         (declare (ext:array-index ndx))
         (unless (and (typep o 'fixnum)
@@ -259,42 +268,6 @@ RESULT is a bit-array."
   (bit-array-op boole-c1 bit-array bit-array result-bit-array))
 
 
-(defun vector-push (new-element vector)
-  "Args: (item vector)
-Replaces ITEM for the element of VECTOR that is pointed to by the fill-pointer
-of VECTOR and then increments the fill-pointer by one.  Returns NIL if the new
-value of the fill-pointer becomes too large.  Otherwise, returns the new fill-
-pointer as the value."
-  ;; FILL-POINTER asserts vector is a vector
-  (let* ((fp (fill-pointer vector))
-         (vector (the vector vector)))
-    (declare (optimize (safety 0)))
-    (cond ((< fp (array-total-size vector))
-           (sys:aset vector fp new-element)
-           (sys:fill-pointer-set vector (the ext:array-index (1+ fp)))
-	   fp)
-	  (t nil))))
-
-(defun vector-push-extend (new-element vector &optional (extension 1))
-  "Args: (item vector &optional (n (length vector)))
-Replaces ITEM for the element of VECTOR that is pointed to by the fill-pointer
-of VECTOR and then increments the fill-pointer by one.  If the new value of
-the fill-pointer becomes too large, extends VECTOR for N more elements.
-Returns the new value of the fill-pointer."
-  ;; FILL-POINTER asserts vector is a vector
-  (let* ((fp (fill-pointer vector))
-         (vector (the vector vector)))
-    (declare (optimize (safety 0)))
-    (let ((d (array-total-size vector)))
-      (unless (< fp d)
-        (adjust-array vector
-                      (list (+ d (max extension (max d 4))))
-                      :element-type (array-element-type vector)
-                      :fill-pointer fp))
-      (sys:aset vector fp new-element)
-      (sys:fill-pointer-set vector (1+ fp))
-      fp)))
-
 (defun vector-pop (vector)
   "Args: (vector)
 Decrements the fill-pointer of VECTOR by one and returns the element pointed
@@ -302,7 +275,7 @@ to by the new fill-pointer.  Signals an error if the old value of the fill-
 pointer is 0 already."
   ;; FILL-POINTER asserts vector is a vector and has fill pointer
   (let* ((fp (fill-pointer vector))
-         (vector (the vector vector)))
+         (vector (truly-the vector vector)))
     (declare (ext:array-index fp)
              (optimize (safety 0)))
     (when (zerop fp)
@@ -326,18 +299,7 @@ pointer is 0 already."
 		(i2 start2))
 	   (declare (ext:array-index d1 d2 l i1 i2))
 	   (if (null dims1)
-	       #+ecl-min
-	       (dotimes (i l)
-		 (declare (ext:array-index i))
-		 (row-major-aset dest i1 (row-major-aref orig i2))
-		 (incf i1)
-		 (incf i2))
-	       #-ecl-min
-	       (ffi::c-inline (dest i1 orig i2 l)
-			      (array :fixnum array :fixnum :fixnum) :void
-			      "ecl_copy_subarray(#0, #1, #2, #3, #4)"
-			      :one-liner t
-			      :side-effects t)
+	       (copy-subarray dest i1 orig i2 l)
 	       (let ((step1 (apply #'* dims1))
 		     (step2 (apply #'* dims2)))
 		 (declare (ext:array-index step1 step2))
@@ -393,14 +355,8 @@ adjustable array."
   (cond ((adjustable-array-p vec)
 	 (adjust-array vec len))
 	((typep vec 'simple-array)
-	 (let ((new-vec (make-array len :element-type
-				    (array-element-type vec))))
-	   (check-type len fixnum)
-	   (locally (declare (optimize (speed 3) (safety 0) (space 0)) )
-	     (dotimes (i len)
-	       (declare (fixnum i))
-	       (setf (aref new-vec i) (aref vec i))))
-	   new-vec))
+	 (let ((new-vec (make-array len :element-type (array-element-type vec))))
+	   (copy-subarray new-vec 0 vec 0 len)))
 	((typep vec 'vector)
 	 (setf (fill-pointer vec) len)
 	 vec)

@@ -2,6 +2,7 @@
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -30,13 +31,13 @@ Builds a new function which accepts any number of arguments but always outputs N
     ((t) #'constantly-t)
     (t #'(lambda (&rest x) (declare (ignore x)) n))))
 
-(defvar *subtypep-cache* (si:make-vector t 256 nil nil nil 0))
+(defparameter *subtypep-cache* (si:make-vector t 256 nil nil nil 0))
 
-(defvar *upgraded-array-element-type-cache* (si:make-vector t 128 nil nil nil 0))
+(defparameter *upgraded-array-element-type-cache* (si:make-vector t 128 nil nil nil 0))
 
 (defun subtypep-clear-cache ()
-  (si:fill-array-with-elt *subtypep-cache* nil 0 nil)
-  (si:fill-array-with-elt *upgraded-array-element-type-cache* nil 0 nil))
+  (ext:fill-array-with-elt *subtypep-cache* nil 0 nil)
+  (ext:fill-array-with-elt *upgraded-array-element-type-cache* nil 0 nil))
 
 (defun create-type-name (name)
   (when (member name *alien-declarations*)
@@ -53,7 +54,7 @@ Builds a new function which accepts any number of arguments but always outputs N
   name)
 
 ;;; DEFTYPE macro.
-(defmacro deftype (name lambda-list &rest body)
+(defmacro deftype (name lambda-list &rest body &environment env)
   "Syntax: (deftype name lambda-list {decl | doc}* {form}*)
 Defines a new type-specifier abbreviation in terms of an 'expansion' function
 	(lambda lambda-list1 {DECL}* {FORM}*)
@@ -79,7 +80,7 @@ by (documentation 'NAME 'type)."
     (let ((function `#'(LAMBDA-BLOCK ,name ,lambda-list ,@body)))
       (when (and (null lambda-list) (consp body) (null (rest body)))
         (let ((form (first body)))
-          (when (and (consp form) (eq (first form) 'quote))
+          (when (constantp form env)
             (setf function form))))
       `(eval-when (:compile-toplevel :load-toplevel :execute)
          ,@(si::expand-set-documentation name 'type doc)
@@ -90,16 +91,16 @@ by (documentation 'NAME 'type)."
 ;;; Some DEFTYPE definitions.
 (deftype boolean ()
   "A BOOLEAN is an object which is either NIL or T."
-  `(member nil t))
+  '(member nil t))
 
 (deftype index ()
-  `(INTEGER 0 #.array-dimension-limit))
+  '(INTEGER 0 #.array-dimension-limit))
 
 (deftype fixnum ()
   "A FIXNUM is an integer between MOST-NEGATIVE-FIXNUM (= - 2^29 in ECL) and
 MOST-POSITIVE-FIXNUM (= 2^29 - 1 in ECL) inclusive.  Other integers are
 bignums."
-  `(INTEGER #.most-negative-fixnum #.most-positive-fixnum))
+  '(INTEGER #.most-negative-fixnum #.most-positive-fixnum))
 (deftype bignum ()
   '(OR (INTEGER * (#.most-negative-fixnum)) (INTEGER (#.most-positive-fixnum) *)))
 
@@ -362,6 +363,7 @@ and is not adjustable."
              '(SINGLE-FLOAT DOUBLE-FLOAT T)))
 
 (defun upgraded-array-element-type (element-type &optional env)
+  (declare (ignore env))
   (let* ((hash (logand 127 (si:hash-eql element-type)))
 	 (record (aref *upgraded-array-element-type-cache* hash)))
     (declare (type (integer 0 127) hash))
@@ -378,6 +380,7 @@ and is not adjustable."
 	  answer))))
 
 (defun upgraded-complex-part-type (real-type &optional env)
+  (declare (ignore env))
   ;; ECL does not have specialized complex types. If we had them, the
   ;; code would look as follows
   ;;   (dolist (v '(INTEGER RATIO RATIONAL SINGLE-FLOAT DOUBLE-FLOAT FLOAT REAL)
@@ -408,7 +411,6 @@ and is not adjustable."
 
 (defun error-type-specifier (type)
   (declare (si::c-local))
-  (print type)
   (error "~S is not a valid type specifier." type))
 
 (defun match-dimensions (array pat)
@@ -481,8 +483,12 @@ Returns T if X belongs to TYPE; NIL otherwise."
 	   ))
     (SEQUENCE (or (listp object) (vectorp object)))
     (CONS (and (consp object)
-	       (or (endp i) (typep (car object) (first i)))
-	       (or (endp (cdr i)) (typep (cdr object) (second i)))))
+	       (or (endp i)
+		   (let ((car-type (first i)))
+		     (or (eq car-type '*) (typep (car object) car-type))))
+	       (or (endp (cdr i))
+		   (let ((cdr-type (second i)))
+		     (or (eq cdr-type '*) (typep (cdr object) cdr-type))))))
     (BASE-STRING
      (and (base-string-p object)
           (or (null i) (match-dimensions object i))))
@@ -552,19 +558,16 @@ Returns T if X belongs to TYPE; NIL otherwise."
 #+clos
 (defun subclassp (low high)
   (or (eq low high)
-      (member high (sys:instance-ref low 4) :test #'eq)) ; (class-precedence-list low)
-  #+(or)
-  (or (eq low high)
-      (dolist (class (sys:instance-ref low 1)) ; (class-superiors low)
-	(when (si::subclassp class high) (return t)))))
+      (member high (sys:instance-ref low clos::+class-precedence-list-ndx+)
+	      :test #'eq))) ; (class-precedence-list low)
 
 #+clos
 (defun of-class-p (object class)
   (declare (optimize (speed 3) (safety 0)))
   (macrolet ((class-precedence-list (x)
-	       `(instance-ref ,x 4))
+	       `(si::instance-ref ,x clos::+class-precedence-list-ndx+))
 	     (class-name (x)
-	       `(instance-ref ,x 0)))
+	       `(si::instance-ref ,x clos::+class-name-ndx+)))
     (let* ((x-class (class-of object)))
       (declare (class x-class))
       (if (eq x-class class)
@@ -572,7 +575,7 @@ Returns T if X belongs to TYPE; NIL otherwise."
 	  (let ((x-cpl (class-precedence-list x-class)))
 	    (if (instancep class)
 		(member class x-cpl :test #'eq)
-		(dolist (c x-cpl nil)
+		(dolist (c x-cpl)
 		  (declare (class c))
 		  (when (eq (class-name c) class)
 		    (return t)))))))))
@@ -754,9 +757,9 @@ if not possible."
 ;; us in recognizing these supertypes.
 ;;
 (defun update-types (type-mask new-tag)
+  (declare (ext:assume-no-errors))
   (maybe-save-types)
   (dolist (i *elementary-types*)
-    (declare (cons i))
     (unless (zerop (logand (cdr i) type-mask))
       (setf (cdr i) (logior new-tag (cdr i))))))
 
@@ -816,8 +819,7 @@ if not possible."
 	(let ((tag (new-type-tag)))
 	  (update-types (logandc2 tag-super tag-sub) tag)
 	  (setf tag (logior tag tag-sub))
-	  (push-type type tag)
-	  tag))))
+	  (push-type type tag)))))
 
 ;;----------------------------------------------------------------------
 ;; MEMBER types. We register this object in a separate list, *MEMBER-TYPES*,
@@ -847,7 +849,8 @@ if not possible."
 	   (number-member-type object)))))
 
 (defun simple-member-type (object)
-  (declare (si::c-local))
+  (declare (si::c-local)
+	   (ext:assume-no-errors))
   (let* ((tag (new-type-tag)))
     (maybe-save-types)
     (setq *member-types* (acons object tag *member-types*))
@@ -867,19 +870,22 @@ if not possible."
 	(register-interval-type type))))
 
 (defun push-type (type tag)
-  (declare (si::c-local))
+  (declare (si::c-local)
+	   (ext:assume-no-errors))
   (dolist (i *member-types*)
     (declare (cons i))
     (when (typep (car i) type)
       (setq tag (logior tag (cdr i)))))
-  (push (cons type tag) *elementary-types*))
+  (push (cons type tag) *elementary-types*)
+  tag)
 
 ;;----------------------------------------------------------------------
 ;; SATISFIES types. Here we should signal some error which is caught
 ;; somewhere up, to denote failure of the decision procedure.
 ;;
 (defun register-satisfies-type (type)
-  (declare (si::c-local))
+  (declare (si::c-local)
+	   (ignore type))
   (throw '+canonical-type-failure+ 'satisfies))
 
 ;;----------------------------------------------------------------------
@@ -1022,8 +1028,7 @@ if not possible."
 	(let ((tag (new-type-tag)))
 	  (update-types (logandc2 tag-super tag-sub) tag)
 	  (setq tag (logior tag tag-sub))
-	  (push-type type tag)
-	  tag))))
+	  (push-type type tag)))))
 
 (defun register-interval-type (interval)
   (declare (si::c-local))
@@ -1100,14 +1105,12 @@ if not possible."
     (upgraded-complex-part-type real-type))
   (or (find-registered-tag '(COMPLEX REAL))
       (let ((tag (new-type-tag)))
-	(push-type '(COMPLEX REAL) tag)
-	tag))
+	(push-type '(COMPLEX REAL) tag)))
   #+(or)
   (case real-type
     ((SINGLE-FLOAT DOUBLE-FLOAT INTEGER RATIO #+long-float LONG-FLOAT)
      (let ((tag (new-type-tag)))
-       (push-type `(COMPLEX ,real-type) tag)
-       tag))
+       (push-type `(COMPLEX ,real-type) tag)))
     ((RATIONAL) (canonical-type '(OR (COMPLEX INTEGER) (COMPLEX RATIO))))
     ((FLOAT) (canonical-type '(OR (COMPLEX SINGLE-FLOAT) (COMPLEX DOUBLE-FLOAT)
 			       #+long-float (COMPLEX LONG-FLOAT))))
@@ -1154,7 +1157,7 @@ if not possible."
 ;; Note 2: All built in types listed here have to be symbols.
 ;;
 #+ecl-min
-(defconstant +built-in-types+
+(defconstant +built-in-type-list+
 	     '((SYMBOL)
 	       (KEYWORD NIL SYMBOL)
 	       (PACKAGE)
@@ -1214,15 +1217,21 @@ if not possible."
 	       (STRING-STREAM)
 	       (SYNONYM-STREAM)
  	       (TWO-WAY-STREAM)
+	       (EXT:SEQUENCE-STREAM)
 	       (EXT:ANSI-STREAM (OR BROADCAST-STREAM CONCATENATED-STREAM ECHO-STREAM
-                             FILE-STREAM STRING-STREAM SYNONYM-STREAM TWO-WAY-STREAM
-                             #+clos-streams GRAY:FUNDAMENTAL-STREAM))
+                                 FILE-STREAM STRING-STREAM SYNONYM-STREAM TWO-WAY-STREAM
+                                 EXT:SEQUENCE-STREAM
+                                 #+clos-streams GRAY:FUNDAMENTAL-STREAM))
                (STREAM EXT:ANSI-STREAM)
 
 	       (READTABLE)
 	       #+threads (MP::PROCESS)
 	       #+threads (MP::LOCK)
 	       #+threads (MP::RWLOCK)
+	       #+threads (MP::CONDITION-VARIABLE)
+	       #+threads (MP::SEMAPHORE)
+	       #+threads (MP::BARRIER)
+	       #+threads (MP::MAILBOX)
 	       #+ffi (FOREIGN-DATA)
 	       #+sse2 (EXT:SSE-PACK (OR EXT:INT-SSE-PACK
 				     EXT:FLOAT-SSE-PACK
@@ -1233,29 +1242,34 @@ if not possible."
                (CODE-BLOCK)
 	       ))
 
+(defconstant +built-in-types+
+  (ext:hash-table-fill
+     (make-hash-table :test 'eq :size 128)
+     '#.+built-in-type-list+))
+
 (defun find-built-in-tag (name)
   (declare (si::c-local))
-  (when (eq name T)
-    (return-from find-built-in-tag -1))
-  (dolist (i '#.+built-in-types+)
-    (declare (cons i))
-    (when (eq name (first i))
-      (let* ((alias (second i))
-	     (strict-supertype (or (third i) 'T))
-	     (tag))
-	(if alias
-	    (setq tag (canonical-type alias))
-	    (let* ((strict-supertype-tag (canonical-type strict-supertype)))
-	      (setq tag (new-type-tag))
-	      (unless (eq strict-supertype 't)
-		(extend-type-tag tag strict-supertype-tag))))
-	(push-type name tag)
-	(return-from find-built-in-tag tag)
-	)))
-  nil)
+  (let (record)
+    (cond ((eq name T)
+	   -1)
+	  ((eq (setf record (gethash name +built-in-types+ name))
+		    name)
+	   nil)
+	  (t
+	   (let* ((alias (pop record))
+		  tag)
+	     (if alias
+		 (setq tag (canonical-type alias))
+		 (let* ((strict-supertype (or (first record) 'T))
+			(strict-supertype-tag (canonical-type strict-supertype)))
+		   (setq tag (new-type-tag))
+		   (unless (eq strict-supertype 't)
+		     (extend-type-tag tag strict-supertype-tag))))
+	     (push-type name tag))))))
 
 (defun extend-type-tag (tag minimal-supertype-tag)
-  (declare (si::c-local))
+  (declare (si::c-local)
+	   (ext:assume-no-errors))
   (dolist (type *elementary-types*)
     (let ((other-tag (cdr type)))
       (when (zerop (logandc2 minimal-supertype-tag other-tag))
@@ -1384,6 +1398,7 @@ if not possible."
 	   (values nil nil)))))
 
 (defun subtypep (t1 t2 &optional env)
+  (declare (ignore env))
   ;; One easy case: types are equal
   (when (eq t1 t2)
     (return-from subtypep (values t t)))
@@ -1393,9 +1408,8 @@ if not possible."
     (return-from subtypep (values (subclassp t1 t2) t)))
   ;; Finally, cached results.
   (let* ((cache *subtypep-cache*)
-	 (hash (logand (hash-eql t1 t2) 255))
+	 (hash (truly-the (integer 0 255) (logand (hash-eql t1 t2) 255)))
 	 (elt (aref cache hash)))
-    (declare (type (integer 0 255) hash))
     (when (and elt (eq (caar elt) t1) (eq (cdar elt) t2))
       (setf elt (cdr elt))
       (return-from subtypep (values (car elt) (cdr elt))))

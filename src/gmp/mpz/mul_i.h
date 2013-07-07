@@ -44,7 +44,7 @@ Error, error, unrecognised OPERATION
 
 void
 FUNCTION (mpz_ptr prod, mpz_srcptr mult,
-          MULTIPLICAND_UNSIGNED long int small_mult)
+          MULTIPLICAND_UNSIGNED long small_mult)
 {
   mp_size_t size = SIZ(mult);
   mp_size_t sign_product = size;

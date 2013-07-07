@@ -44,17 +44,18 @@
 			:args blk body)
 	  body))))
 
-(defun c2block (blk body)
+(defun c2block (c1form blk body)
+  (declare (ignore c1form))
   (if (plusp (var-ref (blk-var blk)))
       (let* ((blk-var (blk-var blk))
 	     (*env-lvl* *env-lvl*))
 	(setf (blk-exit blk) *exit*
 	      (blk-destination blk) *destination*)
-	(wt "{")
+	(wt-nl-open-brace)
 	(unless (or (blk-ref-ccb blk) (blk-ref-clb blk))
 	  (setf (var-kind blk-var) :object
 		(var-loc blk-var) (next-lcl))
-	  (wt " cl_object " blk-var ";"))
+	  (wt-nl "cl_object " blk-var ";"))
 	(when (env-grows (blk-ref-ccb blk))
 	  (let ((env-lvl *env-lvl*))
 	    (wt-nl *volatile* "cl_object env" (incf *env-lvl*)
@@ -67,7 +68,7 @@
 	  (c2expr body)
 	  (wt "}"))
 	(when (blk-ref-ccb blk) (decf *env*))
-	(wt-nl "}"))
+	(wt-nl-close-brace))
       (progn
 	(setf (blk-exit blk) *exit*)
 	(setf (blk-destination blk) *destination*)
@@ -103,14 +104,15 @@
 	  (when var (add-to-read-nodes var output))
 	  output)))))
 
-(defun c2return-from (blk type val var)
+(defun c2return-from (c1form blk type val var)
+  (declare (ignore var c1form))
   (case type
     (CCB
      (let ((*destination* 'VALUES)) (c2expr* val))
      (wt-nl "cl_return_from(" (blk-var blk) "," (add-symbol (blk-name blk)) ");"))
     ((CLB UNWIND-PROTECT)
      (let ((*destination* 'VALUES)) (c2expr* val))
-     (wt-nl "cl_return_from(" (blk-var blk) ",Cnil);"))
+     (wt-nl "cl_return_from(" (blk-var blk) ",ECL_NIL);"))
     (T (let ((*destination* (blk-destination blk))
 	     (*exit* (blk-exit blk)))
 	 (c2expr val))))

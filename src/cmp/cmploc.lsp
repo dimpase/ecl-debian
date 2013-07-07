@@ -28,14 +28,10 @@
 ;;;	( LCL lcl [representation-type]) local variable, type unboxed
 ;;;	( TEMP temp )			local variable, type object
 ;;;	( FRAME ndx )			variable in local frame stack
-;;;	( CALL c-fun-name args fname )	locs are locations containing the arguments
-;;;	( CALL-NORMAL fun locs)		similar as CALL, but number of arguments is fixed
+;;;	( CALL-NORMAL fun locs 1st-type ) similar as CALL, but number of arguments is fixed
 ;;;	( CALL-INDIRECT fun narg args)	similar as CALL, but unknown function
 ;;;	( C-INLINE output-type fun/string locs side-effects output-var )
 ;;;	( COERCE-LOC representation-type location)
-;;;	( CAR lcl )
-;;;	( CDR lcl )
-;;;	( CADR lcl )
 ;;;	( FDEFINITION vv-index )
 ;;;	( MAKE-CCLOSURE cfun )
 ;;;	( FIXNUM-VALUE fixnum-value )
@@ -45,6 +41,7 @@
 ;;;	( SINGLE-FLOAT-VALUE single-float-value vv )
 ;;;	( STACK-POINTER index )	retrieve a value from the stack
 ;;;	( SYS:STRUCTURE-REF loc slot-name-vv slot-index )
+;;;     ( THE type location )
 ;;;	( KEYVARS n )
 ;;;	VA-ARG
 ;;;	CL-VA-ARG
@@ -68,6 +65,11 @@
     (TRASH 'TRASH)
     (T 'RETURN)))
 
+(defun precise-loc-type (loc new-type)
+  (if (subtypep (loc-type loc) new-type)
+      loc
+      `(the ,new-type ,loc)))
+
 (defun loc-in-c1form-movable-p (loc)
   "A location that is in a C1FORM and can be moved"
   (cond ((member loc '(t nil))
@@ -83,6 +85,8 @@
 	((atom loc)
 	 (baboon :format-control "Unknown location ~A found in C1FORM"
 		 :format-arguments (list loc)))
+	((eq (first loc) 'THE)
+	 (loc-in-c1form-movable-p (third loc)))
 	((member (setf loc (car loc))
 		 '(VV VV-TEMP FIXNUM-VALUE CHARACTER-VALUE
 		   DOUBLE-FLOAT-VALUE SINGLE-FLOAT-VALUE #+long-float LONG-FLOAT-VALUE
@@ -98,7 +102,7 @@
            (and (eq (car loc) 'C-INLINE)
                 (eq (sixth loc) 'VALUES)))))
 
-(defun loc-immediate-value-p (loc &aux head)
+(defun loc-immediate-value-p (loc)
   (cond ((eq loc t)
          (values t t))
         ((eq loc nil)
@@ -112,18 +116,25 @@
                (values t value))))
         ((atom loc)
          (values nil nil))
-
-        ((member head '(fixnum-value character-value long-float-value
-                        double-float-value single-float-value))
+	((eq (first loc) 'THE)
+	 (loc-immediate-value-p (third loc)))
+        ((member (first loc)
+                 '(fixnum-value long-float-value
+                   double-float-value single-float-value))
          (values t (second loc)))
+	((eq (first loc) 'character-value)
+	 (values t (code-char (second loc))))
         (t
          (values nil nil))))
+
+(defun loc-immediate-value (loc)
+  (nth-value 1 (loc-immediate-value-p loc)))
 
 (defun unknown-location (where loc)
   (baboon :format-control "Unknown location found in ~A~%~S"
           :format-arguments (list where loc)))
 
-(defun wt-loc (loc &aux fd)
+(defun wt-loc (loc)
   (cond ((consp loc)
          (let ((fd (gethash (car loc) *wt-loc-dispatch-table*)))
            (if fd
@@ -134,6 +145,8 @@
            (when (eq txt :not-found)
              (unknown-location 'wt-loc loc))
            (wt txt)))
+	((stringp loc)
+	 (wt loc))
         ((var-p loc)
          (wt-var loc))
         ((vv-p loc)
@@ -145,12 +158,6 @@
   (member *exit*
           '(RETURN RETURN-FIXNUM RETURN-CHARACTER RETURN-SINGLE-FLOAT
             RETURN-DOUBLE-FLOAT RETURN-LONG-FLOAT RETURN-OBJECT)))
-
-(defun wt-car (loc) (wt "CAR(" loc ")"))
-
-(defun wt-cdr (loc) (wt "CDR(" loc ")"))
-
-(defun wt-cadr (loc) (wt "CADR(" loc ")"))
 
 (defun lcl-name (lcl) (format nil "V~D" lcl))
 
@@ -166,17 +173,25 @@
   (wt value))
 
 (defun wt-character (value &optional vv)
-  (wt (format nil "'\\~O'" value)))
+  ;; We do not use the '...' format because this creates objects of type
+  ;; 'char' which have sign problems
+  (wt value))
 
 (defun wt-value (i) (wt "cl_env_copy->values[" i "]"))
 
 (defun wt-keyvars (i) (wt "keyvars[" i "]"))
+
+(defun wt-the (type loc)
+  (declare (ignore type))
+  (wt-loc loc))
 
 (defun loc-refers-to-special (loc)
   (cond ((var-p loc)
 	 (member (var-kind loc) '(SPECIAL GLOBAL)))
 	((atom loc)
 	 nil)
+	((eq (first loc) 'THE)
+	 (loc-refers-to-special (third loc)))
 	((eq (setf loc (first loc)) 'BIND)
 	 t)
 	((eq loc 'C-INLINE)
@@ -211,35 +226,55 @@
              (if fd
                  (apply fd loc (rest destination))
                  (progn
-                   (wt-nl) (wt-loc destination) (wt "= ")
+                   (wt-nl) (wt-loc destination) (wt " = ")
                    (wt-coerce-loc (loc-representation-type *destination*) loc)
                    (wt ";"))))))))
+
+(defun set-the-loc (loc type orig-loc)
+  (declare (ignore type))
+  (let ((*destination* orig-loc))
+    (set-loc loc)))
                  
 (defun set-values-loc (loc)
   (cond ((eq loc 'VALUES))
         ((uses-values loc)
-         (wt-nl "cl_env_copy->values[0]=") (wt-coerce-loc :object loc) (wt ";"))
+         (wt-nl "cl_env_copy->values[0] = ") (wt-coerce-loc :object loc) (wt ";"))
         (t
-         (wt-nl "cl_env_copy->values[0]=") (wt-coerce-loc :object loc)
-         (wt "; cl_env_copy->nvalues=1;"))))
+         (wt-nl "cl_env_copy->values[0] = ") (wt-coerce-loc :object loc)
+	 (wt ";")
+	 (wt-nl "cl_env_copy->nvalues = 1;"))))
 
 (defun set-value0-loc (loc)
-  (wt-nl "value0=") (wt-coerce-loc :object loc) (wt ";"))
+  (wt-nl "value0 = ") (wt-coerce-loc :object loc) (wt ";"))
 
 (defun set-return-loc (loc)
   (cond ((or (eq loc 'VALUES) (uses-values loc))
-         (wt-nl "value0=") (wt-coerce-loc :object loc) (wt ";"))
+         (wt-nl "value0 = ") (wt-coerce-loc :object loc) (wt ";"))
         ((eq loc 'VALUE0)
-         (wt-nl "cl_env_copy->nvalues=1;"))
+         (wt-nl "cl_env_copy->nvalues = 1;"))
         ((eq loc 'RETURN))
         (t
-         (wt-nl "value0=") (wt-coerce-loc :object loc)
-         (wt "; cl_env_copy->nvalues=1;"))))
+         (wt-nl "value0 = ") (wt-coerce-loc :object loc) (wt ";")
+         (wt-nl "cl_env_copy->nvalues = 1;"))))
+
+(defun loc-with-side-effects-p (loc &aux name)
+  (cond ((var-p loc)
+	 (and (global-var-p loc)
+	      (policy-global-var-checking)))
+	((atom loc)
+	 nil)
+	((member (setf name (first loc)) '(CALL CALL-NORMAL CALL-INDIRECT)
+		 :test #'eq)
+	 t)
+	((eq name 'THE)
+	 (loc-with-side-effects-p (third loc)))
+	((eq name 'FDEFINITION)
+	 (policy-global-function-checking))
+	((eq name 'C-INLINE)
+	 (or (eq (sixth loc) 'VALUES) ;; Uses VALUES
+	     (fifth loc))))) ;; or side effects
 
 (defun set-trash-loc (loc)
-  (cond ((uses-values loc) (wt-nl "(void)" loc ";"))
-        ((and (consp loc)
-              (eq (first loc) 'C-INLINE)
-              (fifth loc)) ; side effects?
-         (wt-nl loc ";"))))
-
+  (when (loc-with-side-effects-p loc)
+    (wt-nl loc ";")
+    t))

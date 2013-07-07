@@ -34,6 +34,12 @@
 static void gather_statistics();
 static void ecl_mark_env(struct cl_env_struct *env);
 
+/* We need these prototypes because private/gc.h is not available
+ * and this interface is not yet exported by BDWGC */
+extern void GC_push_all(char *bottom, char *top);
+extern void GC_push_conditional(char *bottom, char *top, int all);
+extern void GC_set_mark_bit(const void *p);
+ 
 #ifdef GBC_BOEHM_PRECISE
 # if GBC_BOEHM
 #  undef GBC_BOEHM_PRECISE
@@ -48,6 +54,7 @@ static void ecl_mark_env(struct cl_env_struct *env);
 static int cl_object_kind, cl_object_mark_proc_index;
 static void **cl_object_free_list;
 #  endif
+extern void GC_init_explicit_typing(void);
 # endif
 #endif
 
@@ -62,7 +69,7 @@ _ecl_set_max_heap_size(cl_index new_size)
 	ecl_disable_interrupts_env(the_env);
 	GC_set_max_heap_size(cl_core.max_heap_size = new_size);
 	if (new_size == 0) {
-		cl_index size = ecl_get_option(ECL_OPT_HEAP_SAFETY_AREA);
+		cl_index size = ecl_option_values[ECL_OPT_HEAP_SAFETY_AREA];
 		cl_core.safety_region = ecl_alloc_atomic_unprotected(size);
 	} else if (cl_core.safety_region) {
 		GC_FREE(cl_core.safety_region);
@@ -94,13 +101,13 @@ out_of_memory(size_t requested_bytes)
         if (!interrupts)
                 ecl_disable_interrupts_env(the_env);
 	/* Free the input / output buffers */
-	the_env->string_pool = Cnil;
+	the_env->string_pool = ECL_NIL;
 
 	/* The out of memory condition may happen in more than one thread */
         /* But then we have to ensure the error has not been solved */
 #ifdef ECL_THREADS
         mp_get_lock_wait(cl_core.error_lock);
-        CL_UNWIND_PROTECT_BEGIN(the_env)
+        ECL_UNWIND_PROTECT_BEGIN(the_env)
 #endif
 {
         failure = 0;
@@ -121,7 +128,7 @@ out_of_memory(size_t requested_bytes)
                 if (cl_core.safety_region) {
                         /* We can free some memory and try handling the error */
                         GC_FREE(cl_core.safety_region);
-                        the_env->string_pool = Cnil;
+                        the_env->string_pool = ECL_NIL;
                         cl_core.safety_region = 0;
                         method = 0;
                 } else {
@@ -129,7 +136,7 @@ out_of_memory(size_t requested_bytes)
                         method = 2;
                 }
         } else {
-                cl_core.max_heap_size += ecl_get_option(ECL_OPT_HEAP_SAFETY_AREA);
+                cl_core.max_heap_size += ecl_option_values[ECL_OPT_HEAP_SAFETY_AREA];
                 GC_set_max_heap_size(cl_core.max_heap_size);
                 method = 1;
         }
@@ -137,10 +144,10 @@ out_of_memory(size_t requested_bytes)
         (void)0;
 }
 #ifdef ECL_THREADS
-        CL_UNWIND_PROTECT_EXIT {
+        ECL_UNWIND_PROTECT_EXIT {
                 mp_giveup_lock(cl_core.error_lock);
                 ecl_enable_interrupts_env(the_env);
-        } CL_UNWIND_PROTECT_END;
+        } ECL_UNWIND_PROTECT_END;
 #else
         ecl_enable_interrupts_env(the_env);
 #endif
@@ -188,10 +195,10 @@ ecl_object_byte_size(cl_type t)
 {
         if (t == t_fixnum || t == t_character)
                 FEerror("ecl_object_byte_size invoked with an immediate type ~D",
-                        1, MAKE_FIXNUM(1));
+                        1, ecl_make_fixnum(1));
         if (t >= t_end)
-                FEerror("ecl_object_byte_size invoked with an unkown type ~D",
-                        1, MAKE_FIXNUM(1));
+                FEerror("ecl_object_byte_size invoked with an unknown type ~D",
+                        1, ecl_make_fixnum(1));
         return type_info[t].size;
 }
 
@@ -276,7 +283,7 @@ allocate_object_own(register struct ecl_type_information *type_info)
 #endif /* GBC_BOEHM_OWN_ALLOCATOR */
 
 #ifdef GBC_BOEHM_OWN_MARKER
-#define IGNORABLE_POINTER(obj) (IMMEDIATE(obj) & 2)
+#define IGNORABLE_POINTER(obj) (ECL_IMMEDIATE(obj) & 2)
 #define GC_MARK_AND_PUSH(obj, msp, lim, src) \
         ((!IGNORABLE_POINTER(obj) &&				      \
 	  (GC_word)obj >= (GC_word)GC_least_plausible_heap_addr &&    \
@@ -326,7 +333,7 @@ cl_object_mark_proc(void *addr, struct GC_ms_entry *msp, struct GC_ms_entry *msl
 	const GC_word gpa = (GC_word)GC_greatest_plausible_heap_addr;
 	switch (o->d.t) {
 	case t_bignum:
-                MAYBE_MARK(o->big.big_limbs);
+                MAYBE_MARK(ECL_BIGNUN_LIMBS(o));
 		break;
         case t_ratio:
                 MAYBE_MARK(o->ratio.num);
@@ -353,9 +360,6 @@ cl_object_mark_proc(void *addr, struct GC_ms_entry *msp, struct GC_ms_entry *msl
                 MAYBE_MARK(o->pack.name);
 		break;
         case t_hashtable:
-# ifdef ECL_THREADS
-                MAYBE_MARK(o->hash.lock);
-# endif
                 MAYBE_MARK(o->hash.threshold);
                 MAYBE_MARK(o->hash.rehash_size);
                 MAYBE_MARK(o->hash.data);
@@ -441,20 +445,30 @@ cl_object_mark_proc(void *addr, struct GC_ms_entry *msp, struct GC_ms_entry *msl
 # endif
 # ifdef ECL_THREADS
         case t_process:
+                MAYBE_MARK(o->process.queue_record);
+                MAYBE_MARK(o->process.start_spinlock);
+                MAYBE_MARK(o->process.woken_up);
                 MAYBE_MARK(o->process.exit_values);
-                MAYBE_MARK(o->process.exit_lock);
+                MAYBE_MARK(o->process.exit_barrier);
                 MAYBE_MARK(o->process.parent);
                 MAYBE_MARK(o->process.initial_bindings);
                 MAYBE_MARK(o->process.interrupt);
                 MAYBE_MARK(o->process.args);
                 MAYBE_MARK(o->process.function);
                 MAYBE_MARK(o->process.name);
-                if (o->process.env && o->process.env != Cnil)
+                if (o->process.env && o->process.env != ECL_NIL)
                         ecl_mark_env(o->process.env);
 		break;
         case t_lock:
-                MAYBE_MARK(o->lock.holder);
+                MAYBE_MARK(o->lock.queue_list);
+                MAYBE_MARK(o->lock.queue_spinlock);
+                MAYBE_MARK(o->lock.owner);
                 MAYBE_MARK(o->lock.name);
+		break;
+        case t_condition_variable:
+                MAYBE_MARK(o->condition_variable.queue_spinlock);
+                MAYBE_MARK(o->condition_variable.queue_list);
+                MAYBE_MARK(o->condition_variable.lock);
 		break;
 	case t_rwlock:
 		MAYBE_MARK(o->rwlock.name);
@@ -462,8 +476,25 @@ cl_object_mark_proc(void *addr, struct GC_ms_entry *msp, struct GC_ms_entry *msl
 		MAYBE_MARK(o->rwlock.mutex);
 		break;
 #  endif
+        case t_semaphore:
+                MAYBE_MARK(o->semaphore.queue_list);
+                MAYBE_MARK(o->semaphore.queue_spinlock);
+                MAYBE_MARK(o->semaphore.name);
+		break;
+        case t_barrier:
+                MAYBE_MARK(o->barrier.queue_list);
+                MAYBE_MARK(o->barrier.queue_spinlock);
+                MAYBE_MARK(o->barrier.name);
+		break;
+        case t_mailbox:
+                MAYBE_MARK(o->mailbox.data);
+		MAYBE_MARK(o->mailbox.name);
+		MAYBE_MARK(o->mailbox.reader_semaphore);
+		MAYBE_MARK(o->mailbox.writer_semaphore);
+		break;
 # endif
         case t_codeblock:
+                MAYBE_MARK(o->cblock.error);
                 MAYBE_MARK(o->cblock.source);
                 MAYBE_MARK(o->cblock.links);
                 MAYBE_MARK(o->cblock.name);
@@ -517,9 +548,9 @@ ecl_alloc_object(cl_type t)
 	/* GC_MALLOC already resets objects */
 	switch (t) {
 	case t_fixnum:
-		return MAKE_FIXNUM(0); /* Immediate fixnum */
+		return ecl_make_fixnum(0); /* Immediate fixnum */
 	case t_character:
-		return CODE_CHAR(' '); /* Immediate character */
+		return ECL_CODE_CHAR(' '); /* Immediate character */
 #ifdef ECL_SSE2
 	case t_sse_pack:
 #endif
@@ -567,9 +598,9 @@ ecl_alloc_object(cl_type t)
         case t_lock:
         case t_rwlock:
         case t_condition_variable:
-#endif
-#ifdef ECL_SEMAPHORES
-        case t_semaphores:
+        case t_semaphore:
+        case t_barrier:
+	case t_mailbox:
 #endif
 	case t_foreign:
 	case t_codeblock: {
@@ -631,12 +662,12 @@ ecl_list1(cl_object a)
 	ecl_enable_interrupts_env(the_env);
 #ifdef ECL_SMALL_CONS
 	obj->car = a;
-	obj->cdr = Cnil;
+	obj->cdr = ECL_NIL;
 	return ECL_PTR_CONS(obj);
 #else
 	obj->t = t_list;
 	obj->car = a;
-	obj->cdr = Cnil;
+	obj->cdr = ECL_NIL;
 	return (cl_object)obj;
 #endif
 }
@@ -756,7 +787,12 @@ init_alloc(void)
 	GC_all_interior_pointers = 0;
 	GC_time_limit = GC_TIME_UNLIMITED;
 	GC_init();
-	if (ecl_get_option(ECL_OPT_INCREMENTAL_GC)) {
+#ifdef ECL_THREADS
+# if GC_VERSION_MAJOR > 7 || GC_VERSION_MINOR > 1
+	GC_allow_register_threads();
+# endif
+#endif
+	if (ecl_option_values[ECL_OPT_INCREMENTAL_GC]) {
 		GC_enable_incremental();
 	}
 	GC_register_displacement(1);
@@ -775,7 +811,7 @@ init_alloc(void)
 # else
 #  ifdef GBC_BOEHM_OWN_MARKER
         cl_object_free_list = (void **)GC_new_free_list_inner();
-	cl_object_mark_proc_index = GC_new_proc(cl_object_mark_proc);
+	cl_object_mark_proc_index = GC_new_proc((GC_mark_proc)cl_object_mark_proc);
         cl_object_kind = GC_new_kind_inner(cl_object_free_list,
                                            GC_MAKE_PROC(cl_object_mark_proc_index, 0),
                                            FALSE, TRUE);
@@ -783,10 +819,10 @@ init_alloc(void)
 # endif
 #endif /* !GBC_BOEHM_PRECISE */
 
-	GC_set_max_heap_size(cl_core.max_heap_size = ecl_get_option(ECL_OPT_HEAP_SIZE));
+	GC_set_max_heap_size(cl_core.max_heap_size = ecl_option_values[ECL_OPT_HEAP_SIZE]);
         /* Save some memory for the case we get tight. */
 	if (cl_core.max_heap_size == 0) {
-		cl_index size = ecl_get_option(ECL_OPT_HEAP_SAFETY_AREA);
+		cl_index size = ecl_option_values[ECL_OPT_HEAP_SAFETY_AREA];
 		cl_core.safety_region = ecl_alloc_atomic_unprotected(size);
 	} else if (cl_core.safety_region) {
 		cl_core.safety_region = 0;
@@ -843,9 +879,9 @@ init_alloc(void)
 	init_tm(t_rwlock, "LOCK", sizeof(struct ecl_rwlock), 0);
 	init_tm(t_condition_variable, "CONDITION-VARIABLE",
                 sizeof(struct ecl_condition_variable), 0);
-# ifdef ECL_SEMAPHORES
-	init_tm(t_semaphore, "SEMAPHORES", sizeof(struct ecl_semaphores), 0);
-# endif
+	init_tm(t_semaphore, "SEMAPHORES", sizeof(struct ecl_semaphore), 0);
+	init_tm(t_barrier, "BARRIER", sizeof(struct ecl_barrier), 0);
+	init_tm(t_mailbox, "MAILBOX", sizeof(struct ecl_mailbox), 0);
 #endif
 	init_tm(t_codeblock, "CODEBLOCK", sizeof(struct ecl_codeblock), -1);
 	init_tm(t_foreign, "FOREIGN", sizeof(struct ecl_foreign), 2);
@@ -859,7 +895,7 @@ init_alloc(void)
                 to_bitmap(&c, &(c.car)) |
                 to_bitmap(&c, &(c.cdr));
         type_info[t_bignum].descriptor =
-                to_bitmap(&o, &(o.big.big_limbs));
+                to_bitmap(&o, &(ECL_BIGNUM_LIMBS(&o)));
         type_info[t_ratio].descriptor =
                 to_bitmap(&o, &(o.ratio.num)) |
                 to_bitmap(&o, &(o.ratio.den));
@@ -886,9 +922,6 @@ init_alloc(void)
                 to_bitmap(&o, &(o.pack.internal)) |
                 to_bitmap(&o, &(o.pack.external));
         type_info[t_hashtable].descriptor =
-# ifdef ECL_THREADS
-                to_bitmap(&o, &(o.hash.lock)) |
-# endif
                 to_bitmap(&o, &(o.hash.data)) |
                 to_bitmap(&o, &(o.hash.rehash_size)) |
                 to_bitmap(&o, &(o.hash.threshold));
@@ -976,11 +1009,16 @@ init_alloc(void)
                 to_bitmap(&o, &(o.process.interrupt)) |
                 to_bitmap(&o, &(o.process.initial_bindings)) |
                 to_bitmap(&o, &(o.process.parent)) |
-                to_bitmap(&o, &(o.process.exit_lock)) |
-                to_bitmap(&o, &(o.process.exit_values));
+                to_bitmap(&o, &(o.process.exit_barrier)) |
+                to_bitmap(&o, &(o.process.exit_values)) |
+                to_bitmap(&o, &(o.process.woken_up)) |
+                to_bitmap(&o, &(o.process.start_spinlock)) |
+                to_bitmap(&o, &(o.process.queue_record));
         type_info[t_lock].descriptor =
                 to_bitmap(&o, &(o.lock.name)) |
-                to_bitmap(&o, &(o.lock.holder));
+                to_bitmap(&o, &(o.lock.owner)) |
+                to_bitmap(&o, &(o.lock.queue_spinlock)) |
+                to_bitmap(&o, &(o.lock.queue_list));
 #  ifdef ECL_RWLOCK
         type_info[t_rwlock].descriptor =
                 to_bitmap(&o, &(o.rwlock.name));
@@ -989,10 +1027,23 @@ init_alloc(void)
                 to_bitmap(&o, &(o.rwlock.name)) |
                 to_bitmap(&o, &(o.rwlock.mutex));
 #  endif
-	type_info[t_condition_variable].descriptor = 0;
-#   ifdef ECL_SEMAPHORES
-	type_info[t_semaphore].descriptor = 0;
-#   endif
+	type_info[t_condition_variable].descriptor =
+		to_bitmap(&o, &(o.condition_variable.lock)) |
+		to_bitmap(&o, &(o.condition_variable.queue_list)) |
+		to_bitmap(&o, &(o.condition_variable.queue_spinlock));
+	type_info[t_semaphore].descriptor = 
+		to_bitmap(&o, &(o.semaphore.name)) |
+		to_bitmap(&o, &(o.semaphore.queue_list)) |
+		to_bitmap(&o, &(o.semaphore.queue_spinlock));
+	type_info[t_barrier].descriptor = 
+		to_bitmap(&o, &(o.barrier.name)) |
+		to_bitmap(&o, &(o.barrier.queue_list)) |
+		to_bitmap(&o, &(o.barrier.queue_spinlock));
+	type_info[t_mailbox].descriptor = 
+		to_bitmap(&o, &(o.mailbox.name)) |
+		to_bitmap(&o, &(o.mailbox.data)) |
+		to_bitmap(&o, &(o.mailbox.reader_semaphore)) |
+		to_bitmap(&o, &(o.mailbox.writer_semaphore));
 # endif
         type_info[t_codeblock].descriptor =
                 to_bitmap(&o, &(o.cblock.data)) |
@@ -1000,7 +1051,8 @@ init_alloc(void)
                 to_bitmap(&o, &(o.cblock.next)) |
                 to_bitmap(&o, &(o.cblock.name)) |
                 to_bitmap(&o, &(o.cblock.links)) |
-                to_bitmap(&o, &(o.cblock.source));
+                to_bitmap(&o, &(o.cblock.source)) |
+		to_bitmap(&o, &(o.cblock.error));
         type_info[t_foreign].descriptor =
                 to_bitmap(&o, &(o.foreign.data)) |
                 to_bitmap(&o, &(o.foreign.tag));
@@ -1065,57 +1117,20 @@ standard_finalizer(cl_object o)
 		GC_unregister_disappearing_link((void**)&(o->weak.value));
 		break;
 #ifdef ECL_THREADS
-	case t_lock: {
-		const cl_env_ptr the_env = ecl_process_env();
-		ecl_disable_interrupts_env(the_env);
-#if defined(ECL_MS_WINDOWS_HOST)
-		CloseHandle(o->lock.mutex);
-#else
-		pthread_mutex_destroy(&o->lock.mutex);
-#endif
-		ecl_enable_interrupts_env(the_env);
-		break;
-	}
-#ifdef ECL_RWLOCK
+# ifdef ECL_RWLOCK
 	case t_rwlock: {
 		const cl_env_ptr the_env = ecl_process_env();
 		ecl_disable_interrupts_env(the_env);
-		pthread_rwlock_destroy(&o->lock.mutex);
+		pthread_rwlock_destroy(&o->rwlock.mutex);
 		ecl_enable_interrupts_env(the_env);
 		break;
 	}
-#endif
-	case t_condition_variable: {
-		const cl_env_ptr the_env = ecl_process_env();
-		ecl_disable_interrupts_env(the_env);
-#if defined(ECL_MS_WINDOWS_HOST)
-		CloseHandle(o->condition_variable.cv);
-#else
-		pthread_cond_destroy(&o->condition_variable.cv);
-#endif
-		ecl_enable_interrupts_env(the_env);
-		break;
-	}
-#endif
-#ifdef ECL_SEMAPHORES
-	case t_semaphore: {
-		const cl_env_ptr the_env = ecl_process_env();
-                ecl_disable_interrupts_env(the_env);
-                mp_semaphore_close(o);
-                ecl_enable_interrupts_env(the_env);
-		break;
-	}
-#endif
-#ifdef ECL_THREADS
+# endif
         case t_symbol: {
-                cl_object cons = ecl_list1(MAKE_FIXNUM(o->symbol.binding));
-		const cl_env_ptr the_env = ecl_process_env();
-                ECL_WITH_GLOBAL_LOCK_BEGIN(the_env) {
-                        ECL_CONS_CDR(cons) = cl_core.reused_indices;
-                        cl_core.reused_indices = cons;
-                } ECL_WITH_GLOBAL_LOCK_END;
+		ecl_atomic_push(&cl_core.reused_indices,
+				ecl_make_fixnum(o->symbol.binding));
         }
-#endif
+#endif /* ECL_THREADS */
 	default:;
 	}
 }
@@ -1123,9 +1138,9 @@ standard_finalizer(cl_object o)
 static void
 wrapped_finalizer(cl_object o, cl_object finalizer)
 {
-	if (finalizer != Cnil && finalizer != NULL) {
+	if (finalizer != ECL_NIL && finalizer != NULL) {
                 CL_NEWENV_BEGIN {
-                        if (finalizer != Ct) {
+                        if (finalizer != ECL_T) {
 				funcall(2, finalizer, o);
                         }
                         standard_finalizer(o);
@@ -1143,11 +1158,11 @@ si_get_finalizer(cl_object o)
 	ecl_disable_interrupts_env(the_env);
 	GC_register_finalizer_no_order(o, (GC_finalization_proc)0, 0, &ofn, &odata);
 	if (ofn == 0) {
-		output = Cnil;
+		output = ECL_NIL;
 	} else if (ofn == (GC_finalization_proc)wrapped_finalizer) {
 		output = (cl_object)odata;
 	} else {
-		output = Cnil;
+		output = ECL_NIL;
 	}
 	GC_register_finalizer_no_order(o, ofn, odata, &ofn, &odata);
 	ecl_enable_interrupts_env(the_env);
@@ -1159,7 +1174,7 @@ ecl_set_finalizer_unprotected(cl_object o, cl_object finalizer)
 {
 	GC_finalization_proc ofn;
 	void *odata;
-	if (finalizer == Cnil) {
+	if (finalizer == ECL_NIL) {
 		GC_register_finalizer_no_order(o, (GC_finalization_proc)0,
 					       0, &ofn, &odata);
 	} else {
@@ -1193,23 +1208,16 @@ cl_object
 si_gc_stats(cl_object enable)
 {
 	cl_object old_status;
-        cl_object size1 = MAKE_FIXNUM(0);
-        cl_object size2 = MAKE_FIXNUM(0);
+        cl_object size1 = ecl_make_fixnum(0);
+        cl_object size2 = ecl_make_fixnum(0);
         if (cl_core.gc_stats == 0) {
-                old_status = Cnil;
+                old_status = ECL_NIL;
         } else if (GC_print_stats) {
                 old_status = @':full';
         } else {
-                old_status = Ct;
+                old_status = ECL_T;
         }
-        if (enable == Cnil) {
-                GC_print_stats = 0;
-                cl_core.gc_stats = 0;
-        } else {
-                cl_core.gc_stats = 1;
-                GC_print_stats = (enable == @':full');
-        }
-	if (cl_core.bytes_consed == Cnil) {
+	if (cl_core.bytes_consed == ECL_NIL) {
 		cl_core.bytes_consed = ecl_alloc_object(t_bignum);
 		mpz_init2(cl_core.bytes_consed->big.big_num, 128);
 		cl_core.gc_counter = ecl_alloc_object(t_bignum);
@@ -1218,17 +1226,24 @@ si_gc_stats(cl_object enable)
                 /* We need fresh copies of the bignums */
                 size1 = _ecl_big_plus_fix(cl_core.bytes_consed, 1);
                 size2 = _ecl_big_plus_fix(cl_core.gc_counter, 1);
+        }
+        if (enable == ECL_NIL) {
+                GC_print_stats = 0;
+                cl_core.gc_stats = 0;
+        } else if (enable == ecl_make_fixnum(0)) {
                 mpz_set_ui(cl_core.bytes_consed->big.big_num, 0);
                 mpz_set_ui(cl_core.gc_counter->big.big_num, 0);
+        } else {
+                cl_core.gc_stats = 1;
+                GC_print_stats = (enable == @':full');
         }
 	@(return size1 size2 old_status)
 }
 
 /*
- * This procedure is invoked after garbage collection. It invokes
- * finalizers for all objects that are to be reclaimed by the
- * colector. Note that we cannot cons because this procedure is
- * invoked with the garbage collection lock on.
+ * This procedure is invoked after garbage collection. Note that we
+ * cannot cons because this procedure is invoked with the garbage
+ * collection lock on.
  */
 static void
 gather_statistics()
@@ -1300,10 +1315,11 @@ ecl_mark_env(struct cl_env_struct *env)
 static void
 stacks_scanner()
 {
+	cl_env_ptr the_env = ecl_process_env();
 	cl_object l;
 	l = cl_core.libraries;
 	if (l) {
-		for (; l != Cnil; l = ECL_CONS_CDR(l)) {
+		for (; l != ECL_NIL; l = ECL_CONS_CDR(l)) {
 			cl_object dll = ECL_CONS_CAR(l);
 			if (dll->cblock.locked) {
 				GC_push_conditional((void *)dll, (void *)(&dll->cblock + 1), 1);
@@ -1313,20 +1329,20 @@ stacks_scanner()
 	}
 	GC_push_all((void *)(&cl_core), (void *)(&cl_core + 1));
 	GC_push_all((void *)cl_symbols, (void *)(cl_symbols + cl_num_symbols_in_core));
+	if (the_env != NULL)
+		ecl_mark_env(the_env);
 #ifdef ECL_THREADS
 	l = cl_core.processes;
-	if (l == OBJNULL) {
-		ecl_mark_env(&cl_env);
-	} else {
-		l = cl_core.processes;
-		loop_for_on_unsafe(l) {
-			cl_object process = ECL_CONS_CAR(l);
-			struct cl_env_struct *env = process->process.env;
-			ecl_mark_env(env);
-		} end_loop_for_on_unsafe(l);
+	if (l != OBJNULL) {
+		cl_index i, size;
+		for (i = 0, size = l->vector.dim; i < size; i++) {
+			cl_object process = l->vector.self.t[i];
+			if (!Null(process)) {
+				cl_env_ptr env = process->process.env;
+				if (env && (env != the_env)) ecl_mark_env(env);
+			}
+		}
 	}
-#else
-	ecl_mark_env(&cl_env);
 #endif
 	if (old_GC_push_other_roots)
 		(*old_GC_push_other_roots)();
@@ -1379,9 +1395,9 @@ ecl_alloc_weak_pointer(cl_object o)
 	ecl_enable_interrupts_env(the_env);
 	obj->t = t_weak_pointer;
 	obj->value = o;
-        if (!FIXNUMP(o) && !CHARACTERP(o) && !Null(o)) {
+        if (!ECL_FIXNUMP(o) && !ECL_CHARACTERP(o) && !Null(o)) {
                 GC_general_register_disappearing_link((void**)&(obj->value), (void*)o);
-                si_set_finalizer((cl_object)obj, Ct);
+                si_set_finalizer((cl_object)obj, ECL_T);
         }
 	return (cl_object)obj;
 }
@@ -1403,11 +1419,11 @@ cl_object
 si_weak_pointer_value(cl_object o)
 {
 	cl_object value;
-	if (ecl_unlikely(type_of(o) != t_weak_pointer))
+	if (ecl_unlikely(ecl_t_of(o) != t_weak_pointer))
 		FEwrong_type_only_arg(@[ext::weak-pointer-value], o,
                                       @[ext::weak-pointer]);
 	value = (cl_object)GC_call_with_alloc_lock((GC_fn_type)ecl_weak_pointer_value, o);
-	@(return (value? value : Cnil));
+	@(return (value? value : ECL_NIL));
 }
 
 #endif /* GBC_BOEHM */

@@ -16,6 +16,7 @@
 */
 
 #include <ecl/ecl.h>
+#include <ecl/internal.h>
 #include <ecl/ecl-inl.h>
 
 /*
@@ -29,14 +30,14 @@ cl_symbol_function(cl_object sym)
 {
 	cl_object output;
 	int type = ecl_symbol_type(sym);
-	if (type & stp_special_form) {
+	if (type & ecl_stp_special_form) {
 		output = @'special';
-	} else if (Null(sym) || (SYM_FUN(sym) == Cnil)) {
+	} else if (Null(sym) || (ECL_SYM_FUN(sym) == ECL_NIL)) {
 		FEundefined_function(sym);
-	} else if (type & stp_macro) {
-		output = CONS(@'si::macro', SYM_FUN(sym));
+	} else if (type & ecl_stp_macro) {
+		output = CONS(@'si::macro', ECL_SYM_FUN(sym));
 	} else {
-		output = SYM_FUN(sym);
+		output = ECL_SYM_FUN(sym);
 	}
 	@(return output)
 }
@@ -44,24 +45,27 @@ cl_symbol_function(cl_object sym)
 cl_object
 cl_fdefinition(cl_object fname)
 {
-	@(return ((SYMBOLP(fname))? cl_symbol_function(fname) : ecl_fdefinition(fname)))
+	@(return ((ECL_SYMBOLP(fname))? cl_symbol_function(fname) : ecl_fdefinition(fname)))
 }
 
 cl_object
 cl_fboundp(cl_object fname)
 {
 	if (Null(fname)) {
-		@(return Cnil);
-	} else if (SYMBOLP(fname)) {
-		@(return (((fname->symbol.stype & stp_special_form)
-			   || SYM_FUN(fname) != Cnil)? Ct : Cnil))
+		@(return ECL_NIL);
+	} else if (ECL_SYMBOLP(fname)) {
+		@(return (((fname->symbol.stype & ecl_stp_special_form)
+			   || ECL_SYM_FUN(fname) != ECL_NIL)? ECL_T : ECL_NIL))
 	} else if (LISTP(fname)) {
 		if (CAR(fname) == @'setf') {
 			cl_object sym = CDR(fname);
-			if (CONSP(sym) && CDR(sym) == Cnil) {
+			if (CONSP(sym) && CDR(sym) == ECL_NIL) {
+				cl_object pair;
 				sym = CAR(sym);
-				if (SYMBOLP(sym))
-					@(return si_get_sysprop(sym, @'si::setf-symbol'))
+				if (ECL_SYMBOLP(sym)) {
+					pair = ecl_setf_definition(sym, ECL_NIL);
+					@(return ecl_cdr(pair));
+				}
 			}
 		}
 	}
@@ -71,32 +75,33 @@ cl_fboundp(cl_object fname)
 cl_object
 ecl_fdefinition(cl_object fun)
 {
-	cl_type t = type_of(fun);
+	cl_type t = ecl_t_of(fun);
 	cl_object output;
 
 	if (t == t_symbol) {
-		output = SYM_FUN(fun);
-		if (output == Cnil)
+		output = ECL_SYM_FUN(fun);
+		unlikely_if (output == ECL_NIL)
 			FEundefined_function(fun);
-		if (fun->symbol.stype & (stp_macro | stp_special_form))
+		unlikely_if (fun->symbol.stype & (ecl_stp_macro | ecl_stp_special_form))
 			FEundefined_function(fun);
-	} else if (Null(fun)) {
+	} else unlikely_if (Null(fun)) {
 		FEundefined_function(fun);
 	} else if (t == t_list) {
 		cl_object sym = CDR(fun);
-		if (!CONSP(sym))
+		unlikely_if (!CONSP(sym))
 			FEinvalid_function_name(fun);
 		if (CAR(fun) == @'setf') {
-			if (CDR(sym) != Cnil)
+			unlikely_if (CDR(sym) != ECL_NIL)
 				FEinvalid_function_name(fun);
 			sym = CAR(sym);
-			if (type_of(sym) != t_symbol)
+			unlikely_if (ecl_t_of(sym) != t_symbol)
 				FEinvalid_function_name(fun);
-			output = si_get_sysprop(sym, @'si::setf-symbol');
-			if (Null(output))
+			output = ecl_setf_definition(sym, ECL_NIL);
+			unlikely_if (Null(ecl_cdr(output)))
 				FEundefined_function(fun);
+			output = ECL_CONS_CAR(output);
 		} else if (CAR(fun) == @'lambda') {
-			return si_make_lambda(Cnil, sym);
+			return si_make_lambda(ECL_NIL, sym);
 		} else if (CAR(fun) == @'ext::lambda-block') {
 			return si_make_lambda(CAR(sym), CDR(sym));
 		} else {
@@ -111,7 +116,7 @@ ecl_fdefinition(cl_object fun)
 cl_object
 si_coerce_to_function(cl_object fun)
 {
-	cl_type t = type_of(fun);
+	cl_type t = ecl_t_of(fun);
 	if (!(t == t_cfun || t == t_cfunfixed || t == t_cclosure
 	      || t == t_bytecodes || t == t_bclosure
 #ifdef CLOS
@@ -131,7 +136,7 @@ cl_symbol_value(cl_object sym)
 	if (Null(sym)) {
 		value = sym;
 	} else {
-		if (ecl_unlikely(!SYMBOLP(sym))) {
+		if (ecl_unlikely(!ECL_SYMBOLP(sym))) {
 			FEwrong_type_only_arg(@[symbol-value], sym, @[symbol]);
 		}
 		value = ECL_SYM_VAL(the_env, sym);
@@ -148,7 +153,7 @@ ecl_boundp(cl_env_ptr env, cl_object sym)
 	if (Null(sym)) {
 		return 1;
 	} else {
-		if (ecl_unlikely(!SYMBOLP(sym)))
+		if (ecl_unlikely(!ECL_SYMBOLP(sym)))
 			FEwrong_type_only_arg(@[boundp], sym, @[symbol]);
 		return ECL_SYM_VAL(env, sym) != OBJNULL;
 	}
@@ -158,13 +163,13 @@ cl_object
 cl_boundp(cl_object sym)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	@(return (ecl_boundp(the_env,sym)? Ct : Cnil))
+	ecl_return1(the_env, ecl_boundp(the_env,sym)? ECL_T : ECL_NIL);
 }
 
 cl_object
 cl_special_operator_p(cl_object form)
 {
 	const cl_env_ptr the_env = ecl_process_env();
-	int special = ecl_symbol_type(form) & stp_special_form;
-	@(return (special? Ct : Cnil))
+	int special = ecl_symbol_type(form) & ecl_stp_special_form;
+	ecl_return1(the_env, special? ECL_T : ECL_NIL);
 }

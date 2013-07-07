@@ -1,6 +1,7 @@
 ;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: CLOS -*-
 ;;;;
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -36,9 +37,10 @@
 		  `(slot-makunbound ,object ',slot-name))
 	      initialization)))))
 
-(defun need-to-make-load-form-p (object)
+(defun need-to-make-load-form-p (object env)
   "Return T if the object cannot be externalized using the lisp
 printer and we should rather use MAKE-LOAD-FORM."
+  (declare (ignore env))
   (let ((*load-form-cache* nil))
     (declare (special *load-form-cache*))
     (labels ((recursive-test (object)
@@ -64,23 +66,39 @@ printer and we should rather use MAKE-LOAD-FORM."
 		      ((consp object)
 		       (recursive-test (car object))
 		       (setf object (rest object)))
-		      ((and (compiled-function-p object)
-			    (nth-value 2 (si::bc-split object)))
-		       (return nil))
+                      ((compiled-function-p object)
+                       (multiple-value-bind (lex code data name)
+                           (si::bc-split object)
+                         (when (or (null data)
+                                   (null code)
+                                   (recursive-test lex)
+                                   (recursive-test code)
+                                   (recursive-test name))
+                           (throw 'need-to-make-load-form t))
+                         (setf object data)))
 		      (t
 		       (throw 'need-to-make-load-form t))))))
       (catch 'need-to-make-load-form
 	(recursive-test object)
 	nil))))
 
-(defmethod make-load-form ((object t) &optional environment)
+(defmethod make-load-form ((object t) &optional env)
   (flet ((maybe-quote (object)
 	   (if (or (consp object) (symbolp object))
 	       (list 'quote object)
 	       object)))
-    (unless (need-to-make-load-form-p object)
+    (unless (need-to-make-load-form-p object env)
       (return-from make-load-form (maybe-quote object)))
     (typecase object
+      (compiled-function
+       (multiple-value-bind (lex code data name)
+           (si::bc-split object)
+         (unless code
+           (error "Cannot externalize object ~a" object))
+         (values `(si::bc-join ,(make-load-form lex env)
+                               ',code ; An specialized array, no load form
+                               ,(make-load-form data env)
+                               ,(make-load-form name env)))))
       (array
        (let ((init-forms '()))
 	 (values `(make-array ',(array-dimensions object)
@@ -89,7 +107,7 @@ printer and we should rather use MAKE-LOAD-FORM."
 		   :initial-contents
 		   ',(loop for i from 0 below (array-total-size object)
 			   collect (let ((x (row-major-aref object i)))
-				     (if (need-to-make-load-form-p x)
+				     (if (need-to-make-load-form-p x env)
 					 (progn (push `(setf (row-major-aref ,object ,i) ',x)
 						      init-forms)
 						0)
@@ -97,30 +115,51 @@ printer and we should rather use MAKE-LOAD-FORM."
 		 (and init-forms `(progn ,@init-forms)))))
       (cons
        (values `(cons ,(maybe-quote (car object)) nil)
-	       (and (rest object) `(rplacd ,(maybe-quote object) ,(maybe-quote (cdr object))))))
+	       (and (rest object) `(rplacd ,(maybe-quote object)
+					   ,(maybe-quote (cdr object))))))
       (hash-table
-       (values
-	`(make-hash-table :size ,(hash-table-size object)
-	  :rehash-size ,(hash-table-rehash-size object)
-	  :rehash-threshold ,(hash-table-rehash-threshold object)
-	  :test ',(hash-table-test object))
-	`(dolist (i ',(loop for key being each hash-key in object
-			 using (hash-value obj)
-			 collect (cons key obj)))
-	  (setf (gethash (car i) ,object) (cdr i)))))
+       (let* ((content (ext:hash-table-content object))
+	      (make-form `(make-hash-table
+			   :size ,(hash-table-size object)
+			   :rehash-size ,(hash-table-rehash-size object)
+			   :rehash-threshold ,(hash-table-rehash-threshold object)
+			   :test ',(hash-table-test object))))
+	 (if (need-to-make-load-form-p content env)
+	     (values
+	      make-form
+	      `(dolist (i ',(loop for key being each hash-key in object
+			       using (hash-value obj)
+			       collect (cons key obj)))
+		 (setf (gethash (car i) ,object) (cdr i))))
+	     (values
+	      `(ext:hash-table-fill ,make-form ',content)
+	      nil))))
       (t
-       (error "Cannot externalize object ~a" object)))))
+       (no-make-load-form object)))))
 
 (defmethod make-load-form ((object standard-object) &optional environment)
-  (make-load-form-saving-slots object))
+  (no-make-load-form object))
+
+(defmethod make-load-form ((object structure-object) &optional environment)
+  (no-make-load-form object))
+
+(defmethod make-load-form ((object condition) &optional environment)
+  (no-make-load-form object))
+
+(defun no-make-load-form (object)
+  (declare (si::c-local))
+  (error "No adequate specialization of MAKE-LOAD-FORM for an object of type"
+	 (type-of object)))
 
 (defmethod make-load-form ((class class) &optional environment)
+  (declare (ignore environment))
   (let ((name (class-name class)))
     (if (and name (eq (find-class name) class))
 	`(find-class ',name)
 	(error "Cannot externalize anonymous class ~A" class))))
 
 (defmethod make-load-form ((package package) &optional environment)
+  (declare (ignore environment))
   `(find-package ,(package-name package)))
 
 ;;; ----------------------------------------------------------------------
@@ -129,14 +168,16 @@ printer and we should rather use MAKE-LOAD-FORM."
 
 (defmethod print-object ((instance t) stream)
   (print-unreadable-object (instance stream)
-	(format stream "a ~S"
-		(class-name (si:instance-class instance))))
+    (let ((*package* (find-package "CL")))
+      (format stream "a ~S"
+	      (class-name (si:instance-class instance)))))
   instance)
 
 (defmethod print-object ((class class) stream)
   (print-unreadable-object (class stream)
-	(format stream "The ~A ~S"
-		(class-name (si:instance-class class)) (class-name class)))
+    (let ((*package* (find-package "CL")))
+      (format stream "The ~S ~S"
+	      (class-name (si:instance-class class)) (class-name class))))
   class)
 
 (defmethod print-object ((gf standard-generic-function) stream)

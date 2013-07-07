@@ -3,6 +3,7 @@
 ;;;;  top.lsp -- Top-level loop, break loop, and error handlers
 ;;;;
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
+;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
 ;;;;    This program is free software; you can redistribute it and/or
 ;;;;    modify it under the terms of the GNU Library General Public
@@ -24,29 +25,29 @@
 (export '(*break-readtable* *break-on-warnings*
 	  *tpl-evalhook* *tpl-prompt-hook*))
 
-(defvar *quit-tag* (cons nil nil))
-(defvar *quit-tags* nil)
-(defvar *break-level* 0)		; nesting level of error loops
-(defvar *break-env* nil)
-(defvar *ihs-base* 0)
-(defvar *ihs-top* (ihs-top))
-(defvar *ihs-current* 0)
-(defvar *frs-base* 0)
-(defvar *frs-top* 0)
-(defvar *tpl-continuable* t)
-(defvar *tpl-prompt-hook* nil)
-(defvar *eof* (cons nil nil))
+(defparameter *quit-tag* (cons nil nil))
+(defparameter *quit-tags* nil)
+(defparameter *break-level* 0)		; nesting level of error loops
+(defparameter *break-env* nil)
+(defparameter *ihs-base* 0)
+(defparameter *ihs-top* (ihs-top))
+(defparameter *ihs-current* 0)
+(defparameter *frs-base* 0)
+(defparameter *frs-top* 0)
+(defparameter *tpl-continuable* t)
+(defparameter *tpl-prompt-hook* nil)
+(defparameter *eof* (cons nil nil))
 
-(defvar *last-error* nil)
+(defparameter *last-error* nil)
 
-(defvar *break-message* nil)
+(defparameter *break-message* nil)
 
-(defvar *break-readtable* nil)
-(defvar *tpl-level* -1)			; nesting level of top-level loops
-(defvar *step-level* 0)			; repeated from trace.lsp
+(defparameter *break-readtable* nil)
+(defparameter *tpl-level* -1)			; nesting level of top-level loops
+(defparameter *step-level* 0)			; repeated from trace.lsp
 
-(defvar *break-hidden-functions* '(error cerror apply funcall invoke-debugger))
-(defvar *break-hidden-packages* (list #-ecl-min (find-package 'system)))
+(defparameter *break-hidden-functions* '(error cerror apply funcall invoke-debugger))
+(defparameter *break-hidden-packages* (list #-ecl-min (find-package 'system)))
 
 (defconstant tpl-commands
    '(("Top level commands"
@@ -159,7 +160,7 @@
 	:exit &eval &optional status			[Top level Command]~%")
       )))
 
-(defvar *tpl-commands* tpl-commands)
+(defparameter *tpl-commands* tpl-commands)
 
 (defconstant break-commands
   '("Break commands"
@@ -381,9 +382,9 @@
         See also: :variables.~%")
   ))
 
-(defvar *lisp-initialized* nil)
+(defparameter *lisp-initialized* nil)
 
-(defun top-level ()
+(defun top-level (&optional (process-command-line nil))
   "Args: ()
 ECL specific.
 The top-level loop of ECL. It is called by default when ECL is invoked."
@@ -393,16 +394,18 @@ The top-level loop of ECL. It is called by default when ECL is invoked."
 
       (in-package "CL-USER")
 
-      (unless *lisp-initialized*
+      (unless (or *lisp-initialized* (null process-command-line))
         (process-command-args)
-	(format t "ECL (Embeddable Common-Lisp) ~A" (lisp-implementation-version))
+	(format t "ECL (Embeddable Common-Lisp) ~A (git:~D)"
+                (lisp-implementation-version)
+                (ext:lisp-implementation-vcs-id))
 	(format t "~%Copyright (C) 1984 Taiichi Yuasa and Masami Hagiya~@
 Copyright (C) 1993 Giuseppe Attardi~@
 Copyright (C) 2000 Juan J. Garcia-Ripoll
 ECL is free software, and you are welcome to redistribute it~@
 under certain conditions; see file 'Copyright' for details.")
-	(format *standard-output* "~%Type :h for Help.  ")
-	(setq *lisp-initialized* t))
+	(format *standard-output* "~%Type :h for Help.  "))
+      (setq *lisp-initialized* t)
 
       (let ((*tpl-level* -1))
 	(tpl))
@@ -411,11 +414,10 @@ under certain conditions; see file 'Copyright' for details.")
 #+threads
 (progn
 
-(defvar *console-lock* (mp:make-lock :name "Console lock"))
-#-:win32
-(defvar *console-available* (mp:make-condition-variable))
-(defvar *console-owner* nil)
-(defvar *console-waiting-list* '())
+(defparameter *console-lock* (mp:make-lock :name "Console lock"))
+(defparameter *console-available* (mp:make-condition-variable))
+(defparameter *console-owner* nil)
+(defparameter *console-waiting-list* '())
 
 (defun candidate-to-get-console-p (process)
   (or (null *console-owner*)
@@ -438,15 +440,11 @@ under certain conditions; see file 'Copyright' for details.")
                  (setf *console-owner* process)
                  (setf repeat nil))
                 (t
-                 #+:win32
-                 (sleep 0.1)
-                 #-:win32
                  (mp:condition-variable-wait *console-available* *console-lock*))))))
 
 (defun release-console (process)
   (mp:with-lock (*console-lock*)
     (and (eq process *console-owner*) (setf *console-owner* nil))
-    #-:win32
     (mp:condition-variable-signal *console-available*)))
 
 ) ; #+threads
@@ -463,8 +461,8 @@ under certain conditions; see file 'Copyright' for details.")
      (delete-from-waiting-list mp:*current-process*)
      (release-console mp:*current-process*)))
 
-(defvar *allow-recursive-debug* nil)
-(defvar *debug-status* nil)
+(defparameter *allow-recursive-debug* nil)
+(defparameter *debug-status* nil)
 
 (defun simple-terminal-interrupt ()
   (error 'ext:interactive-interrupt))
@@ -494,13 +492,14 @@ Use special code 0 to cancel this operation.")
 		 (t
 		  (format t "~&Not a valid process number")))))
 
-(defvar *interrupt-lonely-threads-p* t)
+(defparameter *interrupt-lonely-threads-p* t)
 
 (defun single-threaded-terminal-interrupt ()
   (restart-case (simple-terminal-interrupt)
     (continue ())))
 
-(defun terminal-interrupt (&optional (correctablep t))
+(defun terminal-interrupt (&key process (correctablep t))
+  (declare (ignore correctablep))
   #+threads
   (mp:without-interrupts
    (let* ((suspended '())
@@ -509,7 +508,8 @@ Use special code 0 to cancel this operation.")
 	   (loop with this = mp:*current-process*
 		 for p in (mp:all-processes)
 		 unless (or (eq p this)
-			    (eq (mp:process-name p) 'si::handle-signal))
+			    (member (mp:process-name p)
+                                    '(si:signal-servicing si::handle-signal)))
 		 collect p)))
      (when (and (= (length all-processes) 1) *interrupt-lonely-threads-p*)
        (mp:interrupt-process (first all-processes)
@@ -520,7 +520,7 @@ Use special code 0 to cancel this operation.")
 		     (push i suspended)
 		     (mp:process-suspend i)))
      (flet ((do-query-process ()
-			      (print all-processes)
+              (print all-processes)
 	      (query-process all-processes)))
        (mp:with-local-interrupts
 	(restart-case (simple-terminal-interrupt)
@@ -573,8 +573,9 @@ Use special code 0 to cancel this operation.")
 			    ;; We are told to let the debugger handle this.
 			    )
 			   (t
-			    (format t "~&Debugger received error: ~A~%~
-                                         Error flushed.~%" condition)
+			    (format t "~&Debugger received error of type: ~A~%~A~%~
+                                         Error flushed.~%"
+				    (type-of condition) condition)
 			    (clear-input)
 			    (return-from rep t) ;; go back into the debugger loop.
 			    )
@@ -652,7 +653,7 @@ Use special code 0 to cancel this operation.")
       (t
        (return (read))))))
 
-(defvar *debug-tpl-commands* nil)
+(defparameter *debug-tpl-commands* nil)
 
 (defun harden-command (cmd-form)
   `(block 
@@ -660,7 +661,8 @@ Use special code 0 to cancel this operation.")
     (handler-bind 
      ((error (lambda (condition)
 	       (unless *debug-tpl-commands*
-		 (format t "~&Command aborted.~%Received condition: ~A" condition)
+		 (format t "~&Command aborted.~%Received condition of type: ~A~%~A"
+			 (type-of condition) condition)
 		 (clear-input)
 		 (return-from tpl-command nil)
 		 )
@@ -768,10 +770,11 @@ Use special code 0 to cancel this operation.")
     (terpri))
   (values))
 
-(defun tpl-disassemble-command (&optional no-values)
+(defun tpl-disassemble-command ()
   (let*((*print-level* 2)
 	(*print-length* 4)
 	(*print-pretty* t)
+	(*print-escape* nil)
 	(*print-readably* nil)
 	(functions) (blocks) (variables))
     (unless (si::bc-disassemble (ihs-fun *ihs-current*))
@@ -779,7 +782,7 @@ Use special code 0 to cancel this operation.")
       (format t " Function cannot be disassembled.~%"))
     (values)))
 
-(defun tpl-lambda-expression-command (&optional no-values)
+(defun tpl-lambda-expression-command ()
   (let*(;;(*print-level* 2)
 	;;(*print-length* 4)
 	;;(*print-pretty* t)
@@ -823,14 +826,19 @@ Use special code 0 to cancel this operation.")
 	  (push '&allow-other-keys output))))
     (nreverse output)))
 
+(defun lambda-list-from-annotations (name)
+  (declare (si::c-local)) 
+  (let ((args (ext:get-annotation name :lambda-list nil)))
+    (values args (and args t))))
+
 (defun function-lambda-list (function)
   (cond
     ((symbolp function)
-     (if (or (not (fboundp function))
-             (special-operator-p function)
-             (macro-function function))
-         (values nil nil)
-         (function-lambda-list (fdefinition function))))
+     (cond ((or (special-operator-p function)
+		(macro-function function))
+	    (lambda-list-from-annotations function))
+	   (t
+	    (function-lambda-list (fdefinition function)))))
     ((typep function 'generic-function)
      (values (clos:generic-function-lambda-list function) t))
     ;; Use the lambda list from the function definition, if available,
@@ -854,9 +862,7 @@ Use special code 0 to cancel this operation.")
     ;; If it's a compiled function of ECL itself, reconstruct the
     ;; lambda-list from its documentation string.
     (t
-     (let* ((name (compiled-function-name function))
-            (args (ext:get-annotation name :lambda-list nil)))
-       (values args (and args t))))))
+     (lambda-list-from-annotations (compiled-function-name function)))))
 
 #-ecl-min
 (defun decode-env-elt (env ndx)
@@ -880,12 +886,12 @@ Use special code 0 to cancel this operation.")
 	}
 	case _ecl_float_loc: {
 		float *p = (float*)value;
-		output = ecl_make_singlefloat(*p);
+		output = ecl_make_single_float(*p);
 		break;
 	}
 	case _ecl_double_loc: {
 		double *p = (double*)value;
-		output = ecl_make_doublefloat(*p);
+		output = ecl_make_double_float(*p);
 		break;
 	}
 #ifdef ECL_SSE2
@@ -907,7 +913,7 @@ Use special code 0 to cancel this operation.")
 #endif
 	default: {
 		ecl_base_char *p = (ecl_base_char*)value;
-		output = CODE_CHAR(*p);
+		output = ECL_CODE_CHAR(*p);
 		break;
 	}
 	}
@@ -966,7 +972,8 @@ Use special code 0 to cancel this operation.")
            (blocks '())
            (local-variables '())
            (special-variables '())
-           (restarts '()))
+           (restarts '())
+	   record0 record1)
       (dolist (record (decode-ihs-env (ihs-env ihs-index)))
         (cond ((atom record)
                (push (compiled-function-name record) functions))
@@ -1008,6 +1015,7 @@ Use special code 0 to cancel this operation.")
   (let*((*print-level* 2)
 	(*print-length* 4)
 	(*print-pretty* t)
+	(*print-escape* nil)
 	(*print-readably* nil))
     (multiple-value-bind (local-variables special-variables functions blocks restarts)
         (ihs-environment *ihs-current*)
@@ -1075,6 +1083,7 @@ Use special code 0 to cancel this operation.")
 	    ((< i base))
 	    (when (ihs-visible i)
 	      (let ((*print-case* (if (= i *ihs-current*) :UPCASE :DOWNCASE))
+		    (*print-readably* nil)
 		    (func-name (ihs-fname i)))
 		;;(format t "~:[~; >~] ~S" b (ihs-fname i)) ;; JCB
 		(format t "  > ~S" func-name)
@@ -1102,6 +1111,7 @@ Use special code 0 to cancel this operation.")
 	     )
 	    (when (or (ihs-visible i) (eq t n))
 	      (let ((*print-case* (if (= i *ihs-current*) :UPCASE :DOWNCASE))
+		    (*print-readably* nil)
 		    (func-name (ihs-fname i)))
 		;;(format t "~:[~; >~] ~S" b (ihs-fname i)) ;; JCB
 		(format t "  > ~S" (ihs-fname i))
@@ -1140,7 +1150,8 @@ Use special code 0 to cancel this operation.")
     (tpl-print-current)))
 
 (defun tpl-print-current ()
-  (let ((name (ihs-fname *ihs-current*)))
+  (let ((*print-readably* nil)
+	(name (ihs-fname *ihs-current*)))
     (format t "~&Broken at ~:@(~S~)." name)
     (when (eq name 'si::bytecodes)
       (format t " [Evaluation of: ~S]"
@@ -1263,7 +1274,7 @@ Use special code 0 to cancel this operation.")
 (defun tpl-untrace-command (&rest functions)
   (untrace* functions))
 
-(defvar *tpl-last-load* nil)
+(defparameter *tpl-last-load* nil)
 
 (defun tpl-load-command (&rest files)
   (when files
@@ -1271,7 +1282,7 @@ Use special code 0 to cancel this operation.")
   (dolist (file *tpl-last-load*) (load file))
   *tpl-last-load*)
 
-(defvar *tpl-last-compile* nil)
+(defparameter *tpl-last-compile* nil)
 
 (defun tpl-compile-command (&rest files)
   (when files
@@ -1363,7 +1374,7 @@ package."
      commands)
     (nconc commands (list restart-commands))))
 
-(defvar *default-debugger-maximum-depth* 16)
+(defparameter *default-debugger-maximum-depth* 16)
 
 (defun check-default-debugger-runaway ()
   (when (< *default-debugger-maximum-depth* *break-level*)
@@ -1414,10 +1425,12 @@ package."
     (let* ((*standard-input* *debug-io*)
            (*standard-output* *debug-io*)
            ;;(*tpl-prompt-hook* "[dbg] ")
+	   (*print-readably* nil)
            (*print-pretty* nil)
            (*print-circle* t)
            (*readtable* (or *break-readtable* *readtable*))
-           (*break-message* (format nil "~&~A~%" condition))
+           (*break-message* (format nil "~&Condition of type: ~A~%~A~%"
+				    (type-of condition) condition))
            (*break-level* (1+ *break-level*))
            (break-level *break-level*)
            (*break-env* nil))
@@ -1486,12 +1499,10 @@ value."
     (unwind-protect
          (handler-bind ((serious-condition
                          (if err-value-p
-                             #'(lambda (c)
+                             #'(lambda (condition)
+				 (declare (ignore condition))
                                  (return-from safe-eval err-value))
                              #'invoke-debugger)))
            (setf output (si::eval-with-env form env)
                  ok t))
       (return-from safe-eval (if ok output err-value)))))
-
-#-ecl-min
-(package-lock "COMMON-LISP" t)

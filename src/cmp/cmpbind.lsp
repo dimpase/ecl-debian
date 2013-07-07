@@ -26,12 +26,12 @@
   (case (var-kind var)
     (CLOSURE
      (let ((var-loc (var-loc var)))
-       (unless (sys:fixnump var-loc)
+       (unless (typep var-loc 'fixnum)
 	 ;; first binding: assign location
 	 (setq var-loc (next-env))
 	 (setf (var-loc var) var-loc))
-       (when (zerop var-loc) (wt-nl "env" *env-lvl* " = Cnil;"))
-       (wt-nl "CLV" var-loc "=env" *env-lvl* "=CONS(")
+       (when (zerop var-loc) (wt-nl "env" *env-lvl* " = ECL_NIL;"))
+       (wt-nl "CLV" var-loc " = env" *env-lvl* " = CONS(")
        (wt-coerce-loc :object loc)
        (wt ",env" *env-lvl* ");")
        (wt-comment (var-name var))))
@@ -41,7 +41,7 @@
 	 ;; first binding: assign location
 	 (setq var-loc (next-lex))
 	 (setf (var-loc var) var-loc))
-       (wt-nl) (wt-lex var-loc) (wt "= ")
+       (wt-nl) (wt-lex var-loc) (wt " = ")
        (wt-coerce-loc :object loc)
        (wt ";"))
        (wt-comment (var-name var)))
@@ -52,7 +52,7 @@
 	    ;; already has location (e.g. optional in lambda list)
 	    ;; check they are not the same
 	    (unless (equal (var-loc var) loc)
-	      (wt-nl var "= ")
+	      (wt-nl var " = ")
 	      (wt-coerce-loc (var-rep-type var) loc)
 	      (wt ";")))
 	   ((and (consp loc) (eql (car loc) 'LCL))
