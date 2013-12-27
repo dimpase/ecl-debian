@@ -1,3 +1,2 @@
-autoconf-file-update.patch
 harden-configure.patch
 patch-hurd.patch

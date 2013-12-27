@@ -1,3 +1,35 @@
+ecl (13.5.1+dfsg2-3) UNRELEASED; urgency=medium
+
+  * Update config.* during build (Closes: #727368)
+
+ -- Christoph Egger <christoph@debian.org>  Fri, 27 Dec 2013 20:39:57 +0100
+
+ecl (13.5.1+dfsg2-2) unstable; urgency=medium
+
+  * Upload to unstable
+
+ -- Christoph Egger <christoph@debian.org>  Fri, 27 Dec 2013 15:44:12 +0100
+
+ecl (13.5.1+dfsg2-1) unstable; urgency=medium
+
+  * Remove libffi from tarball forcing the build system to use system
+    libffi. This should fix the armel build
+
+ -- Christoph Egger <christoph@debian.org>  Mon, 23 Dec 2013 21:16:30 +0100
+
+ecl (13.5.1+dfsg1-1) unstable; urgency=medium
+
+  * Remove embedded libraries from source tarbal
+     Closes: #708868
+
+ -- Christoph Egger <christoph@debian.org>  Mon, 23 Dec 2013 14:32:07 +0100
+
+ecl (13.5.1-1) experimental; urgency=low
+
+  * New upstream release
+
+ -- Christoph Egger <christoph@debian.org>  Sun, 07 Jul 2013 11:24:52 +0200
+
 ecl (12.12.1-2) experimental; urgency=low
 
   * Disable gengc which conflicts with threading. Should fix some of the

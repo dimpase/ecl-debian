@@ -15,7 +15,8 @@ Build-Depends: debhelper (>> 7.0.0),
  libgc-dev (>= 1:7.1),
  chrpath,
  install-info,
- libatomic-ops-dev
+ libatomic-ops-dev,
+ libffi-dev
 Build-Conflicts: autoconf2.13, automake1.4
 Standards-Version: 3.9.1
 Homepage: http://ecls.sourceforge.net/

@@ -40,12 +40,10 @@ export INSTALL_INFO=/usr/bin/ginstall-info
 
 config.status: configure
 	dh_testdir
+	dh_autotools-dev_updateconfig
 #	Add here commands to configure the package.
 	chmod a+x configure \
-	 src/gmp/macos/configure \
-	 src/gmp/configure \
-	 src/configure \
-	 src/gmp/mpn/m4-ccas
+	 src/configure
 
 	touch src/configure.in && \
 	touch src/aclocal.m4 && \
@@ -101,6 +99,7 @@ clean:
 
 	rm -rf build
 
+	dh_autotools-dev_restoreconfig
 	dh_clean
 
 install: build-arch
