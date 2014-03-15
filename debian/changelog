@@ -1,3 +1,10 @@
+ecl (13.5.1+dfsg2-4.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Drop unnecessary build dep on automake1.9. (Closes: #724364)
+
+ -- Eric Dorland <eric@debian.org>  Fri, 14 Mar 2014 23:16:45 -0400
+
 ecl (13.5.1+dfsg2-4) unstable; urgency=medium
 
   * Update config.* during build (Closes: #727368)
