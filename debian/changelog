@@ -1,3 +1,17 @@
+ecl (15.3.7+dfsg1-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #714244)
+    * Upstream now defaults to unicode builds therefore (Closes: #719177)
+    * swank seems to work without additional modifications (Closes: #769309)
+    * drop arm cas patch (included upstream)
+    * asdf:make-build now shipped by upstream buildsystem (Closes: #576234)
+  * drop ecl-doc -- should be reintroduced from the separate ecl-doc source
+  * Add dependency on libatomic-ops-dev (Closes: #696033)
+  * Move to dh 7
+
+
+ -- Christoph Egger <christoph@debian.org>  Sun, 03 May 2015 15:01:10 +0200
+
 ecl (13.5.1+dfsg2-4.2) unstable; urgency=medium
 
   * Non-maintainer upload.

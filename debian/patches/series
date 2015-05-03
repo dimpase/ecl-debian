@@ -1,3 +1,2 @@
 harden-configure.patch
 patch-hurd.patch
-add_cas_emulation_for_armel.patch
