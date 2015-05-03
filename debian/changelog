@@ -1,8 +1,9 @@
-ecl (13.5.1+dfsg2-3) UNRELEASED; urgency=medium
+ecl (13.5.1+dfsg2-4) unstable; urgency=medium
 
   * Update config.* during build (Closes: #727368)
+  * Activate CAS emulation for armel
 
- -- Christoph Egger <christoph@debian.org>  Fri, 27 Dec 2013 20:39:57 +0100
+ -- Christoph Egger <christoph@debian.org>  Sat, 28 Dec 2013 17:44:38 +0100
 
 ecl (13.5.1+dfsg2-2) unstable; urgency=medium
 
