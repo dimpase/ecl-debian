@@ -18,7 +18,7 @@ Build-Depends: debhelper (>> 7.0.0),
  libatomic-ops-dev,
  libffi-dev
 Build-Conflicts: autoconf2.13, automake1.4
-Standards-Version: 3.9.1
+Standards-Version: 3.9.8
 Homepage: http://ecls.sourceforge.net/
 Vcs-Git: http://anonscm.debian.org/git/pkg-common-lisp/ecl.git
 Vcs-Browser: https://anonscm.debian.org/cgit/pkg-common-lisp/ecl.git
