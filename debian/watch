@@ -1,4 +1,4 @@
 version=3
 
-opts=filenamemangle=s/.*\.tar\.gz\?ref=ECL\-(\d\S+)/ecl-$1\.tar\.gz/g \
+opts="filenamemangle=s/.*\.tar\.gz\?ref=ECL\-(\d\S+)/ecl-$1\.tar\.gz/g, dversionmangle=s/\+(debian|dfsg|ds|deb)(\d+)?$//" \
   https://gitlab.com/embeddable-common-lisp/ecl/tags?sort=updated_desc .*archive\.tar\.gz\?ref=ECL\-(\d\S+)
