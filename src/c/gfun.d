@@ -129,11 +129,17 @@ fill_spec_vector(cl_object vector, cl_object frame, cl_object gf)
 			FEwrong_num_arguments(gf);
 		unlikely_if (spec_no >= vector->vector.dim)
 			ecl_internal_error("Too many arguments to fill_spec_vector()");
-		argtype[spec_no++] =
-			(!ECL_LISTP(spec_type) ||
-			 Null(ecl_memql(args[spec_position], spec_type))) ?
-			cl_class_of(args[spec_position]) :
-			args[spec_position];
+                /* Need to differentiate between EQL specializers and
+                   class specializers, because the EQL value can be a
+                   class, and may classh with a class specializer. */
+                if (ECL_LISTP(spec_type) && ecl_memql(args[spec_position], spec_type)) {
+                        argtype[spec_no++] = args[spec_position];
+                        argtype[spec_no++] = 1;
+                } else {
+                        argtype[spec_no++] = cl_class_of(args[spec_position]);
+                        argtype[spec_no++] = 0;
+                }
+                        
 	} end_loop_for_on_unsafe(spec_how_list);
 	vector->vector.fillp = spec_no;
 	return vector;
@@ -173,11 +179,8 @@ generic_compute_applicable_method(cl_env_ptr env, cl_object frame, cl_object gf)
 		methods = _ecl_funcall3(@'compute-applicable-methods',
 					gf, arglist);
 		unlikely_if (methods == ECL_NIL) {
-			cl_object func = _ecl_funcall3(@'no-applicable-method',
-						       gf, arglist);
-			frame->frame.base[0] = OBJNULL;
-			env->values[1] = ECL_NIL;
-			return func;
+                        env->values[1] = ECL_NIL;
+                        return methods;
 		}
 	}
 	methods = clos_compute_effective_method_function(gf, GFUN_COMB(gf), methods);
@@ -192,10 +195,8 @@ restricted_compute_applicable_method(cl_env_ptr env, cl_object frame, cl_object 
 	cl_object arglist = frame_to_list(frame);
 	cl_object methods = clos_std_compute_applicable_methods(gf, arglist);
 	unlikely_if (methods == ECL_NIL) {
-		cl_object func = _ecl_funcall3(@'no-applicable-method', gf, arglist);
-		frame->frame.base[0] = OBJNULL;
 		env->values[1] = ECL_NIL;
-		return func;
+		return methods;
 	}
 	methods = clos_std_compute_effective_method(gf, GFUN_COMB(gf), methods);
 	env->values[1] = ECL_T;
@@ -231,7 +232,7 @@ _ecl_standard_dispatch(cl_object frame, cl_object gf)
                 frame = new_frame;
 	}
 #endif
-	
+
 	vector = fill_spec_vector(cache->keys, frame, gf);
 	e = ecl_search_cache(cache);
 	if (e->key != OBJNULL) {
@@ -251,7 +252,11 @@ _ecl_standard_dispatch(cl_object frame, cl_object gf)
 			e->value = func;
 		}
 	}
-	func = _ecl_funcall3(func, frame, ECL_NIL);
+        if (func == ECL_NIL)
+                func = cl_apply(3, @'no-applicable-method', gf, frame);
+        else
+                func = _ecl_funcall3(func, frame, ECL_NIL);
+
 	/* Only need to close the copy */
 #if !defined(ECL_USE_VARARG_AS_POINTER)
 	if (frame == (cl_object)&frame_aux)

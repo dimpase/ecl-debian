@@ -306,7 +306,7 @@ ecl_find_package_nolock(cl_object name)
 	} end_loop_for_on_unsafe(l);
 #ifdef ECL_RELATIVE_PACKAGE_NAMES
 	/* Note that this function may actually be called _before_ symbols are set up
-	 * and bound! */
+	 * are bound! */
 	if (ecl_option_values[ECL_OPT_BOOTED] &&
 	    ECL_SYM_VAL(ecl_process_env(), @'si::*relative-package-names*') != ECL_NIL) {
 		return si_find_relative_package(1, name);
@@ -893,8 +893,9 @@ cl_package_shadowing_symbols(cl_object p)
 cl_object
 si_package_lock(cl_object p, cl_object t)
 {
-	bool previous = p->pack.locked;
+	bool previous;
 	p = si_coerce_to_package(p);
+	previous = p->pack.locked;
 	p->pack.locked = (t != ECL_NIL);
 	@(return (previous? ECL_T : ECL_NIL))
 }
@@ -1045,6 +1046,7 @@ cl_list_all_packages()
 	case t_symbol:
 	case t_character:
 	case t_base_string:
+	case t_string:
 	case t_package:
 		ecl_use_package(pack, pa);
 		break;
@@ -1067,6 +1069,7 @@ cl_list_all_packages()
 	case t_symbol:
 	case t_character:
 	case t_base_string:
+	case t_string:
 	case t_package:
 		ecl_unuse_package(pack, pa);
 		break;

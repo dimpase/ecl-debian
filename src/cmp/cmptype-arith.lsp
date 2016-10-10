@@ -129,51 +129,69 @@
 (defun-equal-cached values-type-primary-type (type)
   ;; Extract the type of the first value returned by this form. We are
   ;; pragmatic and thus (VALUES) => NULL  [CHECKME!]
-  (when (and (consp type) (eq (first type) 'VALUES))
-    (if (null (rest type))
-	(setf type 'null)
-	(let ((subtype (second type)))
-	  (when (or (eq subtype '&optional) (eq subtype '&rest))
-	    (setf type (cddr type))
-	    (when (or (null type)
-		      (eq (setf subtype (first type)) '&optional)
-		      (eq subtype '&rest))
-	      (cmperr "Syntax error in type expression ~S" type))
-	    ;; An &optional or &rest output value might be missing
-	    ;; If this is the case, the the value will be NIL.
-	    (setf subtype (type-or 'null subtype)))
-	  (setf type subtype))))
-  type)
+  (let (aux)
+    (cond ((or (atom type)
+	       (not (eq (first type) 'VALUES)))
+	   type)
+	  ((null (setf aux (rest type)))
+	   'NULL)
+	  ((member (setf aux (first aux))
+		   '(&optional &rest &allow-other-keys))
+	   (setf aux (do-values-type-to-n-types type 1))
+	   (if aux (first aux) 'null))
+	  (t
+	   aux))))
 
 (defun-equal-cached values-type-to-n-types (type length)
-  (if (or (atom type) (not (eql (first type) 'values)))
-      (and (plusp length)
-           (list* type (make-list (1- length) :initial-element 'NULL)))
-      (do* ((l (rest type))
-            (output '())
-            (n length (1- n)))
-           ((or (null l) (zerop n)) (nreverse output))
-        (let ((type (pop l)))
-          (case type
-            (&optional
-             (when (null l)
-               (cmperr "Syntax error in type expression ~S" type))
-             (setf type (pop l)))
-            (&rest
-             (when (null l)
-               (cmperr "Syntax error in type expression ~S" type))
-             (return-from values-type-to-n-types
-               (nreconc output (make-list n :initial-element (first l))))))
-          (push type output)))))
+  (when (plusp length)
+    (do-values-type-to-n-types type length)))
+
+(defun do-values-type-to-n-types (type length)
+  (declare (si::c-local))
+  (multiple-value-bind (required optional rest)
+      (split-values-type type)
+    (let* ((optional (loop for i in optional
+			   collect (if (eq i t) i `(or null ,i))))
+	   (output (nconc required optional))
+	   (l (length output)))
+      (if (< l length)
+	  (nconc output (make-list (- length l)
+				   :initial-element (if rest (first rest) t)))
+	(subseq output 0 length)))))
 
 (defun split-values-type (type)
   (if (or (atom type) (not (eq (first type) 'VALUES)))
-      (values (list type) nil nil)
-      (let ((rest (member '&rest type))
-            (opt (member '&optional type)))
-        (values (ldiff (rest type) (or rest opt))
-                (ldiff (rest (member '&optional type)) rest)
-                (rest (member '&rest type))))))
+      (values (list type) nil nil nil)
+    (loop with required = '()
+	  with optional-flag = nil
+	  with optional = '()
+	  with rest = '()
+	  with a-o-k = nil
+	  with l = (rest type)
+	  while l
+	  do (let ((typespec (pop l)))
+	       (case typespec
+		 (&allow-other-keys
+		  (setf a-o-k t)
+		  (when l
+		    (cmperr "Syntax error in type expression ~S" type)))
+		 (&optional
+		  (if optional-flag
+		      (push typespec optional)
+		      (setf optional-flag t)))
+		 (&rest
+		  (when (or (null l)
+			    (not (member (rest l) '(() (&allow-other-keys))
+					 :test #'equal)))
+		    (cmperr "Syntax error in type expression ~S" type))
+		  (setf rest (list (car l))))
+		 (otherwise
+		  (if optional-flag
+		      (push typespec optional)
+		    (push typespec required)))))
+	  finally
+	  (return (values (nreverse required) (nreverse optional)
+                          rest a-o-k)))))
 
 (defun-equal-cached values-type-or (t1 t2)
   (when (or (eq t2 'T) (equalp t2 '(VALUES &REST T)))

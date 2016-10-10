@@ -51,8 +51,8 @@
 ;  ref-clb	;;; Cross local function reference: T or NIL.
 ;  read-nodes	;;; Nodes (c1forms) in which the reference occurs
   set-nodes	;;; Nodes in which the variable is modified
-  kind		;;; One of LEXICAL, CLOSURE, SPECIAL, GLOBAL, :OBJECT, :FIXNUM,
-  		;;; :CHAR, :DOUBLE, :FLOAT.
+  kind		;;; One of LEXICAL, CLOSURE, SPECIAL, GLOBAL, :OBJECT,
+                ;;; or some C representation type (:FIXNUM, :CHAR, etc)
   (function *current-function*)
 		;;; For local variables, in which function it was created.
 		;;; For global variables, it doesn't have a meaning.
@@ -258,3 +258,21 @@
   (used-p nil)
   (permanent-p t)
   (value nil))
+
+(defstruct machine
+  (c-types '())
+  rep-type-hash
+  sorted-types
+  inline-information)
+
+(defstruct (rep-type (:constructor %make-rep-type))
+  (index 0) ; Precedence order in the type list
+  (name t)
+  (lisp-type t)
+  (bits nil)
+  (numberp nil)
+  (integerp nil)
+  (c-name nil)
+  (to-lisp nil)
+  (from-lisp nil)
+  (from-lisp-unsafe nil))

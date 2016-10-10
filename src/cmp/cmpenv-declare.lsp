@@ -37,8 +37,9 @@
               new-declaration))))
 
 (defun alien-declaration-p (name &optional (env *cmp-env*))
-  (or (member name si::*alien-declarations*)
-      (member name (cmp-env-search-declaration 'alien env))))
+  (and (symbolp name)
+       (member name (cmp-env-search-declaration 'alien env si::*alien-declarations*)
+	       :test 'eq)))
 
 (defun parse-ignore-declaration (decl-args expected-ref-number tail)
   (declare (si::c-local))
@@ -71,7 +72,10 @@ and a possible documentation string (only accepted when DOC-P is true)."
        for decl in all-declarations
        for decl-name = (first decl)
        for decl-args = (rest decl)
-       do (cmpassert (and (valid-form-p decl-args) (symbolp decl-name))
+       do (cmpassert (and (valid-form-p decl-args)
+			  (or (symbolp decl-name)
+			      (and (consp decl-name)
+				   (valid-type-specifier decl-name))))
                      "Syntax error in declaration ~s" decl)
        do (case decl-name
             (SPECIAL)
@@ -104,7 +108,9 @@ and a possible documentation string (only accepted when DOC-P is true)."
                      (policy-declaration-name-p decl-name))
                  (push decl others)
                  (multiple-value-bind (ok type)
-                     (valid-type-specifier decl-name)
+		     (if (machine-c-type-p decl-name)
+			 (values t decl-name)
+			 (valid-type-specifier decl-name))
                    (cmpassert ok "Unknown declaration specifier ~s"
                               decl-name)
                    (setf types (collect-declared type decl-args types))))))
@@ -145,7 +151,7 @@ special variable declarations, as these have been extracted before."
       env)
     (DECLARATION
      (validate-alien-declaration (rest decl) #'cmperr)
-     (cmp-env-extend-declaration 'alien (rest decl) env))
+     (cmp-env-extend-declaration 'alien (rest decl) env si::*alien-declarations*))
     ((SI::C-LOCAL SI::C-GLOBAL SI::NO-CHECK-TYPE :READ-ONLY)
      env)
     ((DYNAMIC-EXTENT IGNORABLE SI:FUNCTION-BLOCK-NAME)

@@ -1485,6 +1485,7 @@ cl_symbols[] = {
 {SYS_ "FREE-FOREIGN-DATA","si_free_foreign_data"},
 {SYS_ "MAKE-FOREIGN-DATA-FROM-ARRAY","si_make_foreign_data_from_array"},
 {SYS_ "LOAD-FOREIGN-MODULE","si_load_foreign_module"},
+{SYS_ "UNLOAD-FOREIGN-MODULE","si_unload_foreign_module"},
 {SYS_ "NULL-POINTER-P","si_null_pointer_p"},
 {SYS_ "SIZE-OF-FOREIGN-ELT-TYPE","si_size_of_foreign_elt_type"},
 {SYS_ "ALIGNMENT-OF-FOREIGN-ELT-TYPE","si_alignment_of_foreign_elt_type"},
@@ -1889,7 +1890,7 @@ cl_symbols[] = {
 {KEY_ "UCS-4LE",NULL},
 
 {EXT_ "LOAD-ENCODING",NULL},
-{EXT_ "MAKE-ENCODING","si_make_encoding"},
+{EXT_ "MAKE-ENCODING",NULL},
 {EXT_ "ALL-ENCODINGS","ECL_NAME(si_load_encoding)"},
 
 {KEY_ "US-ASCII",NULL},
@@ -2265,6 +2266,7 @@ cl_symbols[] = {
 {FFI_ "ALLOCATE-FOREIGN-OBJECT",NULL},
 {FFI_ "ALLOCATE-FOREIGN-STRING",NULL},
 {FFI_ "C-INLINE",NULL},
+{FFI_ "C-PROGN",NULL},
 {FFI_ "CALLBACK",NULL},
 {FFI_ "CHAR*",NULL},
 {FFI_ "CHAR-ARRAY-TO-POINTER",NULL},
@@ -2328,6 +2330,8 @@ cl_symbols[] = {
 {SYS_ "SINGLE-FLOAT-P","ECL_NAME(si_single_float_p)"},
 {SYS_ "DOUBLE-FLOAT-P","ECL_NAME(si_double_float_p)"},
 {SYS_ "LONG-FLOAT-P","ECL_NAME(si_long_float_p)"},
+
+{SYS_ "COPY-HASH-TABLE","si_copy_hash_table"},
 
 /* Tag for end of list */
 {NULL,NULL}};

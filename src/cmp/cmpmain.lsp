@@ -17,10 +17,6 @@
 
 (in-package "COMPILER")
 
-#-threads
-(defmacro with-lock ((lock) &body body)
-  `(progn ,@body))
-
 (defun safe-mkstemp (template)
   ;; We do several things here. One is to check for success in MKSTEMP,
   ;; the other one is to ensure that the output of this function _always_
@@ -269,7 +265,8 @@ void ~A(cl_object cblock)
 	Cblock->cblock.next = current;
 }
 	~A
-}")
+}
+")
 
 (defconstant +lisp-program-main+ "
 extern int
@@ -282,7 +279,8 @@ main(int argc, char **argv)
 	~A
 	} ECL_CATCH_ALL_END;
 	si_exit(0);
-}")
+}
+")
 
 (defconstant +lisp-library-main+ "
 extern int
@@ -294,7 +292,8 @@ extern int
 	ecl_init_module(OBJNULL, ~A);
 	~A
 	} ECL_CATCH_ALL_END;
-}")
+}
+")
 
 #+:win32
 (defconstant +lisp-program-winmain+ "
@@ -312,7 +311,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 	~A
 	} ECL_CATCH_ALL_END;
 	si_exit(0);
-}")
+}
+")
 
 (defun guess-kind (pathname)
   "Given a file name, guess whether it is an object file, a library, a program

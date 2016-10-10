@@ -37,6 +37,7 @@
 			c-expression-string
 			side-effects-p
 			one-liner-p)
+    (C-PROGN		variables forms)
     (LOCALS		local-fun-list body labels-p :pure)
     (IF			fmla-c1form true-c1form false-c1form :pure)
     (FMLA-NOT		fmla-c1form :pure)
@@ -94,6 +95,7 @@
     (ext:with-backend . c1with-backend) ; c1special
     (ffi:clines . c1clines) ; c1special
     (ffi:c-inline . c1c-inline) ; c1special
+    (ffi:c-progn . c1c-progn) ; c1special
     (flet . c1flet) ; c1special
     (labels . c1labels) ; c1special
     (locally . c1locally) ; c1special
@@ -140,7 +142,6 @@
     (psetq . c1psetq) ; c1special
 
     (load-time-value . c1load-time-value) ; c1
-    (si:fset . c1fset) ; c1
 
     (apply . c1apply) ; c1
     ))
@@ -155,6 +156,7 @@
     (macrolet . c1macrolet)
     (locally . c1locally)
     (symbol-macrolet . c1symbol-macrolet)
+    (si:fset . t1fset)
     ))
 
 (defconstant +set-loc-dispatch-alist+
@@ -212,6 +214,7 @@
     (throw . c2throw) ; c2
     (progn . c2progn) ; c2
     (ffi:c-inline . c2c-inline) ; c2
+    (ffi:c-progn . c2c-progn) ; c2
     (locals . c2locals) ; c2
     (call-local . c2call-local) ; c2
 
@@ -241,7 +244,7 @@
     (progv . c2progv) ; c2
     (psetq . c2psetq) ; c2
 
-    (si:fset . c2fset) ; c2
+    (si:fset . c2fset)
 
     (ext:compiler-typecase . c2compiler-typecase)
     (checked-value . c2checked-value)
@@ -254,6 +257,7 @@
     (load-time-value . t2load-time-value)
     (make-form . t2make-form)
     (init-form . t2init-form)
+    (si:fset . t2fset)
     ))
 
 (defconstant +p1-dispatch-alist+
@@ -285,6 +289,7 @@
     (values . p1values)
     (location . p1trivial) ;; Some of these can be improved
     (ffi:c-inline . p1trivial)
+    (ffi:c-progn . p1trivial)
     (function . p1trivial)
     (funcall . p1trivial)
     (load-time-value . p1trivial)

@@ -67,7 +67,7 @@ all functions."
 	       step (barfp t) fname oldf)
     (cond ((si::valid-function-name-p spec)
 	   (setq fname spec))
-          ((si::proper-list-p spec)
+          ((not (si::proper-list-p spec))
            (error "Not a valid argument to TRACE: ~S" spec))
 	  ((si::valid-function-name-p (first spec))
 	   (setq fname (first spec))
@@ -148,35 +148,38 @@ all functions."
 
 (defun trace-print (direction fname vals &rest extras)
   (let ((indent (min (* (1- *trace-level*) 2) *trace-max-indent*))
-	(*print-circle* t))
-    (fresh-line *trace-output*)
-    (case direction
-      (ENTER
-       (multiple-value-bind (bars rem)
-	   (floor indent 4)
-	 (dotimes (i bars) (princ (if (< i 10) "|   " "|    ") *trace-output*))
-	 (when (plusp rem) (format *trace-output* "~V,,,' A" rem "|")))
-       (format *trace-output*
-	       "~D> (~S~{ ~S~})~%"
-	       *trace-level* fname vals))
-      (EXIT
-       (multiple-value-bind (bars rem)
-	   (floor indent 4)
-	 (dotimes (i bars) (princ "|   " *trace-output*))
-	 (when (plusp rem) (format *trace-output* "~V,,,' A" rem "|")))
-       (format *trace-output*
-	       "<~D (~S~{ ~S~})~%"
-	       *trace-level*
-	       fname vals)
-       ))
-    (when extras
-      (multiple-value-bind (bars rem)
-	  (floor indent 4)
-	(dotimes (i bars) (princ "|   " *trace-output*))
-	(when (plusp rem) (format *trace-output* "~V,,,' A" rem "|")))
-      (format *trace-output*
-	      "~0,4@T\\\\ ~{ ~S~}~%"
-	      extras))))
+        (*print-circle* t))
+    (princ
+      (with-output-to-string (*trace-output*)
+        (fresh-line *trace-output*)
+        (case direction
+          (ENTER
+            (multiple-value-bind (bars rem)
+              (floor indent 4)
+              (dotimes (i bars) (princ (if (< i 10) "|   " "|    ") *trace-output*))
+              (when (plusp rem) (format *trace-output* "~V,,,' A" rem "|")))
+            (format *trace-output*
+                    "~D> (~S~{ ~S~})~%"
+                    *trace-level* fname vals))
+          (EXIT
+            (multiple-value-bind (bars rem)
+              (floor indent 4)
+              (dotimes (i bars) (princ "|   " *trace-output*))
+              (when (plusp rem) (format *trace-output* "~V,,,' A" rem "|")))
+            (format *trace-output*
+                    "<~D (~S~{ ~S~})~%"
+                    *trace-level*
+                    fname vals)
+            ))
+        (when extras
+          (multiple-value-bind (bars rem)
+            (floor indent 4)
+            (dotimes (i bars) (princ "|   " *trace-output*))
+            (when (plusp rem) (format *trace-output* "~V,,,' A" rem "|")))
+          (format *trace-output*
+                  "~0,4@T\\\\ ~{ ~S~}~%"
+                  extras))
+        *trace-output*))))
 
 (defun trace-record (fname)
   (declare (si::c-local))
