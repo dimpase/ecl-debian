@@ -3,7 +3,8 @@ Section: devel
 Priority: optional
 Maintainer: Debian Common Lisp Team <pkg-common-lisp-devel@lists.alioth.debian.org>
 Uploaders: Peter Van Eynde <pvaneynd@debian.org>,
- Christoph Egger <christoph@debian.org>
+ Christoph Egger <christoph@debian.org>,
+ Tobias Hansen <thansen@debian.org>
 Build-Depends: debhelper (>> 7.0.0),
  dh-autoreconf,
  libgmp-dev,
