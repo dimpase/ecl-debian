@@ -1,11 +1,11 @@
-ecl (15.3.7+dfsg1-2) UNRELEASED; urgency=medium
+ecl (15.3.7+dfsg1-2) unstable; urgency=medium
 
   * Add bignums-dont-collect-gmp-internal-memory.patch. (Closes: #777473)
   * Add myself to Uploaders.
   * Bump Standards-Version to 3.9.8.
   * Update debian/watch.
 
- -- Tobias Hansen <thansen@debian.org>  Mon, 10 Oct 2016 16:51:54 +0100
+ -- Tobias Hansen <thansen@debian.org>  Mon, 10 Oct 2016 17:34:53 +0100
 
 ecl (15.3.7+dfsg1-1) unstable; urgency=medium
 
