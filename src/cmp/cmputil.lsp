@@ -378,17 +378,12 @@
       (values nil nil))))
 
 (defun si::compiler-clear-compiler-properties (symbol)
-  #-:CCL
-  ;(sys::unlink-symbol symbol)
   (rem-sysprop symbol 't1)
   (rem-sysprop symbol 't2)
   (rem-sysprop symbol 't3)
   #-new-cmp(rem-sysprop symbol 'c1)
   #-new-cmp(rem-sysprop symbol 'c2)
   #-new-cmp(rem-sysprop symbol 'c1conditional)
-  (rem-sysprop symbol ':inline-always)
-  (rem-sysprop symbol ':inline-unsafe)
-  (rem-sysprop symbol ':inline-safe)
   (rem-sysprop symbol 'lfun))
 
 #-new-cmp

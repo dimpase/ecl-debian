@@ -36,7 +36,9 @@
  "#include <errno.h>"
  "#include <fcntl.h>"
  #+:cygwin
- "#define MSG_WAITALL 0"
+ "#ifndef MSG_WAITALL
+  #define MSG_WAITALL 0
+  #endif"
  "#ifndef MSG_CONFIRM"
  "#define MSG_CONFIRM 0"
  "#endif"
@@ -515,9 +517,15 @@ safe_buffer_pointer(cl_object x, cl_index size)
 (defun get-protocol-by-name (string-or-symbol)
   "Calls getprotobyname"
   (let ((string (string string-or-symbol)))
-    (c-inline (string) (:cstring) :int
-	      "getprotobyname(#0)->p_proto"
-	      :one-liner t)))
+      (c-inline (string) (:cstring) :int
+                "{
+                 struct protoent *pe;
+
+                 pe = getprotobyname(#0);
+                 @(return 0) = pe ? pe->p_proto : -1;
+                 }
+               ")))
+
 
 (defun make-inet-address (dotted-quads)
   "Return a vector of octets given a string DOTTED-QUADS in the format
@@ -837,7 +845,7 @@ also known as unix-domain sockets."))
 ##endif
         sockaddr.sun_family = #2;
         strncpy(sockaddr.sun_path,#1,sizeof(sockaddr.sun_path));
-	sockaddr.sun_path[sizeof(sockaddr.sun_path)-1] = '\0';
+	sockaddr.sun_path[sizeof(sockaddr.sun_path)-1] = 0;
 
 	ecl_disable_interrupts();
 	output = bind(#0,(struct sockaddr*)&sockaddr, sizeof(struct sockaddr_un));
@@ -887,7 +895,7 @@ also known as unix-domain sockets."))
 ##endif
         sockaddr.sun_family = #1;
         strncpy(sockaddr.sun_path,#2,sizeof(sockaddr.sun_path));
-	sockaddr.sun_path[sizeof(sockaddr.sun_path)-1] = '\0';
+	sockaddr.sun_path[sizeof(sockaddr.sun_path)-1] = 0;
 
 	ecl_disable_interrupts();
 	output = connect(#0,(struct sockaddr*)&sockaddr, sizeof(struct sockaddr_un));
