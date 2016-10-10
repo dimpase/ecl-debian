@@ -1,4 +1,4 @@
 version=3
 
-http://sf.net/ecls/ecl-([0-9][0-9a-z.]*)\.t.*gz
-
+opts=filenamemangle=s/.*\.tar\.gz\?ref=ECL\-(\d\S+)/ecl-$1\.tar\.gz/g \
+  https://gitlab.com/embeddable-common-lisp/ecl/tags?sort=updated_desc .*archive\.tar\.gz\?ref=ECL\-(\d\S+)
