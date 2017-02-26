@@ -1,4 +1,6 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: C -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 ;;;;  Copyright (c) 2010, Juan Jose Garcia-Ripoll
 ;;;;
@@ -12,7 +14,7 @@
 ;;;; CMPPOLICY -- Code generation choices
 ;;;;
 
-(in-package #-new-cmp "COMPILER" #+new-cmp "C-ENV")
+(in-package "COMPILER")
 
 (eval-when (:compile-toplevel :execute)
   (defconstant +optimization-quality-orders+ '(debug safety speed space)))
@@ -96,7 +98,7 @@
              (<= (list-length decl) 2)
              (gethash (first decl) *optimization-quality-switches*))
     (let* ((old (cmp-env-policy env))
-	   (flag (if (or (endp (rest decl)) (second decl)) 3 0))
+           (flag (if (or (endp (rest decl)) (second decl)) 3 0))
            (new (compute-policy (list (list (first decl) flag)) old)))
       (cmp-env-add-declaration 'optimization (list new) env))))
 

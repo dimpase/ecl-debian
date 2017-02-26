@@ -1,4 +1,6 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: SYSTEM -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: SYSTEM -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 ;;;;  MP.LSP  -- Multiprocessing capabilities.
 
@@ -25,8 +27,8 @@ interrupts arriving during execution of the BODY take effect after BODY has
 been executed.
 
 Deferrable interrupts include most blockable POSIX signals, and
-SB-THREAD:INTERRUPT-THREAD. Does not interfere with garbage collection, and
-unlike in many traditional Lisps using userspace threads, in SBCL
+MP:INTERRUPT-THREAD. Does not interfere with garbage collection, and
+unlike in many traditional Lisps using userspace threads, in ECL
 WITHOUT-INTERRUPTS does not inhibit scheduling of other threads.
 
 Binds ALLOW-WITH-INTERRUPTS, WITH-LOCAL-INTERRUPTS and WITH-RESTORED-INTERRUPTS
@@ -119,17 +121,38 @@ by ALLOW-WITH-INTERRUPTS."
   (ext:with-unique-names (lock owner count process)
     `(let* ((,lock ,lock-form)
             (,owner (mp:lock-owner ,lock))
-	    (,count (mp:lock-count ,lock)))
+            (,count (mp:lock-count ,lock)))
        (declare (type fixnum ,count))
        (without-interrupts
            (unwind-protect
                 (with-restored-interrupts
                     (mp::get-lock ,lock)
                   (locally ,@body))
-	     (let ((,process mp:*current-process*))
-	       (declare (optimize (speed 3) (safety 0) (debug 0)))
-	       (when (and (eq ,process (mp:lock-owner ,lock))
-			  (or (not (eq ,owner ,process))
-			      (> (the fixnum (mp:lock-count ,lock))
-				 (the fixnum ,count))))
-		 (mp::giveup-lock ,lock))))))))
+             (let ((,process mp:*current-process*))
+               (declare (optimize (speed 3) (safety 0) (debug 0)))
+               (when (and (eq ,process (mp:lock-owner ,lock))
+                          (or (not (eq ,owner ,process))
+                              (> (the fixnum (mp:lock-count ,lock))
+                                 (the fixnum ,count))))
+                 (mp::giveup-lock ,lock))))))))
+
+#+ecl-read-write-lock
+(defmacro with-rwlock ((lock op) &body body)
+  "Acquire rwlock for the dynamic scope of BODY for operation OP,
+which is executed with the lock held by current thread, and
+WITH-RWLOCK returns the values of body.
+
+Valid values of argument OP are :READ or :WRITE
+(for reader and writer access accordingly)."
+  (assert (member op '(:read :write) :test #'eq))
+  (let ((s-lock (gensym)))
+    `(let ((,s-lock ,lock))
+       (,(if (eq :read op)
+             'mp:get-rwlock-read
+             'mp:get-rwlock-write) ,s-lock t)
+       (unwind-protect
+            (progn
+              ,@body)
+         (,(if (eq :read op)
+               'mp:giveup-rwlock-read
+               'mp:giveup-rwlock-write) ,s-lock)))))

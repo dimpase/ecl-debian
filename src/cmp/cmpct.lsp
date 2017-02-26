@@ -1,4 +1,6 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: C -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 ;;;; CMPCT --  Optimizer for several constant values
 
@@ -30,29 +32,29 @@
     (make-c1form* 'LOCATION :type 'FIXNUM :args (list 'FIXNUM-VALUE val)))
    ((characterp val)
     (make-c1form* 'LOCATION :type 'CHARACTER
-		  :args (list 'CHARACTER-VALUE (char-code val))))
+                  :args (list 'CHARACTER-VALUE (char-code val))))
    ((typep val 'DOUBLE-FLOAT)
     (when (and (ext:float-nan-p val) (not only-small-values))
       (cmperr "Cannot externalize value ~A" val))
     (make-c1form* 'LOCATION :type 'DOUBLE-FLOAT
-		  :args (list 'DOUBLE-FLOAT-VALUE val (add-object val))))
+                  :args (list 'DOUBLE-FLOAT-VALUE val (add-object val))))
    ((typep val 'SINGLE-FLOAT)
     (when (and (ext:float-nan-p val) (not only-small-values))
       (cmperr "Cannot externalize value ~A" val))
     (make-c1form* 'LOCATION :type 'SINGLE-FLOAT
-		  :args (list 'SINGLE-FLOAT-VALUE val (add-object val))))
+                  :args (list 'SINGLE-FLOAT-VALUE val (add-object val))))
    ((typep val 'LONG-FLOAT)
     (when (and (ext:float-nan-p val) (not only-small-values))
       (cmperr "Cannot externalize value ~A" val))
     (make-c1form* 'LOCATION :type 'LONG-FLOAT
-		  :args (list 'LONG-FLOAT-VALUE val (add-object val))))
+                  :args (list 'LONG-FLOAT-VALUE val (add-object val))))
    #+sse2
    ((typep val 'EXT:SSE-PACK)
     (c1constant-value/sse val))
    (only-small-values nil)
    (always
     (make-c1form* 'LOCATION :type (object-type val)
-		  :args (add-object val)))
+                  :args (add-object val)))
    (t nil)))
 
 #+sse2
@@ -65,9 +67,9 @@
           (double-float (values "_mm_castsi128_pd" :double-sse-pack))
           (otherwise    (values ""                 :int-sse-pack)))
       `(c-inline () () ,rtype
-		 ,(format nil "~A(_mm_setr_epi8(~{~A~^,~}))"
-			  wrapper (coerce bytes 'list))
-		 :one-liner t :side-effects nil))))
+                 ,(format nil "~A(_mm_setr_epi8(~{~A~^,~}))"
+                          wrapper (coerce bytes 'list))
+                 :one-liner t :side-effects nil))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -76,24 +78,24 @@
 
 (defun make-single-constant-optimizer (name c-value)
   (cond ((symbolp name)
-	 (let* ((value (symbol-value name))
-		(type (lisp-type->rep-type (type-of value))))
-	   (cons value `(c-inline () () ,type ,c-value
-				  :one-liner t :side-effects nil))))
-	((floatp name)
-	 (let* ((value name)
+         (let* ((value (symbol-value name))
+                (type (lisp-type->rep-type (type-of value))))
+           (cons value `(c-inline () () ,type ,c-value
+                                  :one-liner t :side-effects nil))))
+        ((floatp name)
+         (let* ((value name)
                       (type (type-of value))
-		(loc-type (case type
-			    (single-float 'single-float-value)
-			    (double-float 'double-float-value)
-			    (long-float 'long-float-value)))
-		(location (make-vv :location c-value :value value)))
-	   (cons value (make-c1form* 'LOCATION :type type
-				     :args (list loc-type value location)))))
-	(t
-	 (cons name (make-c1form* 'LOCATION :type (type-of name)
-				  :args (make-vv :location c-value
-						 :value name))))))
+                (loc-type (case type
+                            (single-float 'single-float-value)
+                            (double-float 'double-float-value)
+                            (long-float 'long-float-value)))
+                (location (make-vv :location c-value :value value)))
+           (cons value (make-c1form* 'LOCATION :type type
+                                     :args (list loc-type value location)))))
+        (t
+         (cons name (make-c1form* 'LOCATION :type (type-of name)
+                                  :args (make-vv :location c-value
+                                                 :value name))))))
 
 (defun make-optimizable-constants (machine)
   (loop for (value name) in (optimizable-constants-list machine)
@@ -150,12 +152,24 @@
        (LEAST-NEGATIVE-DOUBLE-FLOAT "-DBL_MIN")
        (LEAST-NEGATIVE-NORMALIZED-DOUBLE-FLOAT "-DBL_MIN")
 
+       #+ieee-floating-point
+       ,@'((SHORT-FLOAT-POSITIVE-INFINITY  "INFINITY")
+           (SINGLE-FLOAT-POSITIVE-INFINITY "INFINITY")
+           (DOUBLE-FLOAT-POSITIVE-INFINITY "INFINITY")
+
+           (SHORT-FLOAT-NEGATIVE-INFINITY  "-INFINITY")
+           (SINGLE-FLOAT-NEGATIVE-INFINITY "-INFINITY")
+           (DOUBLE-FLOAT-NEGATIVE-INFINITY "-INFINITY"))
+
        #+long-float
-       ,@'(
-	   (MOST-POSITIVE-LONG-FLOAT "LDBL_MAX")
-	   (MOST-NEGATIVE-LONG-FLOAT "-LDBL_MAX")
-	   (LEAST-POSITIVE-LONG-FLOAT "LDBL_MIN")
-	   (LEAST-POSITIVE-NORMALIZED-LONG-FLOAT" LDBL_MIN")
-	   (LEAST-NEGATIVE-LONG-FLOAT "-LDBL_MIN")
-	   (LEAST-NEGATIVE-NORMALIZED-LONG-FLOAT "-LDBL_MIN")
-	   )))))
+       ,@'((MOST-POSITIVE-LONG-FLOAT "LDBL_MAX")
+           (MOST-NEGATIVE-LONG-FLOAT "-LDBL_MAX")
+           (LEAST-POSITIVE-LONG-FLOAT "LDBL_MIN")
+           (LEAST-POSITIVE-NORMALIZED-LONG-FLOAT" LDBL_MIN")
+           (LEAST-NEGATIVE-LONG-FLOAT "-LDBL_MIN")
+           (LEAST-NEGATIVE-NORMALIZED-LONG-FLOAT "-LDBL_MIN")
+           #+ieee-floating-point
+           (LONG-FLOAT-POSITIVE-INFINITY   "INFINITY")
+           #+ieee-floating-point
+           (LONG-FLOAT-NEGATIVE-INFINITY   "-INFINITY")
+           )))))

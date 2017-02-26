@@ -1,10 +1,12 @@
-/* -*- mode: c; c-basic-offset: 8 -*- */
+/* -*- Mode: C; c-basic-offset: 8; indent-tabs-mode: nil -*- */
+/* vim: set filetype=c tabstop=8 shiftwidth=4 expandtab: */
+
 /**********************************************************************
  ***
  ***  IMPORTANT: ANY CHANGE IN THIS FILE MUST BE MATCHED BY
- ***		 APPROPRIATE CHANGES IN THE INTERPRETER AND COMPILER
- ***		 IN PARTICULAR, IT MAY HURT THE THREADED INTERPRETER
- ***		 CODE.
+ ***             APPROPRIATE CHANGES IN THE INTERPRETER AND COMPILER
+ ***             IN PARTICULAR, IT MAY HURT THE THREADED INTERPRETER
+ ***             CODE.
  **********************************************************************/
 /*
  * See ecl/src/c/interpreter.d for a detailed explanation of all opcodes
@@ -110,7 +112,7 @@ typedef int16_t cl_oparg;
 # define OPCODE_SIZE 1
 # define OPARG_SIZE 2
 # ifdef WORDS_BIGENDIAN
-#  define READ_OPARG(v)	((cl_fixnum)v[0] << 8) + (unsigned char)v[1]
+#  define READ_OPARG(v) ((cl_fixnum)v[0] << 8) + (unsigned char)v[1]
 # else
 #  define READ_OPARG(v) ((cl_fixnum)v[1] << 8) + (unsigned char)v[0]
 # endif
@@ -119,24 +121,24 @@ typedef int16_t cl_oparg;
   typedef int16_t cl_opcode;
 # define OPCODE_SIZE 1
 # define OPARG_SIZE 1
-# define READ_OPCODE(v)	v[0]
-# define READ_OPARG(v)	v[0]
+# define READ_OPCODE(v) v[0]
+# define READ_OPARG(v)  v[0]
 # define GET_OPARG(r,v) { r = *(v++); }
 #endif
 #define GET_OPCODE(v) *((v)++)
 #define GET_DATA(r,v,data) { \
-	cl_oparg ndx; \
-	GET_OPARG(ndx, v); \
-	r = data[ndx]; \
+        cl_oparg ndx; \
+        GET_OPARG(ndx, v); \
+        r = data[ndx]; \
 }
 #define GET_DATA_PTR(r,v,data) { \
-	cl_oparg ndx; \
-	GET_OPARG(ndx, v); \
-	r = data+ndx; \
+        cl_oparg ndx; \
+        GET_OPARG(ndx, v); \
+        r = data+ndx; \
 }
-#define GET_LABEL(pc,v)	{ \
-	pc = (v) + READ_OPARG(v); \
-	v += OPARG_SIZE; \
+#define GET_LABEL(pc,v) { \
+        pc = (v) + READ_OPARG(v); \
+        v += OPARG_SIZE; \
 }
 
 /**********************************************************************
@@ -153,32 +155,32 @@ typedef int16_t cl_oparg;
  */
 #if (defined(__GNUC__) && !defined(__STRICT_ANSI__) && !defined(__clang__) && !defined(__llvm__))
 #define ECL_THREADED_INTERPRETER
-# if defined(__sun__) && (FIXNUM_BITS > 32)
+# if defined(__sun__) && (ECL_FIXNUM_BITS > 32)
 #  undef ECL_THREADED_INTERPRETER
 # endif
 #endif
 
 #ifdef ECL_THREADED_INTERPRETER
 #define BEGIN_SWITCH \
-	THREAD_NEXT;
+        THREAD_NEXT;
 #define CASE(name) \
-	LBL_##name:
+        LBL_##name:
 #define THREAD_NEXT \
-	goto *(&&LBL_OP_NOP + offsets[GET_OPCODE(vector)])
+        goto *(&&LBL_OP_NOP + offsets[GET_OPCODE(vector)])
 #else
 #define BEGIN_SWITCH \
-	switch (GET_OPCODE(vector))
+        switch (GET_OPCODE(vector))
 #define THREAD_NEXT \
-	goto BEGIN
+        goto BEGIN
 #define CASE(name) \
-	case name:
+        case name:
 #endif
 
 #if !defined(ECL_THREADED_INTERPRETER)
 #define ECL_OFFSET_TABLE
 #else
 #define ECL_OFFSET_TABLE \
-	static const int offsets[] = {\
+        static const int offsets[] = {\
   &&LBL_OP_NOP - &&LBL_OP_NOP,\
   &&LBL_OP_QUOTE - &&LBL_OP_NOP,\
   &&LBL_OP_ENDP - &&LBL_OP_NOP,\

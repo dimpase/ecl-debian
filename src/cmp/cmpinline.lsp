@@ -1,4 +1,6 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: C -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
@@ -16,8 +18,8 @@
 
 ;;; Valid property names for open coded functions are:
 ;;;  :INLINE-ALWAYS
-;;;  :INLINE-SAFE	safe-compile only
-;;;  :INLINE-UNSAFE	non-safe-compile only
+;;;  :INLINE-SAFE       safe-compile only
+;;;  :INLINE-UNSAFE     non-safe-compile only
 ;;;
 ;;; Each property is a list of 'inline-info's, where each inline-info is:
 ;;; ( types { type | boolean } { string | function } ).
@@ -37,7 +39,7 @@
         (make-temp-var)
         (let ((var (make-lcl-var :rep-type out-rep-type
                                  :type value-type)))
-	  (open-inline-block)
+          (open-inline-block)
           (wt-nl (rep-type->c-name out-rep-type) " " var ";")
           var))))
 
@@ -191,4 +193,4 @@
 
 (defun function-may-change-sp (fname)
   (not (or (get-sysprop fname 'no-side-effects)
-	   (get-sysprop fname 'no-sp-change))))
+           (get-sysprop fname 'no-sp-change))))

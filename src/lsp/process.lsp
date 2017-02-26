@@ -1,4 +1,6 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: SYSTEM -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: SYSTEM -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 ;;;;  PROCESS.LSP  -- External processes
 
@@ -17,6 +19,7 @@
   pid
   input
   output
+  error-stream
   (%status :running)
   (%code nil))
 
@@ -40,6 +43,6 @@
         (setf shell comspec
               option "/c")))
     (nth-value 1 (run-program shell (list option cmd-string)
-                              :wait t :output t :input t
-                              :error t))))
+                              :wait t :output nil :input nil
+                              :error nil))))
 

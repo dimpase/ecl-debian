@@ -1,3 +1,6 @@
+/* -*- Mode: C; c-basic-offset: 8; indent-tabs-mode: nil -*- */
+/* vim: set filetype=c tabstop=8 shiftwidth=4 expandtab: */
+
 /*
  * Dictionary words.
  */
@@ -555,7 +558,7 @@ _ecl_ucd_name_to_code(cl_object name)
       ecl_character c = ecl_char_upcase(ecl_char(name, mid));
       buffer1[mid] = c;
       if (c < 32 || c > 127) /* All character names are [-A-Z_0-9]* */
-	return ECL_NIL;
+        return ECL_NIL;
     }
     buffer1[mid] = 0;
     do {

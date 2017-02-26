@@ -1,4 +1,6 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: C -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 ;;;;  Copyright (c) 2008. Juan Jose Garcia-Ripol
 ;;;;
@@ -23,19 +25,19 @@
            (declare (:read-only ,%limit))
            (ext:compiler-typecase ,%limit
              (fixnum
-	      ;; %LIMIT will be type checked by the compiler to be
-	      ;; a fixnum. We may thus just increase the counter.
-	      (let ((,variable 0))
-		(declare (fixnum ,variable)
-			 ,@declarations)
-		(si::while (< ,variable ,%limit)
-                  ,@body
-		  (reckless (setq ,variable (1+ ,variable))))
-		,@output))
-             (t
-	      (let ((,variable 0))
-		(declare ,@declarations)
+              ;; %LIMIT will be type checked by the compiler to be
+              ;; a fixnum. We may thus just increase the counter.
+              (let ((,variable 0))
+                (declare (fixnum ,variable)
+                         ,@declarations)
                 (si::while (< ,variable ,%limit)
                   ,@body
-		  (setq ,variable (1+ ,variable)))
-		,@output))))))))
+                  (reckless (setq ,variable (1+ ,variable))))
+                ,@output))
+             (t
+              (let ((,variable 0))
+                (declare ,@declarations)
+                (si::while (< ,variable ,%limit)
+                  ,@body
+                  (setq ,variable (1+ ,variable)))
+                ,@output))))))))
