@@ -1,4 +1,6 @@
-/* -*- mode: c; c-basic-offset: 8 -*- */
+/* -*- Mode: C; c-basic-offset: 8; indent-tabs-mode: nil -*- */
+/* vim: set filetype=c tabstop=8 shiftwidth=4 expandtab: */
+
 
 #ifndef ECL_ECL_INL_H
 #define ECL_ECL_INL_H
@@ -98,22 +100,22 @@
                 (double)(f) };                                  \
         static const cl_object name = (cl_object)(& name ## _data)
 
-#define ecl_def_ct_long_float(name,f,static,const)			\
-        static const struct ecl_long_float name ## _data = {		\
-                (int8_t)t_longfloat, 0, 0, 0,				\
-                (long double)(f) };					\
+#define ecl_def_ct_long_float(name,f,static,const)                      \
+        static const struct ecl_long_float name ## _data = {            \
+                (int8_t)t_longfloat, 0, 0, 0,                           \
+                (long double)(f) };                                     \
         static const cl_object name = (cl_object)(& name ## _data)
 
-#define ecl_def_ct_ratio(name,num,den,static,const)			\
-        static const struct ecl_ratio name ## _data = {			\
-                (int8_t)t_ratio, 0, 0, 0,				\
-                den, num };						\
+#define ecl_def_ct_ratio(name,num,den,static,const)                     \
+        static const struct ecl_ratio name ## _data = {                 \
+                (int8_t)t_ratio, 0, 0, 0,                               \
+                den, num };                                             \
         static const cl_object name = (cl_object)(& name ## _data)
 
-#define ecl_def_ct_complex(name,real,imag,static,const)			\
-        static const struct ecl_complex name ## _data = {		\
-                (int8_t)t_complex, 0, 0, 0,				\
-                (cl_object)real, (cl_object)imag };			\
+#define ecl_def_ct_complex(name,real,imag,static,const)                 \
+        static const struct ecl_complex name ## _data = {               \
+                (int8_t)t_complex, 0, 0, 0,                             \
+                (cl_object)real, (cl_object)imag };                     \
         static const cl_object name = (cl_object)(& name ## _data)
 
 #define ecl_def_ct_vector(name,type,raw,len,static,const)               \

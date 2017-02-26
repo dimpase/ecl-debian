@@ -1,15 +1,13 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: C -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 ;;; ----------------------------------------------------------------------
 ;;; Macros only used in the code of the compiler itself:
 
-#-new-cmp
 (in-package "COMPILER")
-#-new-cmp
 (import 'sys::arglist "COMPILER")
 (import 'sys::with-clean-symbols "COMPILER")
-#+new-cmp
-(in-package "C-DATA")
 
 ;; ----------------------------------------------------------------------
 ;; CACHED FUNCTIONS
@@ -26,7 +24,7 @@
                           (t (setf test 'EQUALP) 'SI::HASH-EQUALP))))
     `(progn
        (eval-when (:compile-toplevel :load-toplevel :execute)
-	 (defparameter ,cache-name (make-array 1024 :element-type t :adjustable nil)))
+         (defparameter ,cache-name (make-array 1024 :element-type t :adjustable nil)))
        (defun ,reset-name ()
          (make-array 1024 :element-type t :adjustable nil))
        (defun ,name ,lambda-list
@@ -81,21 +79,21 @@
 
 (defmacro with-exit-label ((label) &body body)
   `(let* ((,label (next-label))
-	  (*unwind-exit* (cons ,label *unwind-exit*)))
+          (*unwind-exit* (cons ,label *unwind-exit*)))
      ,@body
      (wt-label ,label)))
 
 (defmacro with-optional-exit-label ((label) &body body)
   `(let* ((,label (maybe-next-label))
-	  (*unwind-exit* (adjoin ,label *unwind-exit*)))
+          (*unwind-exit* (adjoin ,label *unwind-exit*)))
      ,@body
      (maybe-wt-label ,label)))
 
 (defun next-lcl (&optional name)
   (list 'LCL (incf *lcl*) T
-	(if (and name (symbol-package name))
-	    (lisp-to-c-name name)
-	    "")))
+        (if (and name (symbol-package name))
+            (lisp-to-c-name name)
+            "")))
 
 (defun next-cfun (&optional (prefix "L~D~A") (lisp-name nil))
   (let ((code (incf *next-cfun*)))
@@ -112,8 +110,8 @@
          (setq *max-lex* (max *lex* *max-lex*))))
 
 (defun next-env () (prog1 *env*
-		     (incf *env*)
-		     (setq *max-env* (max *env* *max-env*))))
+                     (incf *env*)
+                     (setq *max-env* (max *env* *max-env*))))
 
 (defmacro reckless (&rest body)
   `(locally (declare (optimize (safety 0)))

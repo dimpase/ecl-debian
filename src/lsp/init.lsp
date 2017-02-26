@@ -1,4 +1,6 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: SYSTEM -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: SYSTEM -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 
 ;(load "../cmp/init")
@@ -13,10 +15,10 @@
 (defun compile-if-needed (file)
   (let ((cfile-date (file-write-date (merge-pathnames file #".c"))))
     (when (or (not cfile-date)
-	      (> (file-write-date (merge-pathnames file #".lsp"))
-		 cfile-date))
+              (> (file-write-date (merge-pathnames file #".lsp"))
+                 cfile-date))
       (compile-file file :c-file t :h-file t :data-file t
-		    :output-file nil :system-p t)))
+                    :output-file nil :system-p t)))
   )
 #|
 (compile-if-needed "defmacro")

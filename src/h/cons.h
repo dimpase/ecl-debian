@@ -1,4 +1,6 @@
-/* -*- mode: c; c-basic-offset: 8 -*- */
+/* -*- Mode: C; c-basic-offset: 8; indent-tabs-mode: nil -*- */
+/* vim: set filetype=c tabstop=8 shiftwidth=4 expandtab: */
+
 /*
     cons.h -- list manipulation macros & functions
 */
@@ -22,9 +24,9 @@
 extern "C" {
 #endif
 
-#define Null(x)		((x)==ECL_NIL)
-#define CONS(a,d)	ecl_cons((a),(d))
-#define ACONS(a,b,c)	ecl_cons(ecl_cons((a),(b)),(c))
+#define Null(x)         ((x)==ECL_NIL)
+#define CONS(a,d)       ecl_cons((a),(d))
+#define ACONS(a,b,c)    ecl_cons(ecl_cons((a),(b)),(c))
 
 /* BEGIN-GENERATED (gen-cons-h) */
 

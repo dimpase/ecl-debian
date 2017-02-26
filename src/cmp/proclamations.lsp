@@ -1,4 +1,6 @@
-;;; -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: C -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;
 ;;; PROCLAMATIONS of ECL and ANSI Common Lisp functions
 ;;;
@@ -8,8 +10,8 @@
 ;;;
 ;;; The function proclamations are created with PROCLAIM-FUNCTION, as in
 ;;;
-;;;	(PROCLAMATION function-name ([arg-type]*) return-type
-;;;		&rest {:no-sp-change|:pure|:reader|:no-side-effects})
+;;;     (PROCLAMATION function-name ([arg-type]*) return-type
+;;;             &rest {:no-sp-change|:pure|:reader|:no-side-effects})
 ;;;
 ;;; with the following interpretation: ARG-TYPE and RETURN-TYPE denote the most
 ;;; general types for the input and output values of this function. If the
@@ -46,7 +48,7 @@
     (name arg-types return-type &rest properties)
   (when (sys:get-sysprop name 'proclaimed-arg-types)
     (warn "Duplicate proclamation for ~A" name))
-  (#-new-cmp proclaim-function #+new-cmp c-env::proclaim-function
+  (proclaim-function
    name (list arg-types return-type))
   (loop for p in properties
      do (case p
@@ -189,7 +191,7 @@
 
 ;; ECL extensions:
 (proclamation si:specialp (symbol) gen-bool :predicate)
-(proclamation si::do-defsetf (symbol (or symbol function)) t)
+(proclamation si::do-defsetf (symbol (or symbol function) &optional list) t)
 (proclamation si::do-define-setf-method (symbol function) t)
 (proclamation ext:constant-form-value (t &optional environment) t)
 (proclamation ext:constantp-inner (t &optional environment) gen-bool)
@@ -1135,7 +1137,7 @@
 #+wants-sockets
 (proclamation si:open-server-stream (unsigned-byte) stream)
 #+wants-sockets
-(proclamation si:open-unix-socket-stream (base-string) stream)
+(proclamation si:open-unix-socket-stream (string) stream)
 #+wants-sockets
 (proclamation si:lookup-host-entry (t) (values (or null string) list list))
 (proclamation si:copy-stream (stream stream) t)
@@ -1327,6 +1329,7 @@
               (values (or null two-way-stream)
                       (or null integer)
                       ext:external-process))
+(proclamation ext:terminate-process (t &optional gen-bool) null)
 
 (proclamation ext:make-weak-pointer (t) ext:weak-pointer :no-side-effects)
 (proclamation ext:weak-pointer-value (ext:weak-pointer) t)

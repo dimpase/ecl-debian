@@ -1,17 +1,14 @@
-/* -*- mode: c; c-basic-offset: 8 -*- */
-/*
-    iso_latin_names.h -- character names in ISO-LATIN-1
-*/
-/*
-    Copyright (c) 2008, Juan Jose Garcia Ripoll.
+/* -*- Mode: C; c-basic-offset: 2; indent-tabs-mode: nil -*- */
+/* vim: set filetype=c tabstop=2 shiftwidth=2 expandtab: */
 
-    ECL is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Library General Public
-    License as published by the Free Software Foundation; either
-    version 2 of the License, or (at your option) any later version.
-
-    See file '../Copyright' for full details.
-*/
+/*
+ * iso_latin_names.h - character names in ISO-LATIN-1
+ *
+ * Copyright (c) 2008 Juan Jose Garcia Ripoll
+ *
+ * See file 'LICENSE' for the copyright details.
+ *
+ */
 
 ecl_def_string_array(char_names,static,const) = {
         ecl_def_string_array_elt("Nul"),
@@ -151,21 +148,22 @@ ecl_def_string_array(char_names,static,const) = {
  * the other codes. */
 ecl_def_string_array(extra_char_names,static,const) = {
         ecl_def_string_array_elt("Null"), /* 0 */
-	ecl_def_string_array_elt("Bell"), /* 7 */
-	ecl_def_string_array_elt("Bs"), /* 8 */
-	ecl_def_string_array_elt("Ht"), /* 9 */
-	ecl_def_string_array_elt("Linefeed"), /* 10 */
-	ecl_def_string_array_elt("Lf"), /* 10 */
-	ecl_def_string_array_elt("Escape"), /* 27 */
-	ecl_def_string_array_elt("Ff"), /* 12 */
-	ecl_def_string_array_elt("Cr"), /* 13 */
-	ecl_def_string_array_elt("Sp"), /* 32 */
-	ecl_def_string_array_elt("Del") /* 127 */
+        ecl_def_string_array_elt("Bell"), /* 7 */
+        ecl_def_string_array_elt("Bs"), /* 8 */
+        ecl_def_string_array_elt("Ht"), /* 9 */
+        ecl_def_string_array_elt("Linefeed"), /* 10 */
+        ecl_def_string_array_elt("Lf"), /* 10 */
+        ecl_def_string_array_elt("Escape"), /* 27 */
+        ecl_def_string_array_elt("Ff"), /* 12 */
+        ecl_def_string_array_elt("Cr"), /* 13 */
+        ecl_def_string_array_elt("Sp"), /* 32 */
+        ecl_def_string_array_elt("Del"), /* 127 */
+        ecl_def_string_array_elt("Delete") /* 127 */
 };
 
 static const unsigned char extra_char_codes[] = {
-	0, 7, 8, 9, 10, 10, 27, 12, 13, 32, 127
+        0, 7, 8, 9, 10, 10, 27, 12, 13, 32, 127, 127
 };
 
-#define extra_char_names_size 11
+#define extra_char_names_size 12
 

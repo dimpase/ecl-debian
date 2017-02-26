@@ -10,8 +10,8 @@ srcdir	= ..\src
 
 SHORT_SITE_NAME   =
 LONG_SITE_NAME    =
-ECL_VERSION       = 15.3.7
-ECL_VERSION_NUMBER= 150307
+ECL_VERSION       = 16.1.3
+ECL_VERSION_NUMBER= 160103
 ARCHITECTURE      = PENTIUM4
 SOFTWARE_TYPE     = NT
 SOFTWARE_VERSION  = 5.0
@@ -53,8 +53,6 @@ ECL_CMP     =
 ECL_ASDF    =
 # TCP support
 ECL_SOCKETS =
-# X Windows support
-# ECL_CLX     = 1
 # Regression Tests support
 ECL_RT      =
 # Defsystem support
@@ -156,7 +154,7 @@ INSTALL	= @INSTALL@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_DATA = @INSTALL_DATA@
-mkinstalldirs = $(SHELL) $(top_srcdir)/gc/mkinstalldirs
+mkinstalldirs = $(top_srcdir)/bdwgc/install-sh -d
 
 # Files
 #
@@ -180,10 +178,6 @@ ECL_FEATURES = (cons :wants-asdf $(ECL_FEATURES))
 !ifdef ECL_SOCKETS
 ECL_MODULES  = $(ECL_MODULES) sockets
 ECL_FEATURES = (cons :wants-sockets $(ECL_FEATURES))
-!endif
-!ifdef ECL_CLX
-ECL_MODULES  = $(ECL_MODULES) clx
-ECL_FEATURES = (cons :wants-clx $(ECL_FEATURES))
 !endif
 !ifdef ECL_RT
 ECL_MODULES  = $(ECL_MODULES) rt
@@ -353,8 +347,8 @@ eclgc.lib:
 	           gc_config_macros.h leak_detector.h gc_typed.h \
 	           private\gc_priv.h private\gcconfig.h gc_mark.h \
 		   new_gc_alloc.h weakpointer.h gc_pthread_redirects.h) \
-	    do $(CP) $(srcdir)\gc\include\%h ecl\gc\%h
-	$(CP) $(srcdir)\gc\libatomic_ops-1.2\src\atomic_ops.h ecl\gc
+	    do $(CP) $(srcdir)\bdwgc\include\%h ecl\gc\%h
+
 eclgmp.lib:
 	cd gmp
 	$(MAKE) "MPN_TYPE=$(GMP_TYPE)" "CFLAGS_CONFIG=$(CFLAGS_CONFIG)" \
@@ -362,11 +356,9 @@ eclgmp.lib:
 	$(CP) gmp.lib ..\eclgmp.lib
 	$(CP) gmp.h ..\ecl\gmp.h
 	cd ..
+
 sysfun.lsp:
 	$(CP) $(srcdir)\cmp\sysfun.lsp .\
-
-rt.lisp:
-	$(CP) $(srcdir)\..\contrib\rt\rt.lisp .\
 
 install:
 	IF NOT EXIST "$(prefix)" $(MKDIR) "$(prefix)"
@@ -393,7 +385,7 @@ install:
 	for /f %i in ('type MODULES') do $(CP) %i "$(libdir)"
 	for %i in (ecl-static.lib) do IF EXIST %i $(CP) %i "$(libdir)"
 	IF NOT EXIST "$(docdir)" $(MKDIR) "$(docdir)"
-	for %i in (..\Copyright ..\ANNOUNCEMENT ..\LGPL ..\README.1st ..\src\CHANGELOG) do $(CP) %i "$(docdir)"
+	for %i in (..\LICENSE ..\LGPL ..\README.md ..\CHANGELOG) do $(CP) %i "$(docdir)"
 !if "$(ECL_UNICODE)" != ""
 	IF NOT EXIST "$(libdir)\encodings" $(MKDIR) "$(libdir)\encodings"
 	$(CP) encodings\*.* "$(libdir)\encodings"
@@ -402,10 +394,12 @@ install:
 check: package\ecl.exe
 	cd tests
 	$(MAKE)
+
 recheck: package\ecl.exe
 	cd tests
 	$(MAKE) clean
 	$(MAKE)
+
 package\ecl.exe: ecl2$(EXE)
 	$(MAKE) install ECL_THREADS=$(ECL_THREADS) ECL_UNICODE=$(ECL_UNICODE) 
 
@@ -421,7 +415,7 @@ windows-nsi:
 
 clean: clean_ecl clean_lisp
 	-$(RM) .gdbinit cinit.lib ecl_min.lib
-	-$(RM) gc\*.pdb
+	-$(RM) bdwgc\*.pdb
 	cd gc
 	-$(MAKE) ECL_THREADS=$(ECL_THREADS) clean
 	cd ..
@@ -470,10 +464,10 @@ test2:
 test3:
 	-mkdir stage2
 	cp -rf lsp clos cmp stage2
-	-for i in lsp cmp clos clx tk; do test -f lib$$i.a && mv lib$$i.a stage2; done
+	-for i in lsp cmp clos tk; do test -f lib$$i.a && mv lib$$i.a stage2; done
 	$(MAKE) clean_lisp
 	./ecl < compile.lsp
-	-for i in lsp clos cmp clx tk; do test -d $$i && diff --exclude=\*.o $$i stage2/$$i; done | less
+	-for i in lsp clos cmp tk; do test -d $$i && diff --exclude=\*.o $$i stage2/$$i; done | less
 test:
 	$(MAKE) -C tests
 	$(MAKE) -C ansi-tests > ansi-tests/log

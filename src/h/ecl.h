@@ -1,4 +1,6 @@
-/* -*- mode: c; c-basic-offset: 8 -*- */
+/* -*- Mode: C; c-basic-offset: 8; indent-tabs-mode: nil -*- */
+/* vim: set filetype=c tabstop=8 shiftwidth=4 expandtab: */
+
 /*
     ecl.h -- Main headers for development of ECL
 */
@@ -17,22 +19,26 @@
 #ifndef ECL_ECL_H
 #define ECL_ECL_H
 
-#include <sys/types.h>		/* size_t, pthread_t, pthread_mutex_t */
-#ifdef __OpenBSD__		/* same, but for OpenBSD (bug in OpenBSD!) */
+#include <sys/types.h>          /* size_t, pthread_t, pthread_mutex_t */
+#ifdef __OpenBSD__              /* same, but for OpenBSD (bug in OpenBSD!) */
 # include <pthread.h>
 #endif
-#include <stddef.h>		/* NULL, ptrdiff_t */
-#include <stdarg.h> 		/* va_list */
-#include <setjmp.h> 		/* setjmp and buffers */
-#include <stdio.h>		/* FILE */
+#include <stddef.h>             /* NULL, ptrdiff_t */
+#include <stdarg.h>             /* va_list */
+#include <setjmp.h>             /* setjmp and buffers */
+#include <stdio.h>              /* FILE */
 /* Microsoft VC++ does not have va_copy() */
-#if defined(_MSC_VER) || !defined(va_copy)
+#if ( defined(_MSC_VER) && (_MSC_VER < 1900) ) || !defined(va_copy)
 #define va_copy(dst, src) \
    ((void) memcpy(&(dst), &(src), sizeof(va_list)))
 #endif
 
-#ifndef FIXNUM_BITS
+#ifndef ECL_FIXNUM_BITS
 #include <ecl/config.h>
+#endif
+
+#ifdef ECL_BUILD
+#include <ecl/config-internal.h>
 #endif
 
 /*
@@ -82,9 +88,6 @@
 #include <ecl/cons.h>
 #include <ecl/stacks.h>
 #include <ecl/number.h>
-#ifdef LOCATIVE
-#include <ecl/unify.h>
-#endif
 #include <ecl/legacy.h>
 
 typedef void (*ecl_init_function_t)(cl_object block);

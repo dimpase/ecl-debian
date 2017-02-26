@@ -1,17 +1,14 @@
-/* -*- mode: c; c-basic-offset: 8 -*- */
-/*
-    ecl_constants.c -- constant values for all_symbols.d
-*/
-/*
-    Copyright (c) 2010, Juan Jose Garcia Ripoll.
+/* -*- Mode: C; c-basic-offset: 2; indent-tabs-mode: nil -*- */
+/* vim: set filetype=c tabstop=2 shiftwidth=2 expandtab: */
 
-    ECL is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Library General Public
-    License as published by the Free Software Foundation; either
-    version 2 of the License, or (at your option) any later version.
-
-    See file '../Copyright' for full details.
-*/
+/*
+ * ecl_constants.h - contstant values for all_symbols.d
+ *
+ * Copyright (c) 2010 Juan Jose Garcia Ripoll
+ *
+ * See file 'LICENSE' for the copyright details.
+ *
+ */
 
 #include <float.h>
 #include <ecl/ecl-inl.h>

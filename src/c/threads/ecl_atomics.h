@@ -1,17 +1,14 @@
-/* -*- mode: c; c-basic-offset: 8 -*- */
-/*
-    ecl_atomics.h -- alternative definitions for atomic operations
-*/
-/*
-    Copyright (c) 2012, Juan Jose Garcia Ripoll.
+/* -*- Mode: C; c-basic-offset: 2; indent-tabs-mode: nil -*- */
+/* vim: set filetype=c tabstop=2 shiftwidth=2 expandtab: */
 
-    ECL is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Library General Public
-    License as published by the Free Software Foundation; either
-    version 2 of the License, or (at your option) any later version.
-
-    See file '../Copyright' for full details.
-*/
+/*
+ * ecl_atomics.h - alternative definitions for atomic operations
+ *
+ * Copyright (c) 2012 Juan Jose Garcia Ripoll
+ *
+ * See file 'LICENSE' for the copyright details.
+ *
+ */
 
 #ifndef ECL_ATOMICS_H
 #define AO_ASSUME_WINDOWS98

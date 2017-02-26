@@ -1,4 +1,6 @@
-;;;;  -*- Mode: Lisp; Syntax: Common-Lisp; Package: C -*-
+;;;; -*- Mode: Lisp; Syntax: Common-Lisp; indent-tabs-mode: nil; Package: C -*-
+;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
+
 ;;;;
 ;;;;  Copyright (c) 2010, Juan Jose Garcia-Ripoll
 ;;;;
@@ -12,7 +14,7 @@
 ;;;;  CMPGLOBALS -- Global variables and flag definitions
 ;;;;
 
-(in-package #-new-cmp "COMPILER" #+new-cmp "C-DATA")
+(in-package "COMPILER")
 
 ;;;
 ;;; VARIABLES
@@ -22,7 +24,6 @@
 ;;;
 ;;; Empty info struct
 ;;;
-#-new-cmp
 (defvar *info* (make-info))
 (defvar *inline-blocks* 0)
 (defvar *opened-c-braces* 0)
@@ -63,9 +64,6 @@ running the compiler. It may be updated by running ")
 (defvar *suppress-compiler-messages*
   #+ecl-min 'compiler-debug-note #-ecl-min 'compiler-note
   "A type denoting which compiler messages and conditions are _not_ displayed.")
-
-(defvar *suppress-compiler-notes* nil) ; Deprecated
-(defvar *suppress-compiler-warnings* nil) ; Deprecated
 
 (defvar *compiler-break-enable* nil)
 
@@ -109,34 +107,29 @@ running the compiler. It may be updated by running ")
 ;;; 4. lexi[j], for lexical variables in local functions
 ;;; 5. CLVi, for lexical variables in closures
 
-(defvar *lcl* 0)		; number of local variables
+(defvar *lcl* 0)                ; number of local variables
 
-#-new-cmp
-(defvar *temp* 0)		; number of temporary variables
-#-new-cmp
-(defvar *max-temp* 0)		; maximum *temp* reached
+(defvar *temp* 0)               ; number of temporary variables
+(defvar *max-temp* 0)           ; maximum *temp* reached
 
-(defvar *level* 0)		; nesting level for local functions
+(defvar *level* 0)              ; nesting level for local functions
 
-(defvar *lex* 0)		; number of lexical variables in local functions
-(defvar *max-lex* 0)		; maximum *lex* reached
+(defvar *lex* 0)                ; number of lexical variables in local functions
+(defvar *max-lex* 0)            ; maximum *lex* reached
 
-(defvar *env* 0)		; number of variables in current form
-(defvar *max-env* 0)		; maximum *env* in whole function
-(defvar *env-lvl* 0)		; number of levels of environments
-#-new-cmp
-(defvar *aux-closure* nil)	; stack allocated closure needed for indirect calls
-#-new-cmp
+(defvar *env* 0)                ; number of variables in current form
+(defvar *max-env* 0)            ; maximum *env* in whole function
+(defvar *env-lvl* 0)            ; number of levels of environments
+(defvar *aux-closure* nil)      ; stack allocated closure needed for indirect calls
 (defvar *ihs-used-p* nil)       ; function must be registered in IHS?
 
-#-new-cmp
-(defvar *next-cmacro* 0)	; holds the last cmacro number used.
-(defvar *next-cfun* 0)		; holds the last cfun used.
+(defvar *next-cmacro* 0)        ; holds the last cmacro number used.
+(defvar *next-cfun* 0)          ; holds the last cfun used.
 
 ;;;
 ;;; *tail-recursion-info* holds NIL, if tail recursion is impossible.
 ;;; If possible, *tail-recursion-info* holds
-;;	( c1-lambda-form  required-arg .... required-arg ),
+;;      ( c1-lambda-form  required-arg .... required-arg ),
 ;;; where each required-arg is a var-object.
 ;;;
 (defvar *tail-recursion-info* nil)
@@ -147,13 +140,13 @@ running the compiler. It may be updated by running ")
 ;;;
 ;;; *last-label* holds the label# of the last used label.
 ;;; *exit* holds an 'exit', which is
-;;	( label# . ref-flag ) or one of RETURNs (i.e. RETURN, RETURN-FIXNUM,
-;;	RETURN-CHARACTER, RETURN-DOUBLE-FLOAT, RETURN-SINGLE-FLOAT, or
-;;	RETURN-OBJECT).
+;;      ( label# . ref-flag ) or one of RETURNs (i.e. RETURN, RETURN-FIXNUM,
+;;      RETURN-CHARACTER, RETURN-DOUBLE-FLOAT, RETURN-SINGLE-FLOAT, or
+;;      RETURN-OBJECT).
 ;;; *unwind-exit* holds a list consisting of:
-;;	( label# . ref-flag ), one of RETURNs, TAIL-RECURSION-MARK, FRAME,
-;;	JUMP, BDS-BIND (each pushed for a single special binding), or a
-;;	LCL (which holds the bind stack pointer used to unbind).
+;;      ( label# . ref-flag ), one of RETURNs, TAIL-RECURSION-MARK, FRAME,
+;;      JUMP, BDS-BIND (each pushed for a single special binding), or a
+;;      LCL (which holds the bind stack pointer used to unbind).
 ;;;
 (defvar *last-label* 0)
 (defvar *exit*)
@@ -172,7 +165,7 @@ variable-record = (:block block-name) |
                   (var-name {:special | nil} bound-p) |
                   (symbol si::symbol-macro macro-function) |
                   CB | LB | UNWIND-PROTECT
-macro-record =	(function-name function) |
+macro-record =  (function-name function) |
                 (macro-name si::macro macro-function)
                 CB | LB | UNWIND-PROTECT
 
@@ -230,7 +223,6 @@ slashes before special characters.")
 (defvar *compiler-phase* nil)
 
 (defvar *volatile*)
-#-new-cmp
 (defvar *setjmps* 0)
 
 (defvar *compile-toplevel* T
@@ -242,50 +234,49 @@ in the translated C/C++ file. Notice that it is unspecified where these
 lines are inserted, but the order is preserved")
 
 (defvar *compile-time-too* nil)
-#-new-cmp
 (defvar *not-compile-time* nil)
 
-(defvar *permanent-data* nil)		; detemines whether we use *permanent-objects*
-					; or *temporary-objects*
-(defvar *permanent-objects* nil)	; holds { ( object (VV vv-index) ) }*
-(defvar *temporary-objects* nil)	; holds { ( object (VV vv-index) ) }*
-(defvar *load-objects* nil)		; hash with association object -> vv-location
-(defvar *load-time-values* nil)		; holds { ( vv-index form ) }*,
+(defvar *permanent-data* nil)           ; detemines whether we use *permanent-objects*
+                                        ; or *temporary-objects*
+(defvar *permanent-objects* nil)        ; holds { ( object (VV vv-index) ) }*
+(defvar *temporary-objects* nil)        ; holds { ( object (VV vv-index) ) }*
+(defvar *load-objects* nil)             ; hash with association object -> vv-location
+(defvar *load-time-values* nil)         ; holds { ( vv-index form ) }*,
 ;;;  where each vv-index should be given an object before
 ;;;  defining the current function during loading process.
 (defvar *setf-definitions* nil)         ; C forms to find out (SETF fname) locations
 
-(defvar *optimizable-constants* nil)	; (value . c1form) pairs for inlining constants
+(defvar *optimizable-constants* nil)    ; (value . c1form) pairs for inlining constants
 (defvar *use-static-constants-p*        ; T/NIL flag to determine whether one may
   #+ecl-min t #-ecl-min nil)            ; generate lisp constant values as C structs
-(defvar *static-constants* nil)		; constants that can be built as C values
+(defvar *static-constants* nil)         ; constants that can be built as C values
                                         ; holds { ( object c-variable constant ) }*
 
-(defvar *compiler-constants* nil)	; a vector with all constants
-					; only used in COMPILE
+(defvar *compiler-constants* nil)       ; a vector with all constants
+                                        ; only used in COMPILE
 
-(defvar *proclaim-fixed-args* nil)	; proclaim automatically functions
-					; with fixed number of arguments.
-					; watch out for multiple values.
+(defvar *proclaim-fixed-args* nil)      ; proclaim automatically functions
+                                        ; with fixed number of arguments.
+                                        ; watch out for multiple values.
 
-(defvar *global-vars* nil)		; variables declared special
-(defvar *global-funs* nil)		; holds	{ fun }*
-(defvar *use-c-global* nil)		; honor si::c-global declaration
-(defvar *global-cfuns-array* nil)	; holds	{ fun }*
-(defvar *linking-calls* nil)		; holds { ( global-fun-name fun symbol c-fun-name var-name ) }*
-(defvar *local-funs* nil)		; holds { fun }*
-(defvar *top-level-forms* nil)		; holds { top-level-form }*
-(defvar *make-forms* nil)		; holds { top-level-form }*
+(defvar *global-vars* nil)              ; variables declared special
+(defvar *global-funs* nil)              ; holds { fun }*
+(defvar *use-c-global* nil)             ; honor si::c-global declaration
+(defvar *global-cfuns-array* nil)       ; holds { fun }*
+(defvar *linking-calls* nil)            ; holds { ( global-fun-name fun symbol c-fun-name var-name ) }*
+(defvar *local-funs* nil)               ; holds { fun }*
+(defvar *top-level-forms* nil)          ; holds { top-level-form }*
+(defvar *make-forms* nil)               ; holds { top-level-form }*
 
 ;;;
 ;;;     top-level-form:
-;;;	  ( 'DEFUN'     fun-name cfun lambda-expr doc-vv sp )
-;;;	| ( 'DEFMACRO'  macro-name cfun lambda-expr doc-vv sp )
-;;;	| ( 'ORDINARY'  expr )
-;;;	| ( 'DECLARE'   var-name-vv )
-;;;	| ( 'DEFVAR'	var-name-vv expr doc-vv )
-;;;	| ( 'CLINES'	string* )
-;;;	| ( 'LOAD-TIME-VALUE' vv )
+;;;       ( 'DEFUN'     fun-name cfun lambda-expr doc-vv sp )
+;;;     | ( 'DEFMACRO'  macro-name cfun lambda-expr doc-vv sp )
+;;;     | ( 'ORDINARY'  expr )
+;;;     | ( 'DECLARE'   var-name-vv )
+;;;     | ( 'DEFVAR'    var-name-vv expr doc-vv )
+;;;     | ( 'CLINES'    string* )
+;;;     | ( 'LOAD-TIME-VALUE' vv )
 
 ;;; *global-entries* holds (... ( fname cfun return-types arg-type ) ...).
 (defvar *global-entries* nil)
@@ -311,11 +302,8 @@ be deleted if they have been opened with LoadLibrary.")
     (*callbacks* nil)
     (*cmp-env-root* (copy-tree *cmp-env-root*))
     (*cmp-env* nil)
-    #-new-cmp
     (*max-temp* 0)
-    #-new-cmp
     (*temp* 0)
-    #-new-cmp
     (*next-cmacro* 0)
     (*next-cfun* 0)
     (*last-label* 0)
@@ -337,18 +325,6 @@ be deleted if they have been opened with LoadLibrary.")
     (*clines-string-list* '())
     (*inline-blocks* 0)
     (*open-c-braces* 0)
-    #+new-cmp
-    (*type-and-cache* (type-and-empty-cache))
-    #+new-cmp
-    (*type-or-cache* (type-or-empty-cache))
-    #+new-cmp
-    (*values-type-or-cache* (values-type-or-empty-cache))
-    #+new-cmp
-    (*values-type-and-cache* (values-type-and-empty-cache))
-    #+new-cmp
-    (*values-type-primary-type-cache* (values-type-primary-type-empty-cache))
-    #+new-cmp
-    (*values-type-to-n-types-cache* (values-type-to-n-types-empty-cache))
     (si::*defun-inline-hook* 'maybe-install-inline-function)
     (*machine* (or *machine* +default-machine+))
     (*optimizable-constants* (make-optimizable-constants *machine*))
