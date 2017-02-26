@@ -1,3 +1,2 @@
 harden-configure.patch
 patch-hurd.patch
-bignums-dont-collect-gmp-internal-memory.patch
