@@ -28,6 +28,8 @@
            "*CC-OPTIMIZE*"
            "*USER-CC-FLAGS*"
            "*USER-LD-FLAGS*"
+           "*SUPPRESS-COMPILER-NOTES*"
+           "*SUPPRESS-COMPILER-WARNINGS*"
            "*SUPPRESS-COMPILER-MESSAGES*"
            "BUILD-ECL"
            "BUILD-PROGRAM"
@@ -44,6 +46,8 @@
            "COMPILER-MESSAGE-FILE"
            "COMPILER-MESSAGE-FILE-POSITION"
            "COMPILER-MESSAGE-FORM"
+           "*SUPPRESS-COMPILER-WARNINGS*"
+           "*SUPPRESS-COMPILER-NOTES*"
            "*SUPPRESS-COMPILER-MESSAGES*"
            "INSTALL-C-COMPILER"
            "UPDATE-COMPILER-FEATURES")

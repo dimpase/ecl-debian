@@ -14,7 +14,7 @@
 ;;;; CMPC-WT -- Routines for writing code to C files.
 ;;;;
 
-(in-package "COMPILER")
+(in-package #-new-cmp "COMPILER" #+new-cmp "C-BACKEND")
 
 (defun wt1 (form)
   (cond ((not (floatp form))
@@ -109,12 +109,16 @@
 ;;;
 
 (defun wt-go (label)
+  #-new-cmp
   (setf (cdr label) t
         label (car label))
   (wt "goto L" label ";"))
 
 (defun wt-label (label)
-  (when (cdr label) (wt-nl1 "L" (car label) ":;")))
+  #-new-cmp
+  (when (cdr label) (wt-nl1 "L" (car label) ":;"))
+  #+new-cmp
+  (wt-nl1 "L" label ":;"))
 
 ;;;
 ;;; C/C++ COMMENTS

@@ -15,9 +15,6 @@
 /* Use CMU Common-Lisp's FORMAT routine */
 #undef ECL_CMU_FORMAT
 
-/* Do we use C or C++ compiler to compile ecl? */
-#undef ECL_CXX_CORE
-
 /* Stack grows downwards */
 #undef ECL_DOWN_STACK
 
@@ -30,7 +27,7 @@
 /* ECL_LONG_FLOAT */
 #undef ECL_LONG_FLOAT
 
-/* ECL_LONG_LONG_BITS */
+/* ECL_LOING_LONG_BITS */
 #undef ECL_LONG_LONG_BITS
 
 /* Define if your newline is CR */
@@ -132,9 +129,6 @@
 /* Define to 1 if you have the <fcntl.h> header file. */
 #undef HAVE_FCNTL_H
 
-/* Define to 1 if you have the `feenableexcept' function. */
-#undef HAVE_FEENABLEEXCEPT
-
 /* Define to 1 if you have the <fenv.h> header file. */
 #undef HAVE_FENV_H
 
@@ -155,9 +149,6 @@
 
 /* Define to 1 if you have the `frexpf' function. */
 #undef HAVE_FREXPF
-
-/* Define to 1 if you have the `frexpl' function. */
-#undef HAVE_FREXPL
 
 /* Define to 1 if you have the `fseeko' function. */
 #undef HAVE_FSEEKO
@@ -191,9 +182,6 @@
 
 /* Define to 1 if you have the `ldexpf' function. */
 #undef HAVE_LDEXPF
-
-/* Define to 1 if you have the `ldexpl' function. */
-#undef HAVE_LDEXPL
 
 /* HAVE_LIBFFI */
 #undef HAVE_LIBFFI
@@ -270,9 +258,6 @@
 
 /* HAVE_POSIX_RWLOCK */
 #undef HAVE_POSIX_RWLOCK
-
-/* Define to 1 if the system has the type `pthread_rwlock_t'. */
-#undef HAVE_PTHREAD_RWLOCK_T
 
 /* Define to 1 if the system has the type `ptrdiff_t'. */
 #undef HAVE_PTRDIFF_T

@@ -3,16 +3,40 @@
 
 ECL=@prefix@/@bindir@/ecl@EXEEXT@
 
-.PHONY: all
+all: show-fails
 
-all: check
+.PHONY: do-regressions cleanup clean-sources update
 
-check: config.lsp
-	$(ECL) -norc \
-                -load config.lsp \
-                -eval "(ecl-tests::run-tests '($(TESTS)))" \
-                -eval "(ext:quit)" \
-                2>&1 | tee check.log
+BUGS_FILES := $(shell find ../../src/tests/regressions/ -type f)
 
+regressions.log: config.lsp
+	$(MAKE) do-regressions
+
+do-regressions: regressions config.lsp
+	$(ECL) -norc -load config.lsp -eval '(ecl-tests::run-regressions-tests)' -eval '(ext:quit)' 2>&1 | tee regressions.log
+
+show-fails: regressions.log
+	tail -n 16 regressions.log
+
+#
+# Create directories
+#
+regressions: config.lsp $(BUGS_FILES)
+	$(ECL) -norc -load config.lsp -eval '(ecl-tests::ensure-regressions)' -eval '(ext:quit)' < /dev/null
+
+#
+# Cleanup
+#
 clean:
-	rm -rf regressions.log cache
+	rm -rf regressions.log
+
+clean-sources:
+	test -f config.lsp.in || rm -rf bugs
+	rm -rf regressions
+
+distclean: clean-sources clean
+	rm -rf cache
+
+update: clean-sources
+	$(MAKE) regressions
+

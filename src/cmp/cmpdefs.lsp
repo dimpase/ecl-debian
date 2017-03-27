@@ -52,6 +52,9 @@ coprocessor).")
 			  (t
 			   "~A -I. \"-I~A\" ~A ~:[~*~;~A~] -w -c \"~A\" -o \"~A\"~{ '~A'~}")))
 
+(defvar *cc-is-cxx* @CC_IS_CXX@
+  "ECL's compiler is really the C++ compiler, not a C compiler.")
+
 #-dlopen
 (defvar *ld-flags* "@LDFLAGS@ -lecl @CORE_LIBS@ @FASL_LIBS@ @LIBS@")
 #+dlopen
@@ -73,9 +76,8 @@ coprocessor).")
 (defvar +object-file-extension+ "@OBJEXT@")
 (defvar +executable-file-format+ "~a@EXEEXT@")
 
-(defvar *ecl-include-directory* "@includedir\@/")
-(defvar *ecl-library-directory* "@libdir\@/")
-(defvar *ecl-data-directory* "@ecldir\@/")
+(defvar *ecl-include-directory* @includedir\@)
+(defvar *ecl-library-directory* @libdir\@)
 
 (defvar *ld-rpath*
   (let ((x "@ECL_LDRPATH@"))

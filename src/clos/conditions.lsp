@@ -180,9 +180,7 @@
                  (name (first expression2)))
             (case name
               (SIGNAL
-               (setq condition-form `(coerce-to-condition ,(second expression2)
-                                      (list ,@ (cddr expression2))
-                                      'simple-condition 'signal)))
+               (setq condition-form (second expression2)))
               (ERROR
                (setq condition-form `(coerce-to-condition ,(second expression2)
                                       (list ,@(cddr expression2))
@@ -405,7 +403,7 @@
 
 (defun signal (datum &rest arguments)
   (let* ((condition
-           (coerce-to-condition datum arguments 'SIMPLE-CONDITION 'SIGNAL))
+          (coerce-to-condition datum arguments 'SIMPLE-CONDITION 'SIGNAL))
          (*handler-clusters* *handler-clusters*))
     (if (typep condition *break-on-signals*)
         (break "~A~%Break entered because of *BREAK-ON-SIGNALS*."
@@ -413,8 +411,9 @@
     (loop (unless *handler-clusters* (return))
           (let ((cluster (pop *handler-clusters*)))
             (dolist (handler cluster)
-              (when (typep condition (car handler))
-                (funcall (cdr handler) condition)))))
+<             (when (typep condition (car handler))
+                (funcall (cdr handler) condition)
+                ))))
     nil))
 
 

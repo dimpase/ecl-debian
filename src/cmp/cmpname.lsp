@@ -18,7 +18,10 @@
 ;;;; functions. This initialization function has a C name which needs
 ;;;; to be unique. This file has functions to create such names.
 
+#-new-cmp
 (in-package "COMPILER")
+#+new-cmp
+(in-package "C-TAGS")
 
 (defun encode-number-in-name (number)
   ;; Encode a number in an alphanumeric identifier which is a valid C name.
@@ -100,14 +103,12 @@ the function name it precedes."
       (let ((name (read-name stream)))
         name)))
   #+pnacl
-  (let* ((pnacl-dis
-          (or (ext:getenv "PNACL_DIS")
-              (error "Please set the PNACL_DIS environment variable to your ~
-                      toolchain's pnacl-dis location")))
+  (let* ((pnacl-dis (or (ext:getenv "PNACL_DIS")
+                        (error "please set the PNACL_DIS environment variable to your toolchain's pnacl-dis location")))
          (stream (ext:run-program
                   pnacl-dis
                   (list (namestring (translate-logical-pathname file)))
-                  :wait nil :input nil :output :stream :error :output)))
+                  :wait nil :input NIL :output :STREAM :error :OUTPUT)))
     (unless stream
       (error "Unable to disasemble file ~a" file))
     (when (search-tag stream tag)

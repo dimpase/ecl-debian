@@ -22,8 +22,7 @@
 
 (in-package "SYS")
 
-(pushnew :cdr-7 *features*)
-(pushnew :formatter *features*)
+(push :formatter *features*)
 
 ;;;; Float printing.
 
@@ -392,8 +391,12 @@
                   (incf posn)
                   (push (cons posn (get-char)) params)
                   (incf posn)
-                  (unless (char= (get-char) #\,)
-		   (decf posn)))
+                  (case (get-char)
+                    (#\,)
+                    ((#\: #\@)
+                     (decf posn))
+                    (t
+                     (return))))
                  ((char= char #\,)
                   (push (cons posn nil) params))
                  ((char= char #\:)
@@ -411,6 +414,8 @@
                              :offset posn)
                       (setf atsignp t)))
                  (t
+                  (when (char= (schar string (1- posn)) #\,)
+                    (push (cons (1- posn) nil) params))
                   (return))))
          (incf posn))
       (let ((char (get-char)))
@@ -2820,13 +2825,13 @@
 (def-format-interpreter #\/ (string start end colonp atsignp params)
   (let ((symbol (extract-user-function-name string start end)))
     (collect ((args))
-      (dolist (param-and-offset params)
-	(let ((param (cdr param-and-offset)))
-	  (case param
-	    (:arg (args (next-arg)))
-	    (:remaining (args (length args)))
-	    (t (args param)))))
-      (apply (fdefinition symbol) stream (next-arg) colonp atsignp (args)))))
+             (dolist (param-and-offset params)
+               (let ((param (cdr param-and-offset)))
+                 (case param
+                   (:arg (let ((x (next-arg))) (when x (args x))))
+                   (:remaining (args (length args)))
+                   (t (args param)))))
+             (apply (fdefinition symbol) stream (next-arg) colonp atsignp (args)))))
 
 (defun extract-user-function-name (string start end)
   (declare (si::c-local))
