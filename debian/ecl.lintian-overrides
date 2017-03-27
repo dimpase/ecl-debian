@@ -1,2 +1,2 @@
 ecl: package-name-doesnt-match-sonames libecl16.1
-ecl: non-dev-pkg-with-shlib-symlink usr/lib/libecl.so.16.1.3 usr/lib/libecl.so
+ecl: non-dev-pkg-with-shlib-symlink usr/lib/libecl.so.16.1.2 usr/lib/libecl.so
