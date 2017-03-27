@@ -37,9 +37,6 @@
 (defparameter *use-dffi* t)
 
 (defmacro def-foreign-type (name definition)
-  "Syntax: (def-foreign-type name definition)
-
-Defines a new foreign type."
   `(eval-when (:compile-toplevel :load-toplevel :execute)
      (setf (gethash ',name ffi::*ffi-types*) ',definition)))
 
@@ -62,10 +59,6 @@ Defines a new foreign type."
   `(setf ,data (* (ceiling (/ ,data ,align)) ,align)))
 
 (defun size-of-foreign-type (name)
-  "Syntax: (size-of-foreign-type ftype)
-
-Returns the number of data bytes used by a foreign object type. This
-does not include any Lisp storage overhead."
   (let* ((size 0) align
          (type (%convert-to-ffi-type name)))
     (unless type
@@ -110,10 +103,6 @@ does not include any Lisp storage overhead."
     (values size (or align 0))))
 
 (defun allocate-foreign-object (type &optional (size 0 size-flag))
-    "Syntax: (allocate-foreign-object type &optional (size 0)
-
-Allocates an instance of a foreign object. It returns a pointer to the
-object."
   (let ((type-size (size-of-foreign-type type)))
     (cond ((null size-flag)
            (si::allocate-foreign-data type type-size))
@@ -124,9 +113,6 @@ object."
            (error "~A is not a valid array dimension size" size)))))
 
 (defun free-foreign-object (ptr)
-  "Syntax: (free-foreign-object ptr)
-
-Frees memory that was allocated for a foreign object."
   (si::free-foreign-data ptr))
 
 ;;;----------------------------------------------------------------------
@@ -134,9 +120,6 @@ Frees memory that was allocated for a foreign object."
 ;;;
 
 (defmacro def-enum (name values-list &key (separator-string "#"))
-  "Syntax: (def-enum name (&rest values-list) &key (separator-string \"#\")
-
-Defines a C enumeration"
   (let ((constants '())
         (value -1)
         field
@@ -176,9 +159,6 @@ Defines a C enumeration"
 ;;;
 
 (defmacro def-struct (name &rest slots)
-  "Syntax: (def-struct name (SLOT-NAME . SLOT-TYPE)*)
-
-Defines a C structure. SLOT-TYPE is denoted by a FFI type."
   (let ((struct-type (list :struct))
         field
         type)
@@ -215,9 +195,6 @@ Defines a C structure. SLOT-TYPE is denoted by a FFI type."
     (values ndx nil nil)))
 
 (defun get-slot-value (object struct-type field)
-  "Syntax: (get-slot-value object struct-type field)
-
-Accesses a FIELD value from a OBJECT of type STRUCT-TYPE."
   (multiple-value-bind (slot-ndx slot-type slot-size)
       (slot-position struct-type field)
     (unless slot-size
@@ -232,9 +209,6 @@ Accesses a FIELD value from a OBJECT of type STRUCT-TYPE."
     (%foreign-data-set object slot-ndx slot-type value)))
 
 (defun get-slot-pointer (object struct-type field)
-  "Syntax: (get-slot-pointer object struct-type field)
-
-Accesses a FIELD pointer value from a OBJECT of type STRUCT-TYPE."
   (multiple-value-bind (slot-ndx slot-type slot-size)
       (slot-position struct-type field)
     (unless slot-size
@@ -250,10 +224,6 @@ Accesses a FIELD pointer value from a OBJECT of type STRUCT-TYPE."
   `(def-foreign-type ,name (* ,element-type)))
 
 (defun deref-array (array array-type position)
-  "Syntax: (deref-array array type position)
-
-Dereferences (retrieves) the value of the foreign ARRAY element on the
-POSITION."
   (setf array-type (%convert-to-ffi-type array-type))
   (let* ((element-type (second array-type))
          (element-size (size-of-foreign-type element-type))
@@ -302,9 +272,6 @@ POSITION."
 ;;;
 
 (defmacro def-union (name &rest slots)
-  "Syntax: (def-union name (field-name field-type)*)
-
-Defines a foreign union type."
   (let ((struct-type (list :union))
         field
         type)
@@ -324,25 +291,19 @@ Defines a foreign union type."
 (defparameter +null-cstring-pointer+ (si:allocate-foreign-data :pointer-void 0))
 
 (defun pointer-address (ptr)
-  "Syntax: (pointer-address ptr)
-
-Returns the address as an integer of a pointer."
   (si::foreign-data-address ptr))
 
-(defun deref-pointer (ptr ftype)
-  "Syntax: (deref-pointer ptr ftype)
-
-Returns the object to which a pointer points."
+(defun deref-pointer (ptr type)
   ;; FIXME! No checking!
-  (setf ftype (%convert-to-ffi-type ftype))
-  (cond ((foreign-elt-type-p ftype)
-         (si::foreign-data-ref-elt ptr 0 ftype))
-        ((atom ftype)
-         (error "Unknown foreign primitive type: ~A" ftype))
-        ((eq (first ftype) '*)
+  (setf type (%convert-to-ffi-type type))
+  (cond ((foreign-elt-type-p type)
+         (si::foreign-data-ref-elt ptr 0 type))
+        ((atom type)
+         (error "Unknown foreign primitive type: ~A" type))
+        ((eq (first type) '*)
          (si::foreign-data-recast (si::foreign-data-ref-elt ptr 0 :pointer-void)
-                                  (size-of-foreign-type (second ftype))
-                                  (second ftype)))
+                                  (size-of-foreign-type (second type))
+                                  (second type)))
         (t
          (error "Cannot dereference pointer to foreign data, ~A" ptr))
   ))
@@ -354,12 +315,9 @@ Returns the object to which a pointer points."
       (si::foreign-data-set-elt ptr 0 type value)
       (si::foreign-data-set ptr 0 value)))
 
-(defun make-null-pointer (ftype)
-  "Syntax; (make-null-pointer ftype)
-
-Creates a NULL pointer of a specified type."
-  ;(setf ftype (%convert-to-ffi-type ftype))
-  (si::allocate-foreign-data ftype 0))
+(defun make-null-pointer (type)
+  ;(setf type (%convert-to-ffi-type type))
+  (si::allocate-foreign-data type 0))
 
 (defun make-pointer (addr type)
   (c-inline (type (size-of-foreign-type type) addr) (:object :unsigned-long :unsigned-long) :object
@@ -379,23 +337,14 @@ Creates a NULL pointer of a specified type."
 ;;;
 
 (defun null-char-p (char)
-  "Syntax: (null-char-p char)
-
-Tests a character for NULL value."
   (eq char #.(code-char 0)))
 
 (defun ensure-char-character (char)
-  "Syntax: (ensure-char-character object)
-
-Ensures that a dereferenced char or integer is a lisp character."
   (cond ((characterp char) char)
         ((integerp char) (code-char char))
         (t (error "~a cannot be coerced to type CHARACTER" char))))
 
 (defun ensure-char-integer (char)
-    "Syntax: (ensure-char-integer object)
-
-Ensures that a dereferenced char or integer is a lisp integer."
   (cond ((characterp char) (char-code char))
         ((integerp char) char)
         (t (error "~a cannot be coerced to type INTEGER" char))))
@@ -407,38 +356,21 @@ Ensures that a dereferenced char or integer is a lisp integer."
   (si::foreign-data-pointer obj 0 1 '(* :unsigned-char)))
 
 (defmacro convert-from-cstring (object)
-  "Syntax: (convert-from-cstring object)
-
-Converts a Lisp string to a cstring. This is most often used when
-processing the results of a foreign function that returns a cstring."
   object)
 
 (defmacro convert-to-cstring (object)
-  "Syntax: (convert-to-cstring object)
-
-Converts cstring OBJECT to a Lisp string. Allocates memory."
   ;; This enforces that the string contains only as many characters as the
   ;; fill-pointer determines Since ECL always sets a 0 character after the
   ;; last element of a string, this way, the string is always zero-terminated
   `(si:copy-to-simple-base-string ,object))
 
-(defmacro free-cstring (cstring)
-  "Syntax: (free-cstring cstring)
-
-Free memory used by CSTRING."
-  cstring)
+(defmacro free-cstring (object)
+  object)
 
 (defmacro with-cstring ((cstring string) &body body)
-  "Syntax: (with-cstring (cstring string) &body body)
-
-Binds CSTRING to a cstring created from conversion of a STRING and
-evaluated the BODY. Automatically frees the CSTRING."
   `(let ((,cstring (convert-to-cstring ,string))) ,@body))
 
 (defmacro with-cstrings (bindings &rest body)
-  "Syntax: (with-cstrings ((cstring string)*) &body body)
-
-See: WITH-CSTRING. Works similar to LET*."
   (if bindings
     `(with-cstring ,(car bindings)
       (with-cstrings ,(cdr bindings)
@@ -453,11 +385,6 @@ See: WITH-CSTRING. Works similar to LET*."
 
 (defun convert-from-foreign-string (foreign-string
                                     &key length (null-terminated-p t))
-  "Syntax: (convert-from-foreign-string
-         foreign-string &key length (null-terminated-p t)
-
-Returns a Lisp string from a foreign string FOREIGN-STRING. Can
-translated ASCII and binary strings."
   (cond ((and (not length) null-terminated-p)
          (setf length (foreign-string-length foreign-string)))
         ((not (integerp length))
@@ -473,10 +400,6 @@ translated ASCII and binary strings."
        :side-effects t))
 
 (defun convert-to-foreign-string (string-designator)
-  "Syntax: (convert-to-foreign-string string-designator)
-
-Converts a Lisp string to a foreign string. Memory should be freed
-with free-foreign-object."
   (let ((lisp-string (string string-designator)))
     (c-inline (lisp-string) (t) t
        "{
@@ -491,19 +414,11 @@ with free-foreign-object."
         :side-effects t)
     ))
 
-(defun allocate-foreign-string (size &key (unsigned T))
-  "Syntax: (allocate-foreign-string size &key (unsigned t))
-
-Allocates space for a foreign string. Memory should be freed with
-FREE-FOREIGN-OBJECT. Initial contents of the string are undefined."
+(defun allocate-foreign-string (size &key unsigned)
   (si::allocate-foreign-data `(* ,(if unsigned :unsigned-char :char))
                              (1+ size)))
 
 (defmacro with-foreign-string ((foreign-string lisp-string) &rest body)
-  "Syntax: (with-foreign-string ((foreign-string lisp-string) &rest body)
-
-Binds FOREIGN-STRING to a foreign string created from conversion of a
-STRING and evaluated the BODY. Automatically frees the FOREIGN-STRING."
   (let ((result (gensym)))
     `(let* ((,foreign-string (convert-to-foreign-string ,lisp-string))
             (,result (progn ,@body)))
@@ -511,9 +426,6 @@ STRING and evaluated the BODY. Automatically frees the FOREIGN-STRING."
        ,result)))
 
 (defmacro with-foreign-strings (bindings &rest body)
-  "Syntax: (with-foreign-strings ((foreign-string string)*) &body body)
-
-See: WITH-FOREIGN-STRING. Works similar to LET*."
   (if bindings
     `(with-foreign-string ,(car bindings)
       (with-foreign-strings ,(cdr bindings)
@@ -525,10 +437,6 @@ See: WITH-FOREIGN-STRING. Works similar to LET*."
 ;;;
 
 (defmacro with-foreign-object ((var type) &body body)
-  "Syntax: (with-foreign-object (var type) &body body)
-
-Wraps the allocation, binding and destruction of a foreign object
-around a body of code"
   `(let ((,var (allocate-foreign-object ,type)))
      (unwind-protect
          (progn ,@body)
@@ -542,10 +450,6 @@ around a body of code"
     `(progn ,@body)))
 
 (defmacro with-cast-pointer (bind &body body)
-  "Syntax: (with-cast-pointer (var ptr ftype) &body body)
-
-Executes BODY with PTR cast to be a pointer to type FTYPE. VAR will be
-bound to this value during the execution of body."
   (let (binding-name ptr type)
     (case (length bind)
       (2 (setf binding-name (first bind)
@@ -594,7 +498,7 @@ bound to this value during the execution of body."
 
 ;;; FIXME! We should turn this into a closure generator that produces no code.
 #+DFFI
-(defmacro def-lib-function (name args &key returning module (call :default))
+(defmacro def-lib-function (name args &key returning module (call :cdecl))
   (multiple-value-bind (c-name lisp-name) (lisp-to-c-name name)
     (let* ((return-type (ffi::%convert-to-return-type returning))
            (return-required (not (eq return-type :void)))
@@ -603,12 +507,7 @@ bound to this value during the execution of body."
         (defun ,lisp-name ,(mapcar #'first args)
           (si::call-cfun c-fun ',return-type ',argtypes (list ,@(mapcar #'first args)) ,call))))))
 
-(defmacro def-function (name args &key module (returning :void) (call :default))
-  "Syntax: (def-function name args
-                         &key module (returning :void) (call :default)
-
-Declares a foreign function."
-  (declare (ignorable call))
+(defmacro def-function (name args &key module (returning :void) (call :cdecl))
   #+DFFI 
   (when (and module *use-dffi*)
     (return-from def-function
@@ -639,11 +538,7 @@ Declares a foreign function."
       )))
 
 (defmacro def-foreign-var (name type module)
-  "Syntax: (def-foreign-var name type module)
-
-Defines a symbol macro which can be used to access (get and set) the
-value of a variable in foreign code."
-  (declare (ignorable module))
+  ;(declare (ignore module))
   (multiple-value-bind (c-name lisp-name)
       (lisp-to-c-name name)
     (let* ((ffi-type (%convert-to-ffi-type type))
@@ -669,10 +564,6 @@ value of a variable in foreign code."
       )))
 
 (defun find-foreign-library (names directories &key drive-letters types)
-  "Syntax: (find-foreign-library names directories &key drive-letters type)
-
-Finds a foreign library by searching through a number of possible
-locations. Returns the path of the first found file."
   (unless (listp names)
     (setq names (list names)))
   (unless (listp directories)
@@ -709,41 +600,37 @@ locations. Returns the path of the first found file."
 (defparameter +loaded-libraries+ nil)
 
 (defun do-load-foreign-library (tmp &optional system-library)
-  (let* ((path (cond ((pathnamep tmp) tmp)
-                     ((probe-file (setf tmp (string tmp))) tmp)
-                     (t (compile-file-pathname tmp :type #+msvc :lib #-msvc :dll))))
-         (filename (namestring path))
-         (pack (find-package "COMPILER"))
-         (flag (if system-library
-                   (concatenate 'string "-l" tmp)
-                   filename)))
-    (unless (find filename ffi::+loaded-libraries+ :test #'string-equal)
-      (setf (symbol-value (intern "*LD-FLAGS*" pack))
-            (concatenate 'string (symbol-value (intern "*LD-FLAGS*" pack)) " " flag))
-      (setf (symbol-value (intern "*LD-BUNDLE-FLAGS*" pack))
-            (concatenate 'string (symbol-value (intern "*LD-BUNDLE-FLAGS*" pack))
-                         " " flag))
-      (setf (symbol-value (intern "*LD-SHARED-FLAGS*" pack))
-            (concatenate 'string (symbol-value (intern "*LD-SHARED-FLAGS*" pack))
-                         " " flag))
-      (push filename ffi::+loaded-libraries+))
-    t))
+ (let* ((path (cond ((pathnamep tmp) tmp)
+                    ((probe-file (setf tmp (string tmp))) tmp)
+                    (t (compile-file-pathname tmp :type #+msvc :lib #-msvc :dll))))
+        (filename (namestring path))
+        (pack (find-package "COMPILER"))
+        (flag (if system-library
+                  (concatenate 'string "-l" tmp)
+                  filename)))
+   (unless (find filename ffi::+loaded-libraries+ :test #'string-equal)
+     (setf (symbol-value (intern "*LD-FLAGS*" pack))
+           (concatenate 'string (symbol-value (intern "*LD-FLAGS*" pack)) " " flag))
+     (setf (symbol-value (intern "*LD-BUNDLE-FLAGS*" pack))
+           (concatenate 'string (symbol-value (intern "*LD-BUNDLE-FLAGS*" pack))
+                        " " flag))
+     (setf (symbol-value (intern "*LD-SHARED-FLAGS*" pack))
+           (concatenate 'string (symbol-value (intern "*LD-SHARED-FLAGS*" pack))
+                        " " flag))
+     (push filename ffi::+loaded-libraries+))
+   t))
 
 (defmacro load-foreign-library (filename &key module supporting-libraries force-load
-                                           system-library &environment env)
-  "Syntax: (load-foreign-library filename
-              &key module supporting-libraries force-load system-library)
-
-Loads a foreign library."
-  (declare (ignore module force-load supporting-libraries))
-  (let ((compile-form (and (constantp filename env)
-                           `((eval-when (:compile-toplevel)
-                               (do-load-foreign-library ,filename
-                                 ,(ext:constant-form-value system-library))))))
-        (dyn-form #+dffi (when (and (not system-library) *use-dffi*)
-                           `((si:load-foreign-module ,filename)))
-                  #-dffi nil))
-    `(progn ,@compile-form ,@dyn-form)))
+                                system-library &environment env)
+ (declare (ignore module force-load supporting-libraries))
+ (let ((compile-form (and (constantp filename env)
+                          `((eval-when (:compile-toplevel)
+                              (do-load-foreign-library ,filename
+                                ,(ext:constant-form-value system-library))))))
+       (dyn-form #+dffi (when (and (not system-library) *use-dffi*)
+                          `((si:load-foreign-module ,filename)))
+                 #-dffi nil))
+   `(progn ,@compile-form ,@dyn-form)))
 
 ;;;----------------------------------------------------------------------
 ;;; CALLBACKS
@@ -758,7 +645,7 @@ Loads a foreign library."
   (if *use-dffi*
       (multiple-value-bind (name call-type) (if (consp name)
                                                 (values-list name)
-                                                (values name :default))
+                                                (values name :cdecl))
         (let ((arg-types (mapcar #'second arg-desc))
               (arg-names (mapcar #'first arg-desc)))
           `(si::make-dynamic-callback
@@ -776,23 +663,14 @@ Loads a foreign library."
 ;;; COMPATIBILITY WITH OLDER FFI
 ;;;
 
-(defun clines (&rest c/c++-code)
-  "Syntax: (clines &rest c/c++-code)
-
-CLINES is used to inline C/C++ declarations (strings) at the beginning
-of the produced C/C++ header file. Works only in the compiled code and
-is required to be a toplevel form."
+(defun clines (&rest args)
   (error "The special form clines cannot be used in the interpreter: ~A"
-         c/c++-code))
+         args))
 
 (eval-when (:load-toplevel :execute)
-  (defmacro c-inline (lisp-values arg-c-types return-type c/c++-code
-                      &key (side-effects t) one-liner)
-    `(error "The special form c-inline cannot be used in the interpreter: ~S"
-            (list (list ,@lisp-values) ',arg-c-types ',return-type
-                  ,c/c++-code
-                  :side-effects ,side-effects
-                  :one-liner ,one-liner)))
+  (defmacro c-inline (args arg-types ret-type &body others)
+    `(error "The special form c-inline cannot be used in the interpreter: ~A"
+      (list (list ,@args) ',arg-types ',ret-type ,@others)))
   (defmacro c-progn (args &rest body)
     (declare (ignore args))
     '(error "The special form c-progn cannot be used in the interpreter.")))
@@ -810,39 +688,35 @@ the actual arguments are of the specified type."
               (declaim (ftype (function ,arg-types ,type) ,fun))
               (c::def-inline ,fun :always ,arg-types ,type ,code)))
 
-(defmacro defla (name args &body body)
-  "Syntax: (defla name args &body body)
+(defmacro defla (&rest body)
+"Syntax: (defla name lambda-list &body body)" "
 
 Used to DEFine Lisp Alternative.  For the interpreter, DEFLA is equivalent to
 DEFUN, but the compiler ignores this form."
   `(eval-when (:execute)
-     (defun ,name ,args ,@body)))
+     (defun ,@body)))
 
-(defmacro defcbody (name arg-types result-type c-expression)
-  "Syntax: (defcbody name arg-types result-type c-expression)
+(defmacro defcbody (name arg-types result-type C-expr)
+"Syntax: (defcbody symbol (&rest arg-types) result-type &body body)" "
 
-The compiler defines a Lisp function named by NAME whose body consists
-of the C code of the string C-EXPRESSION. In the C-EXPRESSION one can
-reference the arguments of the function as \"#0\", \"#1\", etc.
-
-The interpreter ignores this form.  ARG-TYPES are argument types of
-the defined Lisp function and RESULT-TYPE is its return type."
+The compiler defines a Lisp function named by SYMBOL whose body consists of the
+C code of the string BODY. In the BODY one can reference the arguments of the
+function as \"#0\", \"#1\", etc.
+The interpreter ignores this form.  ARG-TYPEs are argument types of the
+defined Lisp function and VALUE-TYPE is its the return type."
   (let ((args (mapcar #'(lambda (x) (gensym)) arg-types)))
   `(defun ,name ,args
      (c-inline ,args ,arg-types ,result-type
-               ,c-expression :one-liner t))))
+               ,C-expr :one-liner t))))
 
 (defmacro defentry (name arg-types c-name &key no-interrupts)
-  "Syntax: (defentry name arg-types (result-type function-name)
-                  &key no-interrupts)
+"Syntax: (defentry symbol (&rest arg-types*) (result-type function-name))
 
-The compiler defines a Lisp function named by NAME whose body consists
-of a calling sequence to the C language function named by
-FUNCTION-NAME.
-
-The interpreter ignores this form.  ARG-TYPES are argument types of
-the C function and RESULT-TYPE is its return type. Symbols OBJECT,
-INT, CHAR, CHAR*, FLOAT, DOUBLE are allowed for these types."
+The compiler defines a Lisp function named by SYMBOL whose body consists of a
+calling sequence to the C language function named by FUNCTION-NAME.  The
+interpreter ignores this form.  ARG-TYPEs are argument types of the C function
+and VALUE-TYPE is the return type of the C function.  Symbols OBJECT, INT,
+CHAR, CHAR*, FLOAT, DOUBLE are allowed for these types."
   (let ((output-type :object)
         (args (mapcar #'(lambda (x) (gensym)) arg-types)))
     (if (consp c-name)

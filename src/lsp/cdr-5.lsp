@@ -2,16 +2,14 @@
 ;;;; vim: set filetype=lisp tabstop=8 shiftwidth=2 expandtab:
 
 ;;;;
-;;;;  Copyright (c) 2011 Juan Jose Garcia-Ripoll
+;;;;  Copyright (c) 2011, Juan Jose Garcia-Ripoll
 ;;;;
-;;;;  See file 'LICENSE' for the copyright details.
+;;;;    This program is free software; you can redistribute it and/or
+;;;;    modify it under the terms of the GNU Library General Public
+;;;;    License as published by the Free Software Foundation; either
+;;;;    version 2 of the License, or (at your option) any later version.
 ;;;;
-
-;;;; CDR 5: Sub-interval Numerical Types for Common Lisp
-;;;;
-;;;;   https://common-lisp.net/project/cdr/document/5/index.html
-
-(pushnew :cdr-5 *features*)
+;;;;    See file '../Copyright' for full details.
 
 (in-package "EXT")
 

@@ -63,11 +63,11 @@
 ;;; ----------------------------------------------------------------------
 ;;; Methods
 
-(defun install-method (name qualifiers specializers lambda-list fun &rest options)
+(defun install-method (name qualifiers specializers lambda-list fun wrap &rest options)
   (declare (notinline ensure-generic-function))
 ;  (record-definition 'method `(method ,name ,@qualifiers ,specializers))
   (let* ((gf (ensure-generic-function name))
-         (fun (wrapped-method-function fun))
+         (fun (if wrap (wrapped-method-function fun) fun))
          (specializers (mapcar #'(lambda (x)
                                    (cond ((consp x) (intern-eql-specializer (second x)))
                                          ((typep x 'specializer) x)

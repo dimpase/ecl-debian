@@ -5,9 +5,13 @@
 ;;; ----------------------------------------------------------------------
 ;;; Macros only used in the code of the compiler itself:
 
+#-new-cmp
 (in-package "COMPILER")
+#-new-cmp
 (import 'sys::arglist "COMPILER")
 (import 'sys::with-clean-symbols "COMPILER")
+#+new-cmp
+(in-package "C-DATA")
 
 ;; ----------------------------------------------------------------------
 ;; CACHED FUNCTIONS

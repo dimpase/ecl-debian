@@ -21,7 +21,7 @@
 ; Welcome page
 !insertmacro MUI_PAGE_WELCOME
 ; License page
-!insertmacro MUI_PAGE_LICENSE "${ECLDIR}\doc\LICENSE"
+!insertmacro MUI_PAGE_LICENSE "${ECLDIR}\doc\Copyright"
 ; Directory page
 !insertmacro MUI_PAGE_DIRECTORY
 ; Instfiles page

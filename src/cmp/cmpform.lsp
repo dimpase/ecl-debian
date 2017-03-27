@@ -114,6 +114,7 @@
 (defun c1form-primary-type (form)
   (values-type-primary-type (c1form-type form)))
 
+#-new-cmp
 (defun location-primary-type (form)
   (c1form-primary-type form))
 

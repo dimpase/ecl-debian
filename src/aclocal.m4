@@ -6,7 +6,7 @@ AC_DEFUN([ECL_LONG_DOUBLE],[
 if test "$enable_longdouble" != "no" ; then
 AC_CHECK_TYPES([long double],[enable_longdouble=yes],[enable_longdouble=no])
 if test "$enable_longdouble" != "no" ; then
-AC_CHECK_FUNCS([sinl cosl tanl logl expl ldexpl frexpl],[],[enable_longdouble=no; break])
+AC_CHECK_FUNCS([sinl cosl tanl logl expl],[],[enable_longdouble=no; break])
 if test "$enable_longdouble" != "no" ; then
 AC_DEFINE([ECL_LONG_FLOAT], [], [ECL_LONG_FLOAT])
 fi
@@ -55,7 +55,8 @@ else
   AC_MSG_RESULT([$ECL_LONG_LONG_BITS])
   AC_DEFINE([ecl_long_long_t], [long long], [compiler understands long long])
   AC_DEFINE([ecl_ulong_long_t], [unsigned long long], [compiler understands long long])
-  AC_DEFINE_UNQUOTED([ECL_LONG_LONG_BITS],[$ECL_LONG_LONG_BITS], [ECL_LONG_LONG_BITS])
+  AC_DEFINE_UNQUOTED([ECL_LONG_LONG_BITS],[$ECL_LONG_LONG_BITS],
+   [ECL_LOING_LONG_BITS])dnl last param needs to be on a new line. -evrim.
 fi
 ])
 
@@ -247,8 +248,8 @@ THREAD_CFLAGS=''
 THREAD_LIBS=''
 THREAD_GC_FLAGS='--enable-threads=posix'
 INSTALL_TARGET='install'
-THREAD_OBJ="$THREAD_OBJ c/threads/process c/threads/queue c/threads/mutex c/threads/condition_variable c/threads/semaphore c/threads/barrier c/threads/mailbox"
-clibs='-lm'
+THREAD_OBJ="$THREAD_OBJ threads/process threads/queue threads/mutex threads/condition_variable threads/semaphore threads/barrier threads/mailbox"
+clibs=''
 SONAME=''
 SONAME_LDFLAGS=''
 case "${host_os}" in
@@ -259,9 +260,11 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,--rpath,~A'
-                clibs="-ldl ${clibs}"
+                clibs="-ldl"
                 # Maybe CFLAGS="-D_ISOC99_SOURCE ${CFLAGS}" ???
-                CFLAGS="-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DPLATFORM_ANDROID -DUSE_GET_STACKBASE_FOR_MAIN -DIGNORE_DYNAMIC_LOADING ${CFLAGS}"
+                CFLAGS="-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DANDROID -DPLATFORM_ANDROID -DUSE_GET_STACKBASE_FOR_MAIN -DIGNORE_DYNAMIC_LOADING -DAO_REQUIRE_CAS ${CFLAGS}"
+                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+                SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ECL_ADD_FEATURE([android])
                 ;;
 
@@ -273,7 +276,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,--rpath,~A'
-                clibs="-ldl ${clibs}"
+                clibs="-ldl"
                 # Maybe CFLAGS="-D_ISOC99_SOURCE ${CFLAGS}" ???
                 CFLAGS="-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 ${CFLAGS}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
@@ -286,7 +289,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,--rpath,~A'
-                clibs="-ldl ${clibs}"
+                clibs="-ldl"
                 CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
@@ -298,7 +301,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,--rpath,~A'
-                clibs="-ldl ${clibs}"
+                clibs="-ldl"
                 CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
@@ -309,7 +312,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs="${clibs}"
+                clibs=""
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
@@ -319,7 +322,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs="${clibs}"
+                clibs=""
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
@@ -329,7 +332,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs="${clibs}"
+                clibs=""
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
@@ -340,7 +343,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs="-lpthread ${clibs}"
+                clibs="-lpthread -lm"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
@@ -351,9 +354,9 @@ case "${host_os}" in
                 BUNDLE_LDFLAGS="-dy -G ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,-R,~A'
                 TCPLIBS='-lsocket -lnsl -lintl'
-                clibs='${clibs} -ldl'
-                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
-                SONAME_LDFLAGS="-Wl,-soname,SONAME"
+                clibs='-ldl'
+		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+		SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 if test "x$GCC" = "xyes"; then
                   CFLAGS="${CFLAGS} -std=gnu99 -D_XOPEN_SOURCE=600 -D__EXTENSIONS__"
                   SHARED_LDFLAGS="-shared $SHARED_LDFLAGS"
@@ -361,8 +364,8 @@ case "${host_os}" in
                 fi
                 ;;
         cygwin*)
+                enable_threads='no'
                 thehost='cygwin'
-                #enable_threads='no'
                 shared='yes'
                 THREAD_CFLAGS='-D_THREAD_SAFE'
                 THREAD_LIBS='-lpthread'
@@ -379,9 +382,6 @@ case "${host_os}" in
                 ;;
         mingw*)
                 thehost='mingw32'
-                dnl We disable fpe because ECL/MinGW has problems with FE_INEXACT
-                with_ieee_fp='no'
-                with_fpe='no'
                 clibs=''
                 shared='yes'
                 enable_threads='yes'
@@ -440,28 +440,8 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wld=\"-rld_l ~A\"'
-                clibs="-Wld=-lrld ${clibs}"
+                clibs="-Wld=-lrld"
                 ;;
-        haiku*)
-                thehost='haiku'
-                THREAD_LIBS=''
-                SHARED_LDFLAGS="-shared ${LDFLAGS}"
-                BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
-                ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs="-lnetwork"
-                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
-                SONAME_LDFLAGS="-Wl,-soname,SONAME"
-                ;;
-	aix*)
-		PICFLAG='-DPIC'
-		thehost="aix"
-		THREAD_LIBS='-lpthread'
-                SHARED_LDFLAGS="-G -bsvr4 -brtl ${LDFLAGS}"
-                BUNDLE_LDFLAGS="-G -bsvr4 -brtl ${LDFLAGS}"
-                ECL_LDRPATH="-Wl,-R~A"
-                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
-                SONAME_LDFLAGS="-bsvr4 -brtl"
-		;;
         *)
                 thehost="$host_os"
                 shared="no"
@@ -918,12 +898,10 @@ dnl ----------------------------------------------------------------------
 dnl Check whether we have POSIX read/write locks are available
 AC_DEFUN([ECL_POSIX_RWLOCK],[
 AC_CHECK_FUNC( [pthread_rwlock_init], [
-  AC_CHECK_TYPES([pthread_rwlock_t], [
-    AC_DEFINE([ECL_RWLOCK], [], [ECL_RWLOCK])
-    AC_DEFINE([HAVE_POSIX_RWLOCK], [], [HAVE_POSIX_RWLOCK])
-  ], [])
+  AC_DEFINE([ECL_RWLOCK], [], [ECL_RWLOCK])
+  AC_DEFINE([HAVE_POSIX_RWLOCK], [], [HAVE_POSIX_RWLOCK])
 ], [])
-THREAD_OBJ="$THREAD_OBJ c/threads/rwlock"
+THREAD_OBJ="$THREAD_OBJ threads/rwlock"
 ])
 
 
@@ -1040,7 +1018,7 @@ if test "${enable_boehm}" = auto -o "${enable_boehm}" = system; then
    fi
  else
    FASL_LIBS="${FASL_LIBS} -lgc"
-   EXTRA_OBJS="${EXTRA_OBJS} c/alloc_2.${OBJEXT}"
+   EXTRA_OBJS="${EXTRA_OBJS} alloc_2.${OBJEXT}"
    AC_DEFINE(GBC_BOEHM, [1], [Use Boehm's garbage collector])
  fi
 fi
@@ -1071,7 +1049,7 @@ if test "${enable_boehm}" = "included"; then
      ECL_BOEHM_GC_HEADER='ecl/gc/gc.h'
      SUBDIRS="${SUBDIRS} gc"
      CORE_LIBS="-leclgc ${CORE_LIBS}"
-     EXTRA_OBJS="${EXTRA_OBJS} c/alloc_2.${OBJEXT}"
+     EXTRA_OBJS="${EXTRA_OBJS} alloc_2.${OBJEXT}"
      if test "${enable_shared}" = "no"; then
        LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclgc.${LIBEXT}"
      fi
@@ -1144,7 +1122,7 @@ if test "${enable_libffi}" = "included"; then
      ECL_LIBFFI_HEADER='ecl/ffi.h'
      SUBDIRS="${SUBDIRS} libffi"
      CORE_LIBS="-leclffi ${CORE_LIBS}"
-     EXTRA_OBJS="${EXTRA_OBJS} c/alloc_2.${OBJEXT}"
+     EXTRA_OBJS="${EXTRA_OBJS} alloc_2.${OBJEXT}"
      if test "${enable_shared}" = "no"; then
        LIBRARIES="${LIBRARIES} ${LIBPREFIX}eclffi.${LIBEXT}"
      fi
