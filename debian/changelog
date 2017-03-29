@@ -1,9 +1,9 @@
-ecl (16.1.2-1) UNRELEASED; urgency=medium
+ecl (16.1.2-1) experimental; urgency=medium
 
   * New upstream release.
   * Remove bignums-dont-collect-gmp-internal-memory.patch (applied upstream).
 
- -- Tobias Hansen <thansen@debian.org>  Sun, 26 Feb 2017 21:33:09 +0000
+ -- Tobias Hansen <thansen@debian.org>  Wed, 29 Mar 2017 21:23:05 +0100
 
 ecl (15.3.7+dfsg1-2) unstable; urgency=medium
 
