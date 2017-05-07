@@ -1,3 +1,9 @@
+ecl (16.1.2-2) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Tobias Hansen <thansen@debian.org>  Sun, 07 May 2017 15:38:58 +0100
+
 ecl (16.1.2-1) experimental; urgency=medium
 
   * New upstream release.
