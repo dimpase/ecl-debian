@@ -25,7 +25,7 @@ Vcs-Browser: https://anonscm.debian.org/cgit/pkg-common-lisp/ecl.git
 
 Package: ecl
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libgmp3-dev, libncurses5-dev, libgc-dev, libatomic-ops-dev, gcc
+Depends: ${shlibs:Depends}, ${misc:Depends}, libffi-dev, libgmp3-dev, libncurses5-dev, libgc-dev, libatomic-ops-dev, gcc
 Provides: lisp-compiler
 Suggests: slime, ecl-doc
 Description: Embeddable Common-Lisp: has an interpreter and can compile to C
