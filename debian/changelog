@@ -1,6 +1,8 @@
 ecl (16.1.2-3) unstable; urgency=medium
 
   * Add dependency on libffi-dev for ecl (Closes: #873091).
+  * Use debhelper compat level 8.
+  * Update Standards-Version to 4.1.0.
 
  -- Tobias Hansen <thansen@debian.org>  Sat, 02 Sep 2017 02:19:44 +0100
 
