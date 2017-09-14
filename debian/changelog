@@ -1,3 +1,9 @@
+ecl (16.1.2-4) UNRELEASED; urgency=medium
+
+  * Fix watch file.
+
+ -- Sébastien Villemot <sebastien@debian.org>  Thu, 14 Sep 2017 14:22:33 +0200
+
 ecl (16.1.2-3) unstable; urgency=medium
 
   * Add dependency on libffi-dev for ecl (Closes: #873091).
