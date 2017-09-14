@@ -1,3 +1,10 @@
+ecl (15.3.7+dfsg1-2+deb9u1) stretch; urgency=medium
+
+  * Team upload.
+  * Add dependency on libffi-dev for ecl (Closes: #873091).
+
+ -- Sébastien Villemot <sebastien@debian.org>  Thu, 14 Sep 2017 14:33:03 +0200
+
 ecl (15.3.7+dfsg1-2) unstable; urgency=medium
 
   * Add bignums-dont-collect-gmp-internal-memory.patch. (Closes: #777473)
