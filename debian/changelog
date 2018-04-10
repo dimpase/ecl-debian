@@ -4,6 +4,7 @@ ecl (16.1.2-4) UNRELEASED; urgency=medium
   * Update Vcs-* fields for move to salsa.
   * Move to section lisp (see also #895122).
   * Set Maintainer to debian-common-lisp@l.d.o.
+  * Remove obsolete README.building.
 
  -- Sébastien Villemot <sebastien@debian.org>  Thu, 14 Sep 2017 14:22:33 +0200
 
