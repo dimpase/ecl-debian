@@ -1,7 +1,7 @@
 Source: ecl
 Section: lisp
 Priority: optional
-Maintainer: Debian Common Lisp Team <pkg-common-lisp-devel@lists.alioth.debian.org>
+Maintainer: Debian Common Lisp Team <debian-common-lisp@lists.debian.org>
 Uploaders: Peter Van Eynde <pvaneynd@debian.org>,
  Christoph Egger <christoph@debian.org>,
  Tobias Hansen <thansen@debian.org>
