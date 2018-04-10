@@ -1,5 +1,6 @@
-ecl (16.1.2-4) UNRELEASED; urgency=medium
+ecl (16.1.2-4) unstable; urgency=medium
 
+  * Team upload.
   * Fix watch file.
   * Update Vcs-* fields for move to salsa.
   * Move to section lisp (see also #895122).
@@ -7,7 +8,7 @@ ecl (16.1.2-4) UNRELEASED; urgency=medium
   * Remove obsolete README.building.
   * Use new common-lisp.net Homepage.
 
- -- Sébastien Villemot <sebastien@debian.org>  Thu, 14 Sep 2017 14:22:33 +0200
+ -- Sébastien Villemot <sebastien@debian.org>  Tue, 10 Apr 2018 14:07:35 +0200
 
 ecl (16.1.2-3) unstable; urgency=medium
 
