@@ -1,3 +1,9 @@
+ecl (16.1.2-5) UNRELEASED; urgency=medium
+
+  * Fix typo in Vcs-Git.
+
+ -- Sébastien Villemot <sebastien@debian.org>  Sun, 15 Apr 2018 09:42:42 +0200
+
 ecl (16.1.2-4) unstable; urgency=medium
 
   * Team upload.
