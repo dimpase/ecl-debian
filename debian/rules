@@ -27,19 +27,8 @@ override_dh_autoreconf:
 #mostly require remote access
 override_dh_auto_test:
 
-# install: build-arch
-# 	dh_testdir -a
-# 	dh_testroot -a
-# 	dh_prep -a
-# 	dh_installdirs -a
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf build
+	rm -f src/configure.in
 
-# #	Add here commands to install the package into debian/ecl
-# 	$(MAKE) install prefix=$(CURDIR)/debian/ecl/usr
-
-# #	remove rpath from /us/lib/ecl/ binaries (bug #495756)
-# #	this is a workaround until upstream properly fixes it
-# 	find $(CURDIR)/debian/ecl/usr/lib/ -name "*.fas" -print0 | \
-# 	   xargs -0 chrpath -d
-# 	chrpath -d $(CURDIR)/debian/ecl/usr/bin/ecl $(CURDIR)/debian/ecl/usr/lib/libecl.so.*
-
-# 	cp debian/overrides.ecl $(CURDIR)/debian/ecl/usr/share/lintian/overrides/ecl
