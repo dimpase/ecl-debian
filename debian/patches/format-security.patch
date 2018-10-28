@@ -10,7 +10,7 @@ Last-Update: 2018-10-28
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/src/aclocal.m4
 +++ b/src/aclocal.m4
-@@ -762,7 +762,7 @@ int main() {
+@@ -782,7 +782,7 @@ int main() {
    fclose(f);
    f = fopen("conftestval","w");
    if (f == NULL) exit(1);

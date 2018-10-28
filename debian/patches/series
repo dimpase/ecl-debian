@@ -1,3 +1,4 @@
 harden-configure.patch
 patch-hurd.patch
 format-security.patch
+no-embedded-copies.patch

@@ -12,9 +12,8 @@ override_dh_auto_configure:
 	touch src/configure configure
 
 	dh_auto_configure -- \
-	   --with-system-gmp=yes \
+	   --enable-gmp=system \
 	   --with-tcp \
-	   --with-clx  \
 	   --enable-threads=yes \
 	   --enable-boehm=system  \
 	   --enable-libatomic=system \
