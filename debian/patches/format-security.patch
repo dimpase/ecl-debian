@@ -1,0 +1,21 @@
+Description: Fix ECL_LINEFEED_MODE test with -Werror=format-security
+ -Werror=format-security is enabled at debhelper level ≥ 9 and with
+ hardening-wrapper.
+ The fix consists in replacing a call to fprintf() by fputs().
+Author: Sébastien Villemot <sebastien@debian.org>
+Bug-Debian: https://bugs.debian.org/714308
+Forwarded: https://gitlab.com/embeddable-common-lisp/ecl/merge_requests/124
+Last-Update: 2018-10-28
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/src/aclocal.m4
++++ b/src/aclocal.m4
+@@ -762,7 +762,7 @@ int main() {
+   fclose(f);
+   f = fopen("conftestval","w");
+   if (f == NULL) exit(1);
+-  fprintf(f, output);
++  fputs(output, f);
+   fclose(f);
+   exit(0);
+ }
