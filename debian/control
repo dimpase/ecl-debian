@@ -6,8 +6,7 @@ Uploaders: Peter Van Eynde <pvaneynd@debian.org>,
  Christoph Egger <christoph@debian.org>,
  Tobias Hansen <thansen@debian.org>
 Build-Depends:
- debhelper (>= 10),
- dh-autoreconf,
+ debhelper-compat (= 11),
  libgmp-dev,
  file,
  texinfo,

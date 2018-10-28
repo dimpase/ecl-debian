@@ -4,7 +4,7 @@
 #export DH_VERBOSE=1
 
 %:
-	dh $@ --with autoreconf
+	dh $@
 
 override_dh_auto_configure:
 	touch src/configure.in && \
@@ -12,8 +12,6 @@ override_dh_auto_configure:
 	touch src/configure configure
 
 	dh_auto_configure -- \
-	   --prefix=/usr --mandir=\$${prefix}/share/man \
-	   --infodir=\$${prefix}/share/info \
 	   --with-system-gmp=yes \
 	   --with-tcp \
 	   --with-clx  \
