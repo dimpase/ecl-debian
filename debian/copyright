@@ -1,65 +1,329 @@
-This package was debianized by Peter Van Eynde <pvaneynd@debian.org> on
-Mon, 12 Dec 2005 21:54:01 +0100.
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: ECL
+Upstream-Contact: ecl-devel@common-lisp.net
+Source: https://common-lisp.net/project/ecl/
+Files-Excluded: src/gmp src/libffi src/bdwgc
 
-It was downloaded from https://common-lisp.net/project/ecl/
+Files: *
+Copyright: 1984 Taiichi Yuasa and Masami Hagiya
+           1990, 1991, 1993 Giuseppe Attardi
+           2000-2012, Juan Jose Garcia Ripoll
+           2015-2016, Daniel Kochmański
+License: GPL-2+
 
-Upstream Author: Juan Jose Garcia Ripoll ecls-list@lists.sourceforge.net
+Files: contrib/asdf/*
+Copyright: 2001-2016, Daniel Barlow and contributors
+License: Expat
 
-Copyright: 
+Files: contrib/cl-simd/*
+Copyright: 2010, Alexander Gavrilov (angavrilov@gmail.com)
+License: Expat
 
-  Copyright (c) 2000, Juan Jose Garcia Ripoll
-  Copyright (c) 1990, 1991, 1993 Giuseppe Attardi
-  Copyright (c) 1984 Taiichi Yuasa and Masami Hagiya
-	      All Rights Reserved
- 
- Distributed under the terms of the GNU Library General Public Licence.
-   See /usr/share/common-licenses/LGPL-2
+Files: contrib/deflate/*
+Copyright: 2000-2010, PMSF IT Consulting Pierre R. Mai.
+License: Expat
 
-Some files are not under the LGPL:
+Files: contrib/defsystem/*
+Copyright: 1989 - 1999 Mark Kantrowitz
+ 1999 - 2005 Mark Kantrowitz and Marco Antoniotti
+License: permissive-defsystem
+ Use, copying, modification, merging, publishing, distribution
+ and/or sale of this software, source and/or binary files and
+ associated documentation files (the "Software") and of derivative
+ works based upon this Software are permitted, as long as the
+ following conditions are met:
+ .
+    o this copyright notice is included intact and is prominently
+      visible in the Software
+    o if modifications have been made to the source code of the
+      this package that have not been adopted for inclusion in the
+      official version of the Software as maintained by the Copyright
+      holders, then the modified package MUST CLEARLY identify that
+      such package is a non-standard and non-official version of
+      the Software.  Furthermore, it is strongly encouraged that any
+      modifications made to the Software be sent via e-mail to the
+      MK-DEFSYSTEM maintainers for consideration of inclusion in the
+      official MK-DEFSYSTEM package.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+ IN NO EVENT SHALL M. KANTROWITZ AND M. ANTONIOTTI BE LIABLE FOR ANY
+ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ .
+ Except as contained in this notice, the names of M. Kantrowitz and
+ M. Antoniotti shall not be used in advertising or otherwise to promote
+ the sale, use or other dealings in this Software without prior written
+ authorization from M. Kantrowitz and M. Antoniotti.
 
-- src/lsp/loop2.lsp
-- src/clx
-- contrib/asdf
-- contrib/rt: MIT-like licenses
+Files: contrib/ecl-curl/*
+Copyright: 2011, Juan Jose Garcia-Ripoll
+License: BSD-2-clause
 
-- src/lsp/pprint.lsp
-- src/lsp/format.lsp
-- contrib/sockets: in the public domain
+Files: contrib/encodings/*
+Copyright: 2005, 2009, 2011, Juan Jose Garcia-Ripoll
+License: LGPL-2+
 
-- contrib/defsystem: a special case, mostly MIT-like:
-;;; MK:DEFSYSTEM 3.6 Interim
-;;;
-;;; Copyright (c) 1989 - 1999 Mark Kantrowitz. All rights reserved.
-;;;               1999 - 2005 Mark Kantrowitz and Marco Antoniotti. All
-;;;                           rights reserved.
+Files: contrib/profile/*
+Copyright: none
+License: public-domain
 
-;;; Use, copying, modification, merging, publishing, distribution
-;;; and/or sale of this software, source and/or binary files and
-;;; associated documentation files (the "Software") and of derivative
-;;; works based upon this Software are permitted, as long as the
-;;; following conditions are met:
+Files: contrib/quicklisp/*
+Copyright: 2011 Zachary Beane <zach@quicklisp.org>
+License: Expat
 
-;;;    o this copyright notice is included intact and is prominently
-;;;      visible in the Software
-;;;    o if modifications have been made to the source code of the
-;;;      this package that have not been adopted for inclusion in the
-;;;      official version of the Software as maintained by the Copyright
-;;;      holders, then the modified package MUST CLEARLY identify that
-;;;      such package is a non-standard and non-official version of
-;;;      the Software.  Furthermore, it is strongly encouraged that any
-;;;      modifications made to the Software be sent via e-mail to the
-;;;      MK-DEFSYSTEM maintainers for consideration of inclusion in the
-;;;      official MK-DEFSYSTEM package.
+Files: contrib/rt/*
+Copyright: 1990, the Massachusetts Institute of Technology, Cambridge MA. |
+License: NTP~disclaimer
+ Permission  to  use,  copy, modify, and distribute this software  and  its
+ documentation for any purpose  and without fee is hereby granted, provided
+ that this copyright  and  permission  notice  appear  in  all  copies  and
+ supporting  documentation,  and  that  the  name  of M.I.T. not be used in
+ advertising or  publicity  pertaining  to  distribution  of  the  software
+ without   specific,   written   prior   permission.      M.I.T.  makes  no
+ representations  about  the  suitability of this software for any purpose.
+ It is provided "as is" without express or implied warranty.               
+ .
+  M.I.T. DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,  INCLUDING 
+  ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL 
+  M.I.T. BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL  DAMAGES  OR 
+  ANY  DAMAGES  WHATSOEVER  RESULTING  FROM  LOSS OF USE, DATA OR PROFITS, 
+  WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER  TORTIOUS  ACTION, 
+  ARISING  OUT  OF  OR  IN  CONNECTION WITH THE USE OR PERFORMANCE OF THIS 
+  SOFTWARE.                                                                
 
-;;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-;;; EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-;;; MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
-;;; IN NO EVENT SHALL M. KANTROWITZ AND M. ANTONIOTTI BE LIABLE FOR ANY
-;;; CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-;;; TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-;;; SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Files: contrib/sockets/*
+Copyright: none
+License: public-domain
 
-;;; Except as contained in this notice, the names of M. Kantrowitz and
-;;; M. Antoniotti shall not be used in advertising or otherwise to promote
-;;; the sale, use or other dealings in this Software without prior written
-;;; authorization from M. Kantrowitz and M. Antoniotti.
+Files: contrib/win32/txtedit.lisp
+  contrib/win32/win32.lisp
+Copyright: 2005, Michael Goffioul (michael dot goffioul at swing dot be)
+License: LGPL-2+
+
+Files: examples/*
+Copyright: 2001, 2005, 2006, 2010, 2011, Juan Jose Garcia Ripoll.
+License: BSD-2-clause
+
+Files: examples/build/*
+Copyright: 2001, 2005, 2006, 2010, 2011, Juan Jose Garcia Ripoll.
+License: LGPL-2+
+
+Files: examples/threads/*
+Copyright: 2001, 2005, 2006, 2010, 2011, Juan Jose Garcia Ripoll.
+License: LGPL-2+
+
+Files: msvc/gmp/*
+Copyright: 1989-2005, Free Software Foundation, Inc.
+License: LGPL-2.1+
+
+Files: msvc/gmp/build.vc8/unistd.h
+Copyright: 1984 Taiichi Yuasa and Masami Hagiya
+           1990, 1991, 1993 Giuseppe Attardi
+           2000, Juan Jose Garcia Ripoll
+           2015, Daniel Kochmański
+License: GPL-2+
+
+Files: src/c/arch/*
+       src/c/printer/integer_to_string.d
+       src/c/unixint.d
+       src/cmp/cmplet.lsp
+       src/h/cache.h
+       src/h/config.h.in
+       src/h/cons.h
+       src/h/internal.h
+       src/h/legacy.h
+       src/h/cs.h
+       src/h/number.h
+       src/h/page.h
+       src/h/ecl-cmp.h
+       src/h/ecl.h
+       src/h/impl/*
+       src/h/object.h
+       src/h/stacks.h
+Copyright: 1984, Taiichi Yuasa and Masami Hagiya.
+           1990, 1995, Giuseppe Attardi.
+           2001-2011, Juan Jose Garcia Ripoll.
+           2016, Daniel Kochmański.
+License: LGPL-2+
+
+Files: src/clos/walk.lsp
+Copyright: 1985-1990, Xerox Corporation.
+License: GPL-2+
+
+Files: src/configure
+Copyright: 1992-1996, 1998-2012, Free Software Foundation, Inc.
+License: FSFUL
+
+Files: src/doc/new-doc/*
+Copyright: 2002-2003 Kevin M. Rosenberg
+           2006 Juan José García-Ripoll
+           2016 Daniel Kochmański
+License: GFDL-NIV-1.3+
+Comment:
+ See src/doc/new-doc/introduction/copyrights.txi
+
+Files: src/lsp/defpackage.lsp
+Copyright: 1990, 1991, The Boeing Company
+License: NTP-defpackage
+ Permission is granted to any individual or institution to use,
+ copy, modify, and distribute this software, provided that this
+ complete copyright and permission notice is maintained, intact, in
+ all copies and supporting documentation and that modifications are
+ appropriately documented with date, author and description of the
+ change.
+ .
+ Stephen L. Nicoud (snicoud@boeing.com) provides this software "as
+ is" without express or implied warranty by him or The Boeing
+ Company.
+ .
+ This software is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY.  No author or distributor accepts
+ responsibility to anyone for the consequences of using it or for
+ whether it serves any particular purpose or works at all.
+
+Files: src/lsp/format.lsp
+       src/lsp/pprint.lsp
+Copyright: none
+License: public-domain
+
+Files: src/lsp/loop.lsp
+Copyright: 1986 by the Massachusetts Institute of Technology
+           1989, 1990, 1991, 1992 by Symbolics
+License: NTP-loop
+ Permission to use, copy, modify and distribute this software and its
+ documentation for any purpose and without fee is hereby granted,
+ provided that the M.I.T. copyright notice appear in all copies and that
+ both that copyright notice and this permission notice appear in
+ supporting documentation.  The names "M.I.T." and "Massachusetts
+ Institute of Technology" may not be used in advertising or publicity
+ pertaining to distribution of the software without specific, written
+ prior permission.  Notice must be given in supporting documentation that
+ copying distribution is by permission of M.I.T.  M.I.T. makes no
+ representations about the suitability of this software for any purpose.
+ It is provided "as is" without express or implied warranty.
+ . 
+ Permission to use, copy, modify and distribute this software and its
+ documentation for any purpose and without fee is hereby granted,
+ provided that the Symbolics copyright notice appear in all copies and
+ that both that copyright notice and this permission notice appear in
+ supporting documentation.  The name "Symbolics" may not be used in
+ advertising or publicity pertaining to distribution of the software
+ without specific, written prior permission.  Notice must be given in
+ supporting documentation that copying distribution is by permission of
+ Symbolics.  Symbolics makes no representations about the suitability of
+ this software for any purpose.  It is provided "as is" without express
+ or implied warranty.
+ .
+ Symbolics, CLOE Runtime, and Minima are trademarks, and CLOE, Genera,
+ and Zetalisp are registered trademarks of Symbolics, Inc.
+
+Files: src/tests/1am.lisp
+       src/tests/2am.lisp
+Copyright: 2014-2016, James M. Lawrence
+License: Expat
+
+Files: debian/*
+Copyright: 2005-2011 Peter Van Eynde <pvaneynd@debian.org>
+           2008 Luca Capello <luca@pca.it>
+           2011-2015 Christoph Egger <christoph@debian.org>
+           2015-2017 Tobias Hansen <thansen@debian.org>
+           2018 Sébastien Villemot <sebastien@debian.org>
+License: LGPL-2+
+
+License: BSD-2-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are
+ met:
+ .
+   * Redistributions of source code must retain the above copyright
+     notice, this list of conditions and the following disclaimer.
+ .
+   * Redistributions in binary form must reproduce the above
+     copyright notice, this list of conditions and the following
+     disclaimer in the documentation and/or other materials
+     provided with the distribution.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE AUTHORS 'AS IS' AND ANY EXPRESSED OR
+ IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT,
+ INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.
+
+License: Expat
+ Permission is hereby granted, free of charge, to any person
+ obtaining a copy of this software and associated
+ documentation files (the "Software"), to deal in the Software
+ without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense,
+ and/or sell copies of the Software, and to permit persons to
+ whom the Software is furnished to do so, subject to the
+ following conditions:
+ .
+ The above copyright notice and this permission notice shall
+ be included in all copies or substantial portions of the
+ Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+ WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR
+ PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+ SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ CONNECTION WITH THE SOFTWARE OR THE USE OR
+ OTHER DEALINGS IN THE SOFTWARE.
+
+License: FSFUL
+ This configure script is free software; the Free Software Foundation
+ gives unlimited permission to copy, distribute and modify it.
+
+License: GFDL-NIV-1.3+
+ Permission is granted to copy, distribute and/or modify this document
+ under the terms of the GNU Free Documentation License, Version 1.3 or
+ any later version published by the Free Software Foundation; with no
+ Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+ .
+ On Debian systems, the complete text of the GNU Free Documentation
+ License, version 1.3, can be found in the file
+ `/usr/share/common-licenses/GFDL-1.3'.
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; version 2 dated June, 1991, or (at
+ your option) any later version.
+ .
+ On Debian systems, the complete text of version 2 of the GNU General
+ Public License can be found in '/usr/share/common-licenses/GPL-2'.
+
+License: LGPL-2+
+ This program is free software; you can redistribute it and/or modify it
+ under the terms of the GNU Library General Public License as published by the
+ Free Software Foundation; version 2 of the License, or (at
+ your option) any later version.
+ .
+ On Debian systems, the complete text of version 2 of the GNU Library
+ General Public License can be found in '/usr/share/common-licenses/LGPL-2'.
+
+License: LGPL-2.1+
+ This program is free software; you can redistribute it and/or modify it
+ under the terms of the GNU Lesser General Public License as published by the
+ Free Software Foundation; version 2.1 of the License, or (at
+ your option) any later version.
+ .
+ On Debian systems, the complete text of version 2.1 of the GNU Lesser
+ General Public License can be found in '/usr/share/common-licenses/LGPL-2.1'.
+
+License: public-domain
+ This program is placed in the public domain.
