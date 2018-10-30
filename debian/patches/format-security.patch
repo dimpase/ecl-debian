@@ -5,6 +5,7 @@ Description: Fix ECL_LINEFEED_MODE test with -Werror=format-security
 Author: Sébastien Villemot <sebastien@debian.org>
 Bug-Debian: https://bugs.debian.org/714308
 Forwarded: https://gitlab.com/embeddable-common-lisp/ecl/merge_requests/124
+Applied-Upstream: 16.2.0
 Last-Update: 2018-10-28
 ---
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
