@@ -6,7 +6,7 @@ Uploaders: Peter Van Eynde <pvaneynd@debian.org>,
  Christoph Egger <christoph@debian.org>,
  Tobias Hansen <thansen@debian.org>
 Build-Depends:
- debhelper-compat (= 11),
+ debhelper-compat (= 12),
  libgmp-dev,
  file,
  texinfo,
