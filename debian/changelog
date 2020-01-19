@@ -5,6 +5,7 @@ ecl (16.1.3+ds-3) UNRELEASED; urgency=medium
   * libffi-3.3.patch: new patch, fixes FTBFS against libffi 3.3. Thanks to
     Matthias Klose. (Closes: #949288)
   * Bump to debhelper compat level 12
+  * Bump S-V to 4.4.1
 
  -- Sébastien Villemot <sebastien@debian.org>  Tue, 20 Aug 2019 14:12:58 +0200
 
