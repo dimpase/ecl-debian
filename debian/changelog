@@ -1,9 +1,10 @@
-ecl (16.1.3+ds-4) UNRELEASED; urgency=medium
+ecl (16.1.3+ds-4) unstable; urgency=medium
 
+  * Team upload
   * parallel-ftbfs.patch: new patch, fixes parallel FTBFS (Closes: #949896)
   * Bump S-V to 4.5.0
 
- -- Sébastien Villemot <sebastien@debian.org>  Sat, 01 Feb 2020 11:25:09 +0100
+ -- Sébastien Villemot <sebastien@debian.org>  Sat, 01 Feb 2020 11:39:27 +0100
 
 ecl (16.1.3+ds-3) unstable; urgency=medium
 
