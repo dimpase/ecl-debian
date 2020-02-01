@@ -3,3 +3,4 @@ patch-hurd.patch
 format-security.patch
 no-embedded-copies.patch
 libffi-3.3.patch
+parallel-ftbfs.patch
