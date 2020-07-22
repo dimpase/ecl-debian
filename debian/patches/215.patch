@@ -1,0 +1,169 @@
+Description: Fix #596
+ The bug was caused by getrlimit returning nonsense (namely RLIM_INFINITY). We now do a sanity check and use a default of 1 MB if that happens.
+ .
+ While debugging I also found another issue. The code was supposed to use the operating systems default stack size unless the user specified another value in ecl_option_values[ECL_OPT_C_STACK_SIZE]. However due to a wrong check in config-internal.h we in fact increased the stack size to at least 1 MB.
+Origin: https://gitlab.com/embeddable-common-lisp/ecl/-/merge_requests/215
+
+--- a/src/aclocal.m4
++++ b/src/aclocal.m4
+@@ -665,6 +665,21 @@
+   up|UP) AC_MSG_RESULT(no) ;;
+   *) AC_MSG_ERROR(Unable to determine stack growth direction)
+ esac])
++
++dnl
++dnl --------------------------------------------------------------
++dnl Check if we can determine the stack size at runtime
++dnl
++AC_DEFUN(ECL_STACK_SIZE,[
++AC_CHECK_HEADER([sys/resource.h],
++                [AC_DEFINE([HAVE_SYS_RESOURCE_H], [], [Define to 1 if you have the <sys/resource.h> header file.])
++                 AC_CHECK_DECL([RLIMIT_STACK],
++                               [AC_DEFINE([ECL_CAN_SET_STACK_SIZE], [], [Define to 1 if we can set the stack size at runtime.])],
++                               [],
++                               [#include <sys/resource.h>])],
++                [],[])
++])
++
+ dnl
+ dnl ------------------------------------------------------------
+ dnl Find out a setjmp() that does not save signals. It is called
+--- a/src/c/stacks.d
++++ b/src/c/stacks.d
+@@ -29,7 +29,7 @@
+ {
+   volatile char foo = 0;
+   cl_index margin = ecl_option_values[ECL_OPT_C_STACK_SAFETY_AREA];
+-#if defined(HAVE_SYS_RESOURCE_H) && defined(RLIMIT_STACK) && !defined(NACL)
++#if defined(ECL_CAN_SET_STACK_SIZE)
+   {
+     struct rlimit rl;
+ 
+@@ -40,13 +40,22 @@
+         if (setrlimit(RLIMIT_STACK, &rl))
+           ecl_internal_error("Can't set the size of the C stack");
+       }
++    } else {
++      rl.rlim_cur = new_size;
++    }
++    if (rl.rlim_cur == 0 || rl.rlim_cur == RLIM_INFINITY || rl.rlim_cur > (cl_index)(-1)) {
++      /* Either getrlimit failed or returned nonsense, either way we
++       * don't know the stack size. Use a default of 1 MB and hope for
++       * the best. */
++      new_size = 1048576;
++    } else {
+       new_size = rl.rlim_cur;
++    }
+ #ifdef ECL_DOWN_STACK
+-      env->cs_barrier = env->cs_org - new_size;
++    env->cs_barrier = env->cs_org - new_size;
+ #else
+-      env->cs_barrier = env->cs_org + new_size;
++    env->cs_barrier = env->cs_org + new_size;
+ #endif
+-    }
+   }
+ #endif
+   env->cs_limit_size = new_size - (2*margin);
+@@ -64,7 +73,7 @@
+   }
+ #endif
+   else
+-    ecl_internal_error("Can't set the size of the C stack");
++    ecl_internal_error("Can't set the size of the C stack: sanity check failed");
+   env->cs_size = new_size;
+ }
+ 
+--- a/src/configure
++++ b/src/configure
+@@ -7313,7 +7313,7 @@
+ done
+ 
+ 
+-for ac_header in sys/resource.h sys/utsname.h float.h pwd.h dlfcn.h link.h \
++for ac_header in sys/utsname.h float.h pwd.h dlfcn.h link.h \
+                   mach-o/dyld.h dirent.h sys/ioctl.h sys/select.h \
+                   sys/wait.h semaphore.h
+ do :
+@@ -8533,6 +8533,24 @@
+   *) as_fn_error $? "Unable to determine stack growth direction" "$LINENO" 5
+ esac
+ 
++ac_fn_c_check_header_mongrel "$LINENO" "sys/resource.h" "ac_cv_header_sys_resource_h" "$ac_includes_default"
++if test "x$ac_cv_header_sys_resource_h" = xyes; then :
++
++$as_echo "#define HAVE_SYS_RESOURCE_H /**/" >>confdefs.h
++
++                 ac_fn_c_check_decl "$LINENO" "RLIMIT_STACK" "ac_cv_have_decl_RLIMIT_STACK" "#include <sys/resource.h>
++"
++if test "x$ac_cv_have_decl_RLIMIT_STACK" = xyes; then :
++
++$as_echo "#define ECL_CAN_SET_STACK_SIZE /**/" >>confdefs.h
++
++fi
++
++fi
++
++
++
++
+ 
+ { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether closedir returns void" >&5
+ $as_echo_n "checking whether closedir returns void... " >&6; }
+@@ -9185,8 +9203,6 @@
+     if (*(data + i) != *(data3 + i))
+       return 14;
+   close (fd);
+-  free (data);
+-  free (data3);
+   return 0;
+ }
+ _ACEOF
+--- a/src/configure.ac
++++ b/src/configure.ac
+@@ -659,7 +659,7 @@
+ 		  [sched.h] )
+ dnl !!! end autoscan
+ 
+-AC_CHECK_HEADERS( [sys/resource.h sys/utsname.h float.h pwd.h dlfcn.h link.h] \
++AC_CHECK_HEADERS( [sys/utsname.h float.h pwd.h dlfcn.h link.h] \
+                   [mach-o/dyld.h dirent.h sys/ioctl.h sys/select.h] \
+                   [sys/wait.h semaphore.h] )
+ 
+@@ -712,8 +712,9 @@
+ ECL_COMPLEX_C99
+ 
+ dnl -----------------------------------------------------------------------
+-dnl Study the call conventions
++dnl Stack size and growth direction
+ ECL_STACK_DIRECTION
++ECL_STACK_SIZE
+ 
+ dnl =====================================================================
+ dnl Checks for library functions
+--- a/src/ecl/configpre.h
++++ b/src/ecl/configpre.h
+@@ -9,6 +9,9 @@
+ /* ECL_AVOID_FPE_H */
+ #undef ECL_AVOID_FPE_H
+ 
++/* Define to 1 if we can set the stack size at runtime. */
++#undef ECL_CAN_SET_STACK_SIZE
++
+ /* Allow STREAM operations to work on arbitrary objects */
+ #undef ECL_CLOS_STREAMS
+ 
+--- a/src/h/config-internal.h.in
++++ b/src/h/config-internal.h.in
+@@ -245,7 +245,10 @@
+ #include "@ECL_LIBFFI_HEADER@"
+ #endif
+ 
+-#if defined(HAVE_SYS_RESOURCE_H) && defined(RLIMIT_STACK) && !defined(NACL)
++/* Can we determine and set the stack size at runtime? */
++#undef ECL_CAN_SET_STACK_SIZE
++
++#if defined(ECL_CAN_SET_STACK_SIZE)
+ #define ECL_DEFAULT_C_STACK_SIZE 0 /* Use the stack size provided by the OS */
+ #else
+ #define ECL_DEFAULT_C_STACK_SIZE @ECL_DEFAULT_C_STACK_SIZE@
