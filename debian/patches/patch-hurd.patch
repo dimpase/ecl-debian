@@ -1,6 +1,6 @@
 --- a/src/c/unixint.d
 +++ b/src/c/unixint.d
-@@ -1329,6 +1329,8 @@ install_synchronous_signal_handlers()
+@@ -1366,6 +1366,8 @@
           */
  #ifdef SIGRTMIN
  # define DEFAULT_THREAD_INTERRUPT_SIGNAL SIGRTMIN + 2

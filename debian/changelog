@@ -1,6 +1,10 @@
 ecl (20.4.24+ds-1) UNRELEASED; urgency=medium
 
   * New upstream release.
+  * Remove patches (applied upstream):
+    - format-security.patch
+    - libffi-3.3.patch
+    - parallel-ftbfs.patch
 
  -- Tobias Hansen <thansen@debian.org>  Wed, 22 Jul 2020 19:10:06 +0000
 
