@@ -14,8 +14,6 @@
 ;;;;  CMPPACKAGE -- Package definitions and exported symbols
 ;;;;
 
-(ext:package-lock "CL" nil)
-
 (defpackage "C"
   (:nicknames "COMPILER")
   (:use "FFI" "EXT" #+threads "MP" "CL")
@@ -28,8 +26,6 @@
            "*CC-OPTIMIZE*"
            "*USER-CC-FLAGS*"
            "*USER-LD-FLAGS*"
-           "*SUPPRESS-COMPILER-NOTES*"
-           "*SUPPRESS-COMPILER-WARNINGS*"
            "*SUPPRESS-COMPILER-MESSAGES*"
            "BUILD-ECL"
            "BUILD-PROGRAM"
@@ -46,11 +42,11 @@
            "COMPILER-MESSAGE-FILE"
            "COMPILER-MESSAGE-FILE-POSITION"
            "COMPILER-MESSAGE-FORM"
-           "*SUPPRESS-COMPILER-WARNINGS*"
-           "*SUPPRESS-COMPILER-NOTES*"
            "*SUPPRESS-COMPILER-MESSAGES*"
            "INSTALL-C-COMPILER"
            "UPDATE-COMPILER-FEATURES")
   (:import-from "SI" "GET-SYSPROP" "PUT-SYSPROP" "REM-SYSPROP" "MACRO"
                 "*COMPILER-CONSTANTS*" "REGISTER-GLOBAL" "CMP-ENV-REGISTER-MACROLET"
                 "COMPILER-LET"))
+
+(ext:package-lock "CL" nil)

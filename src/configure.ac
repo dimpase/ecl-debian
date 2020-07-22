@@ -8,7 +8,7 @@ dnl  AUTOCONF configuration for ECL
 dnl  Giuseppe Attardi 25.1.1994
 dnl
 
-AC_INIT([ecl],[16.1.2],[])
+AC_INIT([ecl],[20.4.24],[])
 AC_REVISION([$Revision$])
 AC_CONFIG_SRCDIR([bare.lsp.in])
 AC_CONFIG_AUX_DIR([gmp])
@@ -62,20 +62,32 @@ AC_ARG_ENABLE(soname,
 		  [(no|yes, default=yes)]),
   [], [enable_soname=yes] )
 
-AC_ARG_WITH(gmp,
-  AS_HELP_STRING( [--with-gmp=args],
-                  [supply arguments for configuring GMP library]),
-  [], [with_gmp=""])
+AC_ARG_ENABLE(gmp,
+  AS_HELP_STRING( [--enable-gmp],
+                  [version of the GMP library]
+                  [(portable|included|system|auto, default=auto)] ),
+  [], [enable_gmp=auto] )
 
+dnl GMP library options
 AC_ARG_WITH(C-gmp,
-  AS_HELP_STRING( [--with-C-gmp=args],
-                  [configure GMP to build using portable C]),
+  AS_HELP_STRING( [--with-C-gmp],
+                  [Deprecated! See --enable-gmp]),
   [with_c_gmp=yes; with_system_gmp=no], [with_c_gmp=no])
 
 AC_ARG_WITH(system-gmp,
   AS_HELP_STRING( [--with-system-gmp],
-                  [use already installed GMP library (default=auto)]),
+                  [Derpecated! See --enable-gmp]),
   [], [with_system_gmp="auto"])
+
+AC_ARG_WITH(gmp,
+  AS_HELP_STRING( [--with-gmp=args],
+                  [Deprecated! See --with-gmp-args]),
+  [], [with_gmp_args=""])
+
+AC_ARG_WITH(gmp-args,
+  AS_HELP_STRING( [--with-gmp-args=args],
+                  [supply arguments for configuring GMP library]),
+  [], [with_gmp_args=""])
 
 AC_ARG_WITH(gmp-prefix,
   AS_HELP_STRING( [--with-gmp-prefix=path],
@@ -92,29 +104,37 @@ AC_ARG_WITH(gmp-libdir,
 		  [path to system GMP libraries (overrides prefix)] ),
   [GMP_LIBDIR="$withval"], [])
 
-AC_ARG_ENABLE(local-gmp,
-  AS_HELP_STRING( [--enable-local-gmp],
-                  [Deprecated! See --with-system-gmp]),
-  [AC_MSG_WARN(
-    [--with-local-gmp is deprecated, use --with-system-gmp instead!])
-   with_system_gmp="${enableval}"])
-
+dnl LIBFFI library options
 AC_ARG_WITH(libffi-prefix,
   AS_HELP_STRING( [--with-libffi-prefix=path],
                   [prefix for system LIBFFI includes and libraries] ),
   [LIBFFI_INCDIR="$withval/include"; LIBFFI_LIBDIR="$withval/lib"], [])
 
-AC_ARG_WITH(__thread,
-  AS_HELP_STRING( [--with-__thread],
-                  [Enable __thread thread-local variables (yes|NO|auto)]
-                  [(supported by NPTL-aware glibc and maybe Windows)] ),
-  [], [with___thread=no])
+AC_ARG_WITH(libffi-incdir,
+  AS_HELP_STRING( [--with-libffi-incdir=path],
+		  [path to system LIBFFI includes (overrides prefix)] ),
+  [LIBFFI_INCDIR="$withval"], [])
 
-AC_ARG_ENABLE(opcode8,
-  AS_HELP_STRING( [--enable-opcode8],
-                  [interpreter uses 8-bit codes]
-                  [(default=NO, only works on Intel)]),
-  [opcode8=${enableval}], [opcode8=no])
+AC_ARG_WITH(libffi-libdir,
+  AS_HELP_STRING( [--with-libffi-libdir=path],
+		  [path to system LIBFFI libraries (overrides prefix)] ),
+  [LIBFFI_LIBDIR="$withval"], [])
+
+dnl LIBGC library options
+AC_ARG_WITH(libgc-prefix,
+  AS_HELP_STRING( [--with-libgc-prefix=path],
+                  [prefix for system LIBGC includes and libraries] ),
+  [LIBGC_INCDIR="$withval/include"; LIBGC_LIBDIR="$withval/lib"], [])
+
+AC_ARG_WITH(libgc-incdir,
+  AS_HELP_STRING( [--with-libgc-incdir=path],
+		  [path to system LIBGC includes (overrides prefix)] ),
+  [LIBGC_INCDIR="$withval"], [])
+
+AC_ARG_WITH(libgc-libdir,
+  AS_HELP_STRING( [--with-libgc-libdir=path],
+		  [path to system LIBGC libraries (overrides prefix)] ),
+  [LIBGC_LIBDIR="$withval"], [])
 
 AC_ARG_WITH(cxx,
   AS_HELP_STRING( [--with-cxx],
@@ -130,11 +150,6 @@ AC_ARG_WITH(serve_event,
   AS_HELP_STRING( [--with-serve-event],
                   [include serve-event module (yes|builtin|no, default=YES)]),
   [], [with_serve_event=${enable_shared}])
-
-AC_ARG_WITH(clx,
-  AS_HELP_STRING( [--with-clx],
-                  [include CLX library (yes|builtin|no, default=NO)]),
-  [], [with_clx=no])
 
 AC_ARG_WITH(clos-streams,
   AS_HELP_STRING( [--with-clos-streams],
@@ -155,8 +170,8 @@ AC_ARG_WITH(asdf,
 AC_ARG_WITH(defsystem,
   AS_HELP_STRING( [--with-defsystem],
                   [include DEFSYSTEM building facility]
-                  [(yes|builtin|no, default=YES)]),
-  [], [with_defsystem=yes])
+                  [(yes|builtin|no, default=NO)]),
+  [], [with_defsystem=no])
 
 AC_ARG_WITH(cmp,
   AS_HELP_STRING( [--with-cmp],
@@ -170,15 +185,15 @@ AC_ARG_WITH(bytecmp,
 
 AC_ARG_WITH(rt,
   AS_HELP_STRING( [--with-rt],
-                  [include MIT-RT testing environment]
-                  [(yes|builtin|no, default=YES)]),
-  [], [with_rt=yes])
+                  [Deprecated! include MIT-RT testing environment]
+                  [(yes|builtin|no, default=NO)]),
+  [], [with_rt=no])
 
 AC_ARG_WITH(profile,
   AS_HELP_STRING( [--with-profile],
-                  [include CMUCL's simple profiler]
-                  [(yes|builtin|no, default=YES if Boehm-Weiser garbage collector used)]),
-  [], [with_profile=yes])
+                  [Deprecated! include CMUCL's simple profiler]
+                  [(yes|builtin|no, default=NO)]),
+  [], [with_profile=no])
 
 AC_ARG_WITH(dffi,
   AS_HELP_STRING( [--with-dffi],
@@ -200,7 +215,7 @@ AC_ARG_WITH(signed-zero,
 AC_ARG_WITH(ieee-fp,
   AS_HELP_STRING( [--with-ieee-fp={yes|no}],
                   [full IEEE floating point system, including denormals (default=YES).]
-                  [Implies signed-zero and fpe]),
+                  [Implies signed-zero]),
   [], [with_ieee_fp="yes"])
 
 AC_ARG_WITH(sse,
@@ -210,33 +225,15 @@ AC_ARG_WITH(sse,
   [], [with_sse="no"])
 
 AC_ARG_ENABLE(unicode,
-  AS_HELP_STRING( [--enable-unicode={yes|no|32}],
-                  [enable support for unicode (default=YES)]),
-  [], [enable_unicode=yes])
-
-AC_ARG_ENABLE(longdouble,
-  AS_HELP_STRING( [--enable-longdouble],
-                  [include support for long double]
-                  [(yes|no|auto, default=AUTO)]),
-  [enable_longdouble=${enableval}], [enable_longdouble=yes])
+  AS_HELP_STRING( [--enable-unicode={32|16|no}],
+                  [enable support for unicode (default=32)]),
+  [], [enable_unicode=32])
 
 AC_ARG_ENABLE(c99complex,
   AS_HELP_STRING( [--enable-c99complex],
-                  [include support for C complex type]
-                  [(default=NO)]),
-  [enable_c99complex=${enableval}], [enable_c99complex=no])
-
-AC_ARG_ENABLE(hpack,
-  AS_HELP_STRING( [--enable-hpack],
-                  [hierarchical package names]
-                  [(default=YES)]),
-  [enable_hpack=${enableval}], [enable_hpack=yes])
-
-AC_ARG_ENABLE(asmapply,
-  AS_HELP_STRING( [--enable-asmapply],
-                  [enable optimizations written in assembler, EXPERIMENTAL]
-                  [(default=NO)]),
-  [enable_asmapply=${enableval}],[enable_asmapply=no])
+                  [include support for c99 complex floats]
+                  [(default=auto)]),
+  [enable_c99complex=${enableval}], [enable_c99complex=auto])
 
 AC_ARG_ENABLE(smallcons,
   AS_HELP_STRING( [--enable-smallcons],
@@ -256,6 +253,12 @@ AC_ARG_ENABLE(precisegc,
 		  [(no|yes, default=NO)]),
   [enable_precisegc=${enableval}], [enable_precisegc=no] )
 
+AC_ARG_ENABLE(serialization,
+  AS_HELP_STRING( [--enable-serialization],
+		  [use serialization framework instead of the reader to save externalizable objects in compiled files (EXPERIMENTAL).]
+		  [(no|yes, default=NO)]),
+  [], [enable_serialization=no] )
+
 AC_ARG_ENABLE(debug,
   AS_HELP_STRING( [--enable-debug],
                  [enable various debugging features]
@@ -274,11 +277,6 @@ AC_ARG_WITH(profile-cflags,
                   [(yes,no,actual flags,default=NO)]),
   [],[with_profile_cflags="no"])
 
-AC_ARG_WITH(newcmp,
-  AS_HELP_STRING( [--with-newcmp],
-                  [new compiler (yes|no, default=NO)]),
-  [], [with_newcmp=no])
-
 AC_ARG_WITH(extra-files,
   AS_HELP_STRING( [--with-extra-files],
                   [list of additional source files (default="")]),
@@ -289,20 +287,18 @@ AC_ARG_WITH(init-form,
                   [lisp forms to execute at startup (default="(si::top-level t)")]),
   [with_init_form="${withval}"], [with_init_form=""])
 
-AC_ARG_WITH(unicode-names,
-  AS_HELP_STRING( [--with-unicode-names],
-                  [link in the database of Unicode names]
-                  [(YES,no)]),
-  [],[with_unicode_names="yes"])
+AC_ARG_ENABLE(manual,
+  AS_HELP_STRING( [--enable-manual={auto|html|info|no}],
+                  [Enable building of the manual]
+                  [(default=AUTO)]),
+  [enable_manual=${enableval}],
+  [enable_manual=auto])
 
 dnl -----------------------------------------------------------------------
 dnl Installation directories
 AC_ARG_VAR([ecldir], [the directory where *.fas files are installed])
 test -z "${ecldir}" && ecldir="${libdir}/ecl-${PACKAGE_VERSION}"
 AC_SUBST([ecldir])
-AC_ARG_VAR([docdir], [the directory where documentation is installed])
-test -z "${docdir}" && docdir="${datadir}/doc/ecl-${PACKAGE_VERSION}"
-AC_SUBST([docdir])
 
 dnl -----------------------------------------------------------------------
 dnl Initialize variables.
@@ -314,7 +310,7 @@ AC_SUBST(ECL_CFLAGS)            dnl Similar, but specific to ECL (see src/util/e
 AC_SUBST(DEBUG_CFLAGS)
 AC_SUBST(GMP_CPPFLAGS)		dnl CFLAGS needed for compiling with system GMP library
 AC_SUBST(GMP_LDFLAGS)		dnl LDFLAGS needed for compiling with system GMP library
-AC_SUBST(LIBFFI_LDFLAGS)		dnl LDFLAGS needed for compiling with system LIBFFI library
+AC_SUBST(LIBFFI_LDFLAGS)	dnl LDFLAGS needed for compiling with system LIBFFI library
 AC_SUBST(FASL_LIBS)             dnl Libraries to link into all ecl code but not
                                 dnl into helper programs.
 AC_SUBST(CORE_LIBS, [])         dnl Locally compiled libs to link into
@@ -323,14 +319,14 @@ AC_SUBST(SHARED_LDFLAGS)        dnl Flags for shared libraries linker
 AC_SUBST(BUNDLE_LDFLAGS)        dnl Flags for FASL files linker
 AC_SUBST(EXTRA_OBJS)            dnl Extra *.o files to be compiled into libecl.a
 AC_SUBST(TARGETS, ['bin/ecl$(EXE)'])dnl Versions of ECL to be built 
-AC_SUBST(SUBDIRS, [c])          dnl Subdirectories that make should process
+AC_SUBST(SUBDIRS, ['c doc'])        dnl Subdirectories that make should process
 AC_SUBST(LIBRARIES, [])         dnl GMP, Boehm's GC, etc
 AC_SUBST(LSP_LIBRARIES)         dnl Libraries produced by lisp translator
 AC_SUBST(LSP_FEATURES, ['*features*']) dnl Symbols to add to *FEATURES* for conditional compilation
 
 
 dnl -----------------------------------------------------------------------
-dnl Guess operating system of host. We do not allow cross-compiling.
+dnl Guess operating system of host.
 AC_CANONICAL_BUILD
 AC_CANONICAL_HOST
 
@@ -346,6 +342,7 @@ AC_PROG_LN_S          # sets variable LN_S
 AC_PROG_MAKE_SET      # set $(MAKE) if needed
 AC_PROG_RANLIB        # set variable RANLIB
 AC_CHECK_TOOL([AR],[ar]) # set variable AR to appropriate `ar' program
+AC_CHECK_PROGS([CTAGS],[exctags ectags ctags]) # set variable CTAGS to ctags program if found
 AC_CHECK_PROGS([ETAGS],[etags emacs-etags]) # set variable ETAGS to etags program if found
 
 dnl -----------------------------------------------------------------------
@@ -353,15 +350,37 @@ dnl Checks which do not come with autoconf (must be after AC_PROG_CC)
 ECL_MAKE_ABSOLUTE_SRCDIR
 ECL_CROSS_CONFIG
 ECL_GUESS_HOST_OS
-ECL___THREAD
 
-AC_SUBST(INFOEXT)
-AC_SUBST(INSTALL_INFO)
-AC_PATH_PROG([INSTALL_INFO], [install-info], [/bin/true], [$PATH:/sbin:/usr/sbin:/usr/etc])
-if test -z `which gzip`; then
-  INFOEXT=info.gz
-else
-  INFOEXT=info
+if test "${enable_manual}" != "no"; then
+  AC_PATH_PROG([INSTALL_INFO], [install-info], [])  
+  if test "x${INSTALL_INFO}" = "x"; then
+    if test "${enable_manual}" = "auto"; then
+      enable_manual=no
+    elif test "${enable_manual}" = "info"; then
+      AC_MSG_ERROR([Unable to build the manual: install-info not found.])
+    fi
+  fi
+  AC_PATH_PROG([MAKEINFO], [makeinfo], [])
+  if test "x${MAKEINFO}" = "x"; then
+    if test "${enable_manual}" = "auto"; then
+      enable_manual=no
+    else
+      AC_MSG_ERROR([Unable to build the manual: makeinfo not found.])
+    fi
+  fi
+fi
+if test "${enable_manual}" != "no"; then
+  AC_SUBST(INSTALL_INFO)
+  AC_SUBST(MAKEINFO)
+  if test "${enable_manual}" = "html"; then
+    AC_SUBST(MANUAL_MAKE_TARGET, ['html'])
+    AC_SUBST(MANUAL_INSTALL_TARGET, ['install-html'])
+    AC_SUBST(MANUAL_UNINSTALL_TARGET, ['uninstall-html'])
+  else
+    AC_SUBST(MANUAL_MAKE_TARGET, ['info'])
+    AC_SUBST(MANUAL_INSTALL_TARGET, ['install-info'])
+    AC_SUBST(MANUAL_UNINSTALL_TARGET, ['uninstall-info'])
+  fi
 fi
 
 dnl ======================================================================
@@ -387,10 +406,13 @@ fi
 CPPFLAGS="$CPPFLAGS $GMP_CPPFLAGS"
 LDFLAGS="$LDFLAGS $GMP_LDFLAGS"
 
-if test ${with_system_gmp} = "auto"; then
-  AC_CHECK_LIB( [gmp], [__gmpz_init],
-                [with_system_gmp=yes], [with_system_gmp=no] )
-fi
+AS_CASE([${enable_gmp}],
+        [portable], [with_system_gmp=no; with_c_gmp=yes],
+        [included], [with_system_gmp=no],
+        [system],   [with_system_gmp=yes],
+        [AC_CHECK_LIB( [gmp], [__gmpz_init],
+           [with_system_gmp=yes],
+           [with_system_gmp=no] )])
 
 ECL_GMP_HEADER=
 if test "${with_system_gmp}" = "yes"; then
@@ -433,14 +455,16 @@ if test "x${with_system_gmp}" = "xno" ; then
   else
     GMP_ABI="ABI=$ABI"
   fi
+  # Crosscompilation for Android on Darwin requires replacing 'NM=nm'
+  # below with 'NM=$PLATFORM_PREFIX/bin/arm-linux-androideabi-nm'.
   mkdir gmp
   dnl Notice we need -DPIC to force the assembler to generate PIC code
   (destdir=`${PWDCMD}`; cd gmp && CC="${CC} ${PICFLAG}" \
-     NM=nm $srcdir/gmp/configure --disable-shared --prefix=${destdir} \
+     $srcdir/gmp/configure --disable-shared --prefix=${destdir} \
      -infodir=${destdir}/doc --includedir=${destdir}/ecl --with-pic \
      --libdir=${destdir} --build=${gmp_build} --host=${host_alias} \
      CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS" CC="${CC} ${PICFLAG}" \
-     "$GMP_ABI" $with_gmp)
+     "$GMP_ABI" $with_gmp_args)
   if test ! -f gmp/config.status; then
     AC_MSG_ERROR([Failed to configure the GMP library.])
   fi
@@ -477,10 +501,25 @@ fi
 CPPFLAGS="$CPPFLAGS $LIBFFI_CPPFLAGS"
 LDFLAGS="$LDFLAGS $LIBFFI_LDFLAGS"
 
+dnl ======================================================================
+dnl LIBGC library
+if test "x$LIBGC_INCDIR" != "x"; then
+  LIBGC_CPPFLAGS="-I$LIBGC_INCDIR"
+fi
+if test "x$LIBGC_LIBDIR" != "x"; then
+  LIBGC_LDFLAGS="-L$LIBGC_LIBDIR"
+  if test "$enable_rpath" = "yes"; then
+    if (echo "$ECL_LDRPATH" | grep '~A') > /dev/null; then
+      LIBGC_LDFLAGS=`echo $ECL_LDRPATH | sed "s,~A,$LIBGC_LIBDIR,"`" $LIBGC_LDFLAGS"
+    fi
+  fi
+fi
+CPPFLAGS="$CPPFLAGS $LIBGC_CPPFLAGS"
+LDFLAGS="$LDFLAGS $LIBGC_LDFLAGS"
+
 dnl =====================================================================
 dnl Checks for libraries
 
-LIBS="${LIBS} -lm"
 AC_CHECK_LIB(sun, getpwnam)         # on IRIX adds -lsun
 AC_SEARCH_LIBS([strerror],[cposix])
 
@@ -507,11 +546,7 @@ fi
 
 dnl ----------------------------------------------------------------------
 dnl Version of the compiler
-if test "${with_newcmp}" = "yes"; then
-  ECL_CMPDIR=new-cmp
-else
-  ECL_CMPDIR=cmp
-fi
+ECL_CMPDIR=cmp
 AC_SUBST(ECL_CMPDIR)
 
 dnl ----------------------------------------------------------------------
@@ -538,16 +573,6 @@ if test "${enable_threads}" = "yes" ; then
     AC_MSG_CHECKING([for thread object files])
     AC_MSG_RESULT([${THREAD_OBJ}])
     AC_DEFINE( [ECL_THREADS], [1], [Userland threads?])
-    if test "${with___thread}" = "auto"; then
-      with___thread=${ac_cv_ecl___thread}
-    fi
-    AC_MSG_CHECKING([for use of __thread])
-    if test "${with___thread}" = "yes"; then
-      AC_DEFINE( [WITH___THREAD], [1], [__thread thread-local variables?] )
-      AC_MSG_RESULT([yes])
-    else
-      AC_MSG_RESULT([no])
-    fi
   fi
 else
   boehm_configure_flags="${boehm_configure_flags} --disable-threads"
@@ -608,7 +633,6 @@ dnl ----------------------------------------------------------------------
 dnl Deactivate floating point exceptions if asked to
 if test "${with_ieee_fp}" = yes; then
    with_signed_zero="yes"
-   with_fpe="yes"
    AC_DEFINE([ECL_IEEE_FP], [], [ECL_IEEE_FP])
 fi
 if test "${with_fpe}" != yes; then
@@ -683,10 +707,7 @@ ECL_FIND_SETJMP
 ECL_FILE_STRUCTURE
 ECL_FPE_MODEL
 ECL_SSE
-ECL_LONG_DOUBLE
-if test "$enable_c99complex" != "no" ; then
-AC_CHECK_TYPES([double complex, float complex],[],[],[#include <complex.h>])
-fi
+ECL_COMPLEX_C99
 
 dnl -----------------------------------------------------------------------
 dnl Study the call conventions
@@ -715,12 +736,10 @@ dnl !!! end autoscan
 
 AC_CHECK_FUNCS( [nanosleep alarm times select setenv putenv] \
                 [lstat mkstemp sigprocmask isatty tzset] \
-		[gettimeofday getrusage] )
+                [gettimeofday getrusage system] )
 
-dnl AC_CHECK_FUNCS( [ feenableexcept ] )
-
-AC_CHECK_FUNCS( [expf logf sqrtf cosf sinf tanf sinhf coshf tanhf] \
-		[floorf ceilf fabsf frexpf ldexpf log1p log1pf log1pl] \
+AC_CHECK_FUNCS( [expf powf logf sqrtf cosf sinf tanf sinhf coshf tanhf] \
+                [floorf ceilf fabsf frexpf ldexpf log1p log1pf log1pl] \
                 [copysign] )
 
 AC_CHECK_FUNCS( [sched_yield uname fseeko dladdr backtrace backtrace_symbols] )
@@ -731,6 +750,8 @@ AC_CHECK_HEADER( [sys/mman.h],
                )
 
 ECL_POSIX_ENVIRON
+
+ECL_FLOATING_POINT_EXCEPTIONS
 
 dnl =====================================================================
 dnl Checks for system services
@@ -746,21 +767,13 @@ dnl ----------------------------------------------------------------------
 dnl Do we use C or C++ compiler to compile ecl?
 if test ${with_cxx} = "no" ; then
   AC_SUBST([ECL_CC], [${CC}])
-  AC_SUBST([CC_IS_CXX], ["nil"])
 else
   AC_SUBST([ECL_CC], [${CXX}])
-  AC_SUBST([CC_IS_CXX], ["t"])
+  AC_DEFINE([ECL_CXX_CORE], [1],
+            [Do we use C or C++ compiler to compile ecl?])
   boehm_configure_flags="${boehm_configure_flags} --enable-cplusplus"
 fi
 
-dnl ----------------------------------------------------------------------
-dnl Do we need to have 8-bit opcodes?
-if test ! ${opcode8} = "no" ; then
-  AC_DEFINE( ECL_SMALL_BYTECODES, [1], 
-             [Bytecodes and arguments are 8 and 16 bits large, respectively])
-fi
-
-ECL_GCC_BACKTRACE
 ECL_LIBATOMIC_OPS
 
 dnl ----------------------------------------------------------------------
@@ -795,20 +808,6 @@ if test "${with_cmp}" = "builtin"; then
 fi
 if test "${with_cmp}" = "yes"; then
   ECL_ADD_LISP_MODULE([cmp])
-fi
-
-AC_SUBST(CLX_INFO)
-if test "${with_clx}" = "builtin"; then
-  ECL_ADD_BUILTIN_MODULE([clx])
-  ECL_ADD_BUILTIN_MODULE([sockets])
-  with_clx=yes
-fi
-if test ${with_clx} = "yes"; then
-  tcp="yes"
-  ECL_ADD_LISP_MODULE([clx])
-  CLX_INFO="clx.${INFOEXT}"
-else
-  CLX_INFO=""
 fi
 
 if test "${with_tcp}" = "builtin"; then
@@ -889,10 +888,8 @@ if test "x${enable_unicode}" != "xno"; then
       ECL_CHARACTER=$ECL_INT32_T
       EXTRA_OBJS="$EXTRA_OBJS unicode/ucd.o unicode/ucd-0000.o unicode/ucd-0016.o unicode/ucd-0032.o unicode/ucd-0048.o unicode/ucd-0064.o unicode/ucd-0080.o unicode/ucd-0096.o"
    fi
-   if test "${with_unicode_names}" = "yes"; then
-      AC_DEFINE([ECL_UNICODE_NAMES], [1], [Link in the database of Unicode names])
-      EXTRA_OBJS="$EXTRA_OBJS unicode/ucd_names_char.o unicode/ucd_names_codes.o unicode/ucd_names_pair.o unicode/ucd_names_str.o"
-   fi
+   AC_DEFINE([ECL_UNICODE_NAMES], [1], [Link in the database of Unicode names])
+   EXTRA_OBJS="$EXTRA_OBJS unicode/ucd_names_char.o unicode/ucd_names_codes.o unicode/ucd_names_pair.o unicode/ucd_names_str.o"
 else
    CHAR_CODE_LIMIT=256
    ECL_CHARACTER="int"
@@ -913,18 +910,29 @@ else
   ECL_INIT_FORM="${with_init_form}"
 fi
 
-if test "${enable_hpack}" = "yes"; then
-   AC_DEFINE([ECL_RELATIVE_PACKAGE_NAMES], [1], [Hierarchical package names])
-fi
-
 AC_CONFIG_FILES([
-  bare.lsp lsp/load.lsp clos/load.lsp cmp/load.lsp new-cmp/load.lsp
-  ../Makefile Makefile c/Makefile doc/Makefile doc/ecl.man doc/ecl-config.man
-  ecl/configpre.h:h/config.h.in bin/ecl-config.pre:util/ecl-config
-  lsp/config.pre:lsp/config.lsp.in compile.pre:compile.lsp.in
+  bare.lsp
+  lsp/load.lsp
+  clos/load.lsp
+  cmp/load.lsp
+  ../Makefile
+  Makefile
+  c/Makefile
+  doc/Makefile
+  doc/ecl.man
+  doc/ecl-config.man
+  ecl/configpre.h:h/config.h.in
+  ecl/configpre-int.h:h/config-internal.h.in
+  bin/ecl-config.pre:util/ecl-config
+  lsp/config.lsp:lsp/config.lsp.in
+  compile.pre:compile.lsp.in
   cmp/cmpdefs.pre:cmp/cmpdefs.lsp
-  tests/config.lsp tests/Makefile
+  tests/config.lsp
+  tests/Makefile
  ])
+
 AC_CONFIG_HEADERS([ecl/config.h:ecl/configpre.h])
+AC_CONFIG_HEADERS([ecl/config-internal.h:ecl/configpre-int.h])
 AC_OUTPUT
-for i in $srcdir/c/*/; do mkdir c/`basename $i`; done
+
+for i in $srcdir/c/*/; do mkdir -p c/`basename $i`; done

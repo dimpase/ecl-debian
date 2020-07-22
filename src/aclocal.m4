@@ -1,18 +1,33 @@
 dnl -*- autoconf -*-
 
 dnl --------------------------------------------------------------
-dnl check existence of long double and supporting functions
-AC_DEFUN([ECL_LONG_DOUBLE],[
-if test "$enable_longdouble" != "no" ; then
-AC_CHECK_TYPES([long double],[enable_longdouble=yes],[enable_longdouble=no])
-if test "$enable_longdouble" != "no" ; then
-AC_CHECK_FUNCS([sinl cosl tanl logl expl],[],[enable_longdouble=no; break])
-if test "$enable_longdouble" != "no" ; then
-AC_DEFINE([ECL_LONG_FLOAT], [], [ECL_LONG_FLOAT])
-fi
-fi
-fi
-])
+dnl check for existence of complex float
+AC_DEFUN([ECL_COMPLEX_C99],[
+  if test "$enable_c99complex" != "no" ; then
+    AC_CHECK_TYPES([float complex, double complex, long complex],
+                   [enable_c99complex=yes],
+                   [enable_c99complex=no],
+                   [#include <complex.h>])
+  fi
+  dnl Android have complex types defined, but not all corresponding
+  dnl numeric functions.
+  if test "$enable_c99complex" != "no" ; then
+    AC_CHECK_FUNCS([crealf creal creall cimagf cimag cimagl] \
+                   [cabsf cabs cabsl conjf conj conjl csqrtf csqrt csqrtl] \
+                   [ccosf ccos ccosl csinf csin csinl ctanf ctan ctanl] \
+                   [ccoshf ccosh ccoshl csinhf csinh csinhl ctanhf ctanh ctanhl] \
+                   [cexpf cexp cexpl cpowf cpow cpowl clogf clog clogl] \
+                   [casinf casin casinl cacosf cacos cacosl catanf catan catanl] \
+                   [casinhf casinh casinhl cacoshf cacosh cacoshl catanhf catanh catanhl],
+                   [],
+                   [enable_c99complex=no])
+  fi
+  if test "$enable_c99complex" != "no" ; then
+    AC_DEFINE([ECL_COMPLEX_FLOAT], [], [ECL_COMPLEX_FLOAT])
+    AC_MSG_RESULT("C99 Complex Float support is available")
+  else
+    AC_MSG_RESULT("C99 Complex Float support is not available")
+  fi])
 
 dnl --------------------------------------------------------------
 dnl http://autoconf-archive.cryp.to/ac_c_long_long_.html
@@ -55,8 +70,7 @@ else
   AC_MSG_RESULT([$ECL_LONG_LONG_BITS])
   AC_DEFINE([ecl_long_long_t], [long long], [compiler understands long long])
   AC_DEFINE([ecl_ulong_long_t], [unsigned long long], [compiler understands long long])
-  AC_DEFINE_UNQUOTED([ECL_LONG_LONG_BITS],[$ECL_LONG_LONG_BITS],
-   [ECL_LOING_LONG_BITS])dnl last param needs to be on a new line. -evrim.
+  AC_DEFINE_UNQUOTED([ECL_LONG_LONG_BITS],[$ECL_LONG_LONG_BITS], [ECL_LONG_LONG_BITS])
 fi
 ])
 
@@ -198,7 +212,7 @@ case "${srcdir}" in
   /* | ?:/* ) ;;
   *  ) srcdir="`(cd ${srcdir}; ${PWDCMD})`";
 esac
-if uname -a | grep -i 'mingw32' > /dev/null; then
+if uname -a | grep -i 'mingw' > /dev/null; then
   true_srcdir=`(cd ${srcdir}; pwd -W)`
   true_builddir=`pwd -W`
 else
@@ -237,6 +251,8 @@ AC_SUBST(EXEEXT)
 AC_SUBST(INSTALL_TARGET)dnl Which type of installation: flat directory or unix like.
 AC_SUBST(thehost)
 AC_SUBST(ECL_GC_DIR)dnl Which version of the Boehm-Weiser library to use
+AC_SUBST(ECL_DEFAULT_C_STACK_SIZE)dnl Default size of the C stack in bytes
+ECL_DEFAULT_C_STACK_SIZE=1048576 dnl Default to 1 MB if we can't set the stack size at runtime
 ECL_GC_DIR=bdwgc
 ECL_LDRPATH=''
 SHAREDEXT='so'
@@ -249,23 +265,23 @@ THREAD_LIBS=''
 THREAD_GC_FLAGS='--enable-threads=posix'
 INSTALL_TARGET='install'
 THREAD_OBJ="$THREAD_OBJ threads/process threads/queue threads/mutex threads/condition_variable threads/semaphore threads/barrier threads/mailbox"
-clibs=''
+clibs='-lm'
 SONAME=''
 SONAME_LDFLAGS=''
 case "${host_os}" in
-        linux-androideabi)
+        linux-android*)
                 thehost='android'
                 THREAD_CFLAGS='-D_THREAD_SAFE'
 #               THREAD_LIBS='-lpthread'
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,--rpath,~A'
-                clibs="-ldl"
+                clibs="-ldl ${clibs}"
                 # Maybe CFLAGS="-D_ISOC99_SOURCE ${CFLAGS}" ???
-                CFLAGS="-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DANDROID -DPLATFORM_ANDROID -DUSE_GET_STACKBASE_FOR_MAIN -DIGNORE_DYNAMIC_LOADING -DAO_REQUIRE_CAS ${CFLAGS}"
-                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
-                SONAME_LDFLAGS="-Wl,-soname,SONAME"
+                CFLAGS="-D_GNU_SOURCE -DPLATFORM_ANDROID -DUSE_GET_STACKBASE_FOR_MAIN -DIGNORE_DYNAMIC_LOADING ${CFLAGS}"
                 ECL_ADD_FEATURE([android])
+                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}"
+                SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
 
         # libdir may have a dollar expression inside
@@ -276,7 +292,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,--rpath,~A'
-                clibs="-ldl"
+                clibs="-ldl ${clibs}"
                 # Maybe CFLAGS="-D_ISOC99_SOURCE ${CFLAGS}" ???
                 CFLAGS="-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 ${CFLAGS}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
@@ -289,7 +305,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,--rpath,~A'
-                clibs="-ldl"
+                clibs="-ldl ${clibs}"
                 CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
@@ -301,7 +317,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,--rpath,~A'
-                clibs="-ldl"
+                clibs="-ldl ${clibs}"
                 CFLAGS="-D_GNU_SOURCE ${CFLAGS}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
@@ -312,7 +328,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs=""
+                clibs="${clibs}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
@@ -322,7 +338,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs=""
+                clibs="${clibs}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
@@ -332,7 +348,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs=""
+                clibs="${clibs}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
@@ -343,7 +359,7 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH="-Wl,--rpath,~A"
-                clibs="-lpthread -lm"
+                clibs="-lpthread ${clibs}"
                 SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
                 SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 ;;
@@ -354,9 +370,9 @@ case "${host_os}" in
                 BUNDLE_LDFLAGS="-dy -G ${LDFLAGS}"
                 ECL_LDRPATH='-Wl,-R,~A'
                 TCPLIBS='-lsocket -lnsl -lintl'
-                clibs='-ldl'
-		SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
-		SONAME_LDFLAGS="-Wl,-soname,SONAME"
+                clibs="${clibs} -ldl"
+                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+                SONAME_LDFLAGS="-Wl,-soname,SONAME"
                 if test "x$GCC" = "xyes"; then
                   CFLAGS="${CFLAGS} -std=gnu99 -D_XOPEN_SOURCE=600 -D__EXTENSIONS__"
                   SHARED_LDFLAGS="-shared $SHARED_LDFLAGS"
@@ -364,8 +380,8 @@ case "${host_os}" in
                 fi
                 ;;
         cygwin*)
-                enable_threads='no'
                 thehost='cygwin'
+                #enable_threads='no'
                 shared='yes'
                 THREAD_CFLAGS='-D_THREAD_SAFE'
                 THREAD_LIBS='-lpthread'
@@ -382,13 +398,15 @@ case "${host_os}" in
                 ;;
         mingw*)
                 thehost='mingw32'
+                dnl We disable fpe because ECL/MinGW has problems with FE_INEXACT
+                with_fpe='no'
                 clibs=''
                 shared='yes'
                 enable_threads='yes'
                 THREAD_CFLAGS='-D_THREAD_SAFE'
                 THREAD_GC_FLAGS='--enable-threads=win32'
-                SHARED_LDFLAGS=''
-                BUNDLE_LDFLAGS=''
+                SHARED_LDFLAGS="-Wl,--stack,${ECL_DEFAULT_C_STACK_SIZE}"
+                BUNDLE_LDFLAGS="-Wl,--stack,${ECL_DEFAULT_C_STACK_SIZE}"
                 SHAREDPREFIX=''
                 SHAREDEXT='dll'
                 PICFLAG=''
@@ -402,7 +420,7 @@ case "${host_os}" in
                 PICFLAG='-fPIC -fno-common'
                 SHARED_LDFLAGS="-dynamiclib -flat_namespace -undefined suppress ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-bundle ${LDFLAGS}"
-                ECL_LDRPATH=''
+                ECL_LDRPATH='-Wl,-rpath,~A'
                 THREAD_CFLAGS='-D_THREAD_SAFE'
                 THREAD_LIBS='-lpthread'
                 # The GMP library has not yet been ported to Intel-OSX
@@ -429,7 +447,7 @@ case "${host_os}" in
                   ECL_GC_DIR=bdwgc
                 fi
                 SONAME="${SHAREDPREFIX}ecl.SOVERSION.${SHAREDEXT}"
-                SONAME_LDFLAGS="-Wl,-install_name,@libdir\@/SONAME -Wl,-compatibility_version,${PACKAGE_VERSION}"
+                SONAME_LDFLAGS="-Wl,-install_name,@rpath/SONAME -Wl,-compatibility_version,${PACKAGE_VERSION}"
                 ;;
         nsk*)
                 # HP Non-Stop platform
@@ -440,8 +458,28 @@ case "${host_os}" in
                 SHARED_LDFLAGS="-shared ${LDFLAGS}"
                 BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
                 ECL_LDRPATH='-Wld=\"-rld_l ~A\"'
-                clibs="-Wld=-lrld"
+                clibs="-Wld=-lrld ${clibs}"
                 ;;
+        haiku*)
+                thehost='haiku'
+                THREAD_LIBS=''
+                SHARED_LDFLAGS="-shared ${LDFLAGS}"
+                BUNDLE_LDFLAGS="-shared ${LDFLAGS}"
+                ECL_LDRPATH="-Wl,--rpath,~A"
+                clibs="-lnetwork"
+                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+                SONAME_LDFLAGS="-Wl,-soname,SONAME"
+                ;;
+	aix*)
+		PICFLAG='-DPIC'
+		thehost="aix"
+		THREAD_LIBS='-lpthread'
+                SHARED_LDFLAGS="-G -bsvr4 -brtl ${LDFLAGS}"
+                BUNDLE_LDFLAGS="-G -bsvr4 -brtl ${LDFLAGS}"
+                ECL_LDRPATH="-Wl,-R~A"
+                SONAME="${SHAREDPREFIX}ecl.${SHAREDEXT}.SOVERSION"
+                SONAME_LDFLAGS="-bsvr4 -brtl"
+		;;
         *)
                 thehost="$host_os"
                 shared="no"
@@ -762,7 +800,7 @@ int main() {
   fclose(f);
   f = fopen("conftestval","w");
   if (f == NULL) exit(1);
-  fprintf(f, output);
+  fputs(output, f);
   fclose(f);
   exit(0);
 }
@@ -809,33 +847,6 @@ AC_MSG_CHECKING([C/C++ compiler flags])
 AC_MSG_RESULT([${CFLAGS}])
 AC_MSG_CHECKING([Linker flags])
 AC_MSG_RESULT([${LDFLAGS}])
-])
-
-dnl --------------------------------------------------------------
-dnl Provides a test for the existance of the __thread declaration and
-dnl defines WITH___THREAD if it is found
-AC_DEFUN([ECL___THREAD],[
-AC_CACHE_CHECK(for __thread local data, ac_cv_ecl___thread,
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,[[static __thread void *data;]])],
-   ac_cv_ecl___thread=yes,
-   ac_cv_ecl___thread=no))
-dnl We deactivate this test because it seems to slow down ECL A LOT!!!
-])
-
-dnl --------------------------------------------------------------
-dnl Determine whether GCC supports backtraces
-dnl
-AC_DEFUN([ECL_GCC_BACKTRACE],[
-if test "x${cross_compiling}" != "xyes"; then
-AC_RUN_IFELSE(
-  [AC_LANG_SOURCE([[
-    void *foo() { return __builtin_return_address(1); }
-    int main() {
-      return (foo() == 0);
-    }]])],
-  [AC_DEFINE([HAVE___BUILTIN_RETURN_ADDRESS], [], [HAVE___BUILTIN_RETURN_ADDRESS])],
-  [])
-fi
 ])
 
 dnl ----------------------------------------------------------------------
@@ -898,8 +909,10 @@ dnl ----------------------------------------------------------------------
 dnl Check whether we have POSIX read/write locks are available
 AC_DEFUN([ECL_POSIX_RWLOCK],[
 AC_CHECK_FUNC( [pthread_rwlock_init], [
-  AC_DEFINE([ECL_RWLOCK], [], [ECL_RWLOCK])
-  AC_DEFINE([HAVE_POSIX_RWLOCK], [], [HAVE_POSIX_RWLOCK])
+  AC_CHECK_TYPES([pthread_rwlock_t], [
+    AC_DEFINE([ECL_RWLOCK], [], [ECL_RWLOCK])
+    AC_DEFINE([HAVE_POSIX_RWLOCK], [], [HAVE_POSIX_RWLOCK])
+  ], [])
 ], [])
 THREAD_OBJ="$THREAD_OBJ threads/rwlock"
 ])
@@ -925,6 +938,53 @@ if test $ECL_WORKING_ENVIRON = yes ; then
 fi
 ])
 
+dnl
+dnl --------------------------------------------------------------
+dnl Check if we have feenableexcept and the hardware generates
+dnl floating point exceptions.
+dnl
+AC_DEFUN(ECL_FLOATING_POINT_EXCEPTIONS,[
+  if test "${with_fpe}" = "yes" ; then
+  AC_MSG_CHECKING(for working feenableexcept)
+  saved_libs="${LIBS}"
+  LIBS="-lm"
+  AC_RUN_IFELSE([AC_LANG_SOURCE([[
+
+#define _GNU_SOURCE
+#include <fenv.h>
+#include <signal.h>
+#include <stdlib.h>
+
+const int traps = FE_DIVBYZERO | FE_OVERFLOW;
+
+void fpe_handler(int code) {
+	if (code == SIGFPE)
+		exit(0);
+}
+
+double raises_fpe(double x) {
+	return x / 0.0;
+}
+
+int main() {
+	signal(SIGFPE, fpe_handler);
+	feclearexcept(traps);
+	feenableexcept(traps);
+	raises_fpe(1.0);
+	return 1;
+}
+]])],
+  [AC_DEFINE([HAVE_FEENABLEEXCEPT], [], [feenableexcept works])
+   AC_MSG_RESULT(yes)],
+  [AC_MSG_RESULT(no)],
+  [AC_MSG_RESULT(only checking if feenableexcept is present due to cross compilation)
+   AC_CHECK_DECL([feenableexcept],
+                 [AC_DEFINE(HAVE_FEENABLEEXCEPT,[],[feenableexcept is declared])],
+                 [],
+                 [#include <fenv.h>])])
+  LIBS="${saved_libs}"
+  fi])
+
 dnl ----------------------------------------------------------------------
 dnl Configure libatomic-ops
 dnl
@@ -935,6 +995,18 @@ case "${enable_libatomic}" in
 esac
 if test "x${enable_threads}" != "xno"; then
   AC_CHECK_HEADER([atomic_ops.h],[system_libatomic=yes],[system_libatomic=no],[])
+  if test "${system_libatomic}" = yes; then
+    dnl checking that we can link against libatomic_ops requires a
+    dnl manual AC_LINK_IFELSE call, since all functionality could be
+    dnl implemented by macros
+    OLD_LIBS="${LIBS}"
+    LIBS="${LIBS} -latomic_ops"
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <atomic_ops.h>]],
+                                    [[AO_nop();]])],
+                   [system_libatomic=yes],
+                   [system_libatomic=no])
+    LIBS="${OLD_LIBS}"
+  fi
   AC_MSG_CHECKING( [libatomic-ops version] )
   if test "${enable_libatomic}" = auto; then
     if test "${system_libatomic}" = yes; then
@@ -1070,6 +1142,9 @@ if test "${enable_precisegc}" != "no" ; then
 else
   AC_MSG_RESULT([no])
 fi
+if test "${enable_serialization}" != "no" ; then
+  AC_DEFINE([ECL_EXTERNALIZABLE], [], [Use the serialization framework])
+fi
 ])
 
 dnl ----------------------------------------------------------------------
@@ -1116,7 +1191,7 @@ if test "${enable_libffi}" = "included"; then
    if (destdir=`${PWDCMD}`; cd libffi; \
        $srcdir/libffi/configure --disable-shared --prefix=${destdir} \
 	 --includedir=${destdir}/ecl/ --libdir=${destdir} --build=${build_alias} \
-	 --host=${host_alias} \
+	 --host=${host_alias} --disable-multi-os-directory --disable-docs \
          CC="${CC} ${PICFLAG}" CFLAGS="$CFLAGS" \
 	 LDFLAGS="$LDFLAGS" CPPFLAGS="$CPPFLAGS"); then
      ECL_LIBFFI_HEADER='ecl/ffi.h'

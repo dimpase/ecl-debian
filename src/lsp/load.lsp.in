@@ -38,17 +38,12 @@
   "src:lsp;packlib.lsp"
   "src:lsp;seqlib.lsp"
   "src:lsp;trace.lsp"
-#+old-loop
   "src:lsp;loop.lsp"
-#-old-loop
-  "src:lsp;loop2.lsp"
 #+cmu-format
   "src:lsp;format.lsp"
   "src:lsp;defpackage.lsp"
   "src:lsp;ffi.lsp"
   "src:lsp;mp.lsp"
-#+tk
-  "src:lsp;tk-init.lsp"
   "build:lsp;config.lsp"
   "src:lsp;module.lsp"
   "src:lsp;cmdline.lsp"

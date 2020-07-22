@@ -23,27 +23,16 @@ RM	= @RM@
 
 HDIR	= @HDIR@
 
-#ifdef MSDOS
-UTILS	= dpp.exe rsym.exe
-#else
-UTILS	= dpp rsym
-#endif
+UTILS	= dpp
 
 all:	$(UTILS)
 
 dpp	: ${HDIR}/machines.h dpp.c
 	${CC} ${CFLAGS} -I${HDIR} -o dpp $(srcdir)/dpp.c
 
-rsym	: rsym.c ${HDIR}/machines.h
-	${CC} ${CFLAGS} -I${HDIR} -o rsym $(srcdir)/rsym.c 
-
 dpp.exe	: dpp
 	coff2exe dpp
 	${RM} dpp
-
-rsym.exe: rsym
-	coff2exe rsym
-	${RM} rsym
 
 clean	:	
 	${RM} ${UTILS} core a.out *.o

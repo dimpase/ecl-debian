@@ -14,7 +14,7 @@
 ;;;;  CMPGLOBALS -- Global variables and flag definitions
 ;;;;
 
-(in-package #-new-cmp "COMPILER" #+new-cmp "C-DATA")
+(in-package "COMPILER")
 
 ;;;
 ;;; VARIABLES
@@ -24,8 +24,8 @@
 ;;;
 ;;; Empty info struct
 ;;;
-#-new-cmp
-(defvar *info* (make-info))
+;; (defvar *info* (make-info)) ;unused
+
 (defvar *inline-blocks* 0)
 (defvar *opened-c-braces* 0)
 ;;; *inline-blocks* holds the number of C blocks opened for declaring
@@ -50,11 +50,11 @@
 (defvar *compiler-conditions* '()
   "This variable determines whether conditions are printed or just accumulated.")
 
-(defvar *compile-print* nil
+(defvar cl:*compile-print* nil
   "This variable controls whether the compiler displays messages about
 each form it processes. The default value is NIL.")
 
-(defvar *compile-verbose* nil
+(defvar cl:*compile-verbose* nil
   "This variable controls whether the compiler should display messages about its
 progress. The default value is T.")
 
@@ -69,7 +69,6 @@ running the compiler. It may be updated by running ")
 (defvar *compiler-break-enable* nil)
 
 (defvar *compiler-in-use* nil)
-(defvar *compiler-input*)
 (defvar *compiler-output1*)
 (defvar *compiler-output2*)
 
@@ -110,9 +109,7 @@ running the compiler. It may be updated by running ")
 
 (defvar *lcl* 0)                ; number of local variables
 
-#-new-cmp
 (defvar *temp* 0)               ; number of temporary variables
-#-new-cmp
 (defvar *max-temp* 0)           ; maximum *temp* reached
 
 (defvar *level* 0)              ; nesting level for local functions
@@ -123,12 +120,9 @@ running the compiler. It may be updated by running ")
 (defvar *env* 0)                ; number of variables in current form
 (defvar *max-env* 0)            ; maximum *env* in whole function
 (defvar *env-lvl* 0)            ; number of levels of environments
-#-new-cmp
 (defvar *aux-closure* nil)      ; stack allocated closure needed for indirect calls
-#-new-cmp
 (defvar *ihs-used-p* nil)       ; function must be registered in IHS?
 
-#-new-cmp
 (defvar *next-cmacro* 0)        ; holds the last cmacro number used.
 (defvar *next-cfun* 0)          ; holds the last cfun used.
 
@@ -147,8 +141,8 @@ running the compiler. It may be updated by running ")
 ;;; *last-label* holds the label# of the last used label.
 ;;; *exit* holds an 'exit', which is
 ;;      ( label# . ref-flag ) or one of RETURNs (i.e. RETURN, RETURN-FIXNUM,
-;;      RETURN-CHARACTER, RETURN-DOUBLE-FLOAT, RETURN-SINGLE-FLOAT, or
-;;      RETURN-OBJECT).
+;;      RETURN-CHARACTER, RETURN-LONG-FLOAT, RETURN-DOUBLE-FLOAT, RETURN-SINGLE-FLOAT,
+;;      RETURN-CSFLOAT, RETURN-CDFLOAT, RETURN-CLFLOAT or RETURN-OBJECT).
 ;;; *unwind-exit* holds a list consisting of:
 ;;      ( label# . ref-flag ), one of RETURNs, TAIL-RECURSION-MARK, FRAME,
 ;;      JUMP, BDS-BIND (each pushed for a single special binding), or a
@@ -170,21 +164,22 @@ variable-record = (:block block-name) |
                   (:function function-name) |
                   (var-name {:special | nil} bound-p) |
                   (symbol si::symbol-macro macro-function) |
-                  CB | LB | UNWIND-PROTECT
-macro-record =  (function-name function) |
-                (macro-name si::macro macro-function)
-                CB | LB | UNWIND-PROTECT
+                  SI:FUNCTION-BOUNDARY |
+                  SI:UNWIND-PROTECT-BOUNDARY
 
-A *-NAME is a symbol. A TAG-ID is either a symbol or a number. A
-MACRO-FUNCTION is a function that provides us with the expansion
-for that local macro or symbol macro. BOUND-P is true when the
-variable has been bound by an enclosing form, while it is NIL if
-the variable-record corresponds just to a special declaration.
-CB, LB and UNWIND-PROTECT are only used by the C compiler and
-they denote closure, lexical environment and unwind-protect
-boundaries. Note that compared with the bytecodes compiler, these
-records contain an additional variable, block, tag or function
-object at the end.")
+macro-record    = (function-name function) |
+                  (macro-name si::macro macro-function)
+                  SI:FUNCTION-BOUNDARY |
+                  SI:UNWIND-PROTECT-BOUNDARY
+
+A *-NAME is a symbol. A TAG-ID is either a symbol or a number. A MACRO-FUNCTION
+is a function that provides us with the expansion for that local macro or symbol
+macro. BOUND-P is true when the variable has been bound by an enclosing form,
+while it is NIL if the variable-record corresponds just to a special
+declaration.  SI:FUNCTION-BOUNDARY and SI:UNWIND-PROTECT-BOUNDARY are only used
+by the C compiler and they denote function and unwind-protect boundaries. Note
+that compared with the bytecodes compiler, these records contain an additional
+variable, block, tag or function object at the end.")
 
 (defvar *cmp-env-root*
   (cons nil (list (list '#:no-macro 'si::macro (constantly nil))))
@@ -229,7 +224,6 @@ slashes before special characters.")
 (defvar *compiler-phase* nil)
 
 (defvar *volatile*)
-#-new-cmp
 (defvar *setjmps* 0)
 
 (defvar *compile-toplevel* T
@@ -241,7 +235,6 @@ in the translated C/C++ file. Notice that it is unspecified where these
 lines are inserted, but the order is preserved")
 
 (defvar *compile-time-too* nil)
-#-new-cmp
 (defvar *not-compile-time* nil)
 
 (defvar *permanent-data* nil)           ; detemines whether we use *permanent-objects*
@@ -271,10 +264,12 @@ lines are inserted, but the order is preserved")
 (defvar *global-funs* nil)              ; holds { fun }*
 (defvar *use-c-global* nil)             ; honor si::c-global declaration
 (defvar *global-cfuns-array* nil)       ; holds { fun }*
-(defvar *linking-calls* nil)            ; holds { ( global-fun-name fun symbol c-fun-name var-name ) }*
 (defvar *local-funs* nil)               ; holds { fun }*
 (defvar *top-level-forms* nil)          ; holds { top-level-form }*
 (defvar *make-forms* nil)               ; holds { top-level-form }*
+
+(defvar *objects-being-created* nil)    ; helps detecting circular references
+(defvar *objects-init-deferred* nil)    ; helps avoiding circularity
 
 ;;;
 ;;;     top-level-form:
@@ -285,11 +280,6 @@ lines are inserted, but the order is preserved")
 ;;;     | ( 'DEFVAR'    var-name-vv expr doc-vv )
 ;;;     | ( 'CLINES'    string* )
 ;;;     | ( 'LOAD-TIME-VALUE' vv )
-
-;;; *global-entries* holds (... ( fname cfun return-types arg-type ) ...).
-(defvar *global-entries* nil)
-
-(defvar *global-macros* nil)
 
 (defvar *self-destructing-fasl* '()
 "A value T means that, when a FASL module is being unloaded (for
@@ -310,11 +300,8 @@ be deleted if they have been opened with LoadLibrary.")
     (*callbacks* nil)
     (*cmp-env-root* (copy-tree *cmp-env-root*))
     (*cmp-env* nil)
-    #-new-cmp
     (*max-temp* 0)
-    #-new-cmp
     (*temp* 0)
-    #-new-cmp
     (*next-cmacro* 0)
     (*next-cfun* 0)
     (*last-label* 0)
@@ -328,28 +315,14 @@ be deleted if they have been opened with LoadLibrary.")
     (*global-vars* nil)
     (*global-funs* nil)
     (*global-cfuns-array* nil)
-    (*linking-calls* nil)
-    (*global-entries* nil)
     (*undefined-vars* nil)
     (*top-level-forms* nil)
     (*compile-time-too* nil)
     (*clines-string-list* '())
     (*inline-blocks* 0)
     (*open-c-braces* 0)
-    #+new-cmp
-    (*type-and-cache* (type-and-empty-cache))
-    #+new-cmp
-    (*type-or-cache* (type-or-empty-cache))
-    #+new-cmp
-    (*values-type-or-cache* (values-type-or-empty-cache))
-    #+new-cmp
-    (*values-type-and-cache* (values-type-and-empty-cache))
-    #+new-cmp
-    (*values-type-primary-type-cache* (values-type-primary-type-empty-cache))
-    #+new-cmp
-    (*values-type-to-n-types-cache* (values-type-to-n-types-empty-cache))
     (si::*defun-inline-hook* 'maybe-install-inline-function)
-    (*machine* (or *machine* +default-machine+))
+    (*machine* (or *machine* *default-machine*))
     (*optimizable-constants* (make-optimizable-constants *machine*))
     (*inline-information*
      (let ((r (machine-inline-information *machine*)))

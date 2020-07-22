@@ -14,7 +14,7 @@
 ;;;;  CMPTYPES -- Data types for the Lisp core structures
 ;;;;
 
-(in-package #-new-cmp "COMPILER" #+new-cmp "C-DATA")
+(in-package "COMPILER")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -33,14 +33,9 @@
 (defstruct (ref (:print-object print-ref))
   name                  ;;; Identifier of reference.
   (ref 0 :type fixnum)  ;;; Number of references.
-  ref-ccb               ;;; Cross closure reference.
-                        ;;; During Pass1, T or NIL.
-                        ;;; During Pass2, the index into the closure env
-  ref-clb               ;;; Cross local function reference.
-                        ;;; During Pass1, T or NIL.
-                        ;;; During Pass2, the lex-address for the
-                        ;;; block id, or NIL.
-  read-nodes            ;;; Nodes (c1forms) in which the reference occurs
+  ref-ccb               ;;; Cross closure reference: T or NIL.
+  ref-clb               ;;; Cross local function reference: T or NIL.
+  read-nodes            ;;; Nodes (c1forms) in which the reference occurs.
 )
 
 (deftype OBJECT () `(not (or fixnum character float)))
@@ -78,12 +73,8 @@
                 ;;;     lex-ndx is the index within the array for this env.
                 ;;; For SPECIAL and GLOBAL: the vv-index for variable name.
   (type t)      ;;; Type of the variable.
-  #-new-cmp
   (index -1)    ;;; position in *vars*. Used by similar.
-  #-new-cmp
   (ignorable nil) ;;; Whether there was an IGNORABLE/IGNORE declaration
-  #+new-cmp
-  read-only-p   ;;; T for variables that are assigned only once.
   )
 
 ;;; A function may be compiled into a CFUN, CCLOSURE or CCLOSURE+LISP_CLOSURE
@@ -111,7 +102,7 @@
 ;;;   looking at the info-referenced-vars and info-local-referenced of its body.
 
 ;;; A LISP_CFUN or LISP_CLOSURE must be created when the function is returned.
-;;; The LISP funob may then be referenced locally or across LB or CB:
+;;; The LISP funob may then be referenced locally or across a function boundary:
 ;;;     (flet ((foo (z) (bar z))) (list #'foo)))
 ;;;     (flet ((foo (z) z)) (flet ((bar () #'foo)) (bar)))
 ;;;     (flet ((foo (z) (bar z))) #'(lambda () #'foo)))
@@ -123,18 +114,10 @@
                         ;;; During Pass1, T or NIL.
                         ;;; During Pass2, the vs-address for the
                         ;;; function closure, or NIL.
-;  ref-ccb              ;;; Cross closure reference.
-                        ;;; During Pass1, T or NIL, depending on whether a
-                        ;;; function object will be built.
-                        ;;; During Pass2, the vs-address for the function
-                        ;;; closure, or NIL.
+;  ref-ccb              ;;; Cross closure reference: T or NIL.
 ;  ref-clb              ;;; Unused.
-;  read-nodes           ;;; Nodes (c1forms) in which the reference occurs
+;  read-nodes           ;;; Nodes (c1forms) in which the reference occurs.
   cfun                  ;;; The cfun for the function.
-  #+new-cmp
-  (last-lcl 0)          ;;; Number of local variables (just to bookkeep names)
-  #+new-cmp
-  (last-label 0)        ;;; Number of generated labels (same as last-lcl)
   (level 0)             ;;; Level of lexical nesting for a function.
   (env 0)               ;;; Size of env of closure.
   (global nil)          ;;; Global lisp function.
@@ -147,17 +130,12 @@
   closure               ;;; During Pass2, T if env is used inside the function
   var                   ;;; the variable holding the funob
   description           ;;; Text for the object, in case NAME == NIL.
-  #+new-cmp
-  lambda-list           ;;; List of (requireds optionals rest-var keywords-p
-                        ;;;          keywords allow-other-keys-p)
   lambda                ;;; Lambda c1-form for this function.
   lambda-expression     ;;; LAMBDA or LAMBDA-BLOCK expression
   (minarg 0)            ;;; Min. number arguments that the function receives.
   (maxarg call-arguments-limit)
                         ;;; Max. number arguments that the function receives.
   (return-type '(VALUES &REST T))
-  #+new-cmp
-  doc                   ;;; Documentation
   (parent *current-function*)
                         ;;; Parent function, NIL if global.
   (local-vars nil)      ;;; List of local variables created here.
@@ -166,60 +144,42 @@
                         ;;; We only register direct calls, not calls via object.
   (referencing-funs nil);;; Functions that reference this one
   (child-funs nil)      ;;; List of local functions defined here.
-  #+new-cmp
-  (debug 0)             ;;; Debug quality
   (file (car ext:*source-location*))
                         ;;; Source file or NIL
   (file-position (or (cdr ext:*source-location*) *compile-file-position*))
                         ;;; Top-level form number in source file
-  #+new-cmp
-  (toplevel-form *current-toplevel-form*)
-  #+new-cmp
-  code-gen-props        ;;; Extra properties for code generation
   (cmp-env (cmp-env-copy)) ;;; Environment
   required-lcls         ;;; Names of the function arguments
+  (optional-type-check-forms nil) ;;; Type check forms for optional arguments
+  (keyword-type-check-forms nil) ;;; Type check forms for keyword arguments
   )
 
 (defstruct (blk (:include ref))
 ;  name                 ;;; Block name.
-;  (ref 0 :type fixnum) ;;; Number of references.
-;  ref-ccb              ;;; Cross closure reference.
-                        ;;; During Pass1, T or NIL.
-                        ;;; During Pass2, the ccb-lex for the
-                        ;;; block id, or NIL.
-;  ref-clb              ;;; Cross local function reference.
-                        ;;; During Pass1, T or NIL.
-                        ;;; During Pass2, the lex-address for the
-                        ;;; block id, or NIL.
-;  read-nodes           ;;; Nodes (c1forms) in which the reference occurs
+;  (ref 0 :type fixnum) ;;; Total number of block references.
+;  ref-ccb              ;;; Unused (see blk-var).
+;  ref-clb              ;;; Unused (see blk-var).
+;  read-nodes           ;;; Unused (see blk-var).
   exit                  ;;; Where to return.  A label.
   destination           ;;; Where the value of the block to go.
-  var                   ;;; Variable containing the block ID.
-  #-new-cmp
+  var                   ;;; Variable containing the block id and its references.
   (type '(VALUES &REST T)) ;;; Estimated type.
-  #+new-cmp
-  env                   ;;; Block environment.
   )
 
 (defstruct (tag (:include ref))
 ;  name                 ;;; Tag name.
 ;  (ref 0 :type fixnum) ;;; Number of references.
-;  ref-ccb              ;;; Cross closure reference.
-                        ;;; During Pass1, T or NIL.
-;  ref-clb              ;;; Cross local function reference.
-                        ;;; During Pass1, T or NIL.
-;  read-nodes           ;;; Nodes (c1forms) in which the reference occurs
+;  ref-ccb              ;;; Unused (see tag-var).
+;  ref-clb              ;;; Unused (see tag-var).
+;  read-nodes           ;;; Unused (see tag-var).
   label                 ;;; Where to jump: a label.
   unwind-exit           ;;; Where to unwind-no-exit.
   var                   ;;; Variable containing frame ID.
   index                 ;;; An integer denoting the label.
-  #+new-cmp
-  env                   ;;; Tag environment.
   )
 
 (defstruct (info)
   (local-vars nil)      ;;; List of var-objects created directly in the form.
-  #-new-cmp
   (type '(VALUES &REST T)) ;;; Type of the form.
   (sp-change nil)       ;;; Whether execution of the form may change
                         ;;; the value of a special variable.
@@ -244,9 +204,6 @@
                    (:constructor do-make-c1form))
   (name nil)
   (parents nil)
-  #+new-cmp
-  (env (c-env:cmp-env-copy)) ;; Environment in which this form was compiled
-  #-new-cmp
   (env (cmp-env-copy)) ;; Environment in which this form was compiled
   (args '())
   (side-effects nil) ;;; Does it have side effects

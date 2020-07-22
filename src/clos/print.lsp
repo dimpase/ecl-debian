@@ -23,73 +23,40 @@
 
 (defun make-load-form-saving-slots (object &key slot-names environment)
   (declare (ignore environment))
-  (do* ((class (class-of object))
-        (initialization (list 'progn))
-        (slots (class-slots class) (cdr slots)))
-      ((endp slots)
-       (values `(allocate-instance ,class) (nreverse initialization)))
-    (let* ((slot (first slots))
-           (slot-name (slot-definition-name slot)))
-      (when (or (and (null slot-names)
-                     (eq (slot-definition-allocation slot) :instance))
-                (member slot-name slot-names))
-        (push (if (slot-boundp object slot-name)
-                  `(setf (slot-value ,object ',slot-name)
-                         ',(slot-value object slot-name))
-                  `(slot-makunbound ,object ',slot-name))
-              initialization)))))
-
-(defun need-to-make-load-form-p (object env)
-  "Return T if the object cannot be externalized using the lisp
-printer and we should rather use MAKE-LOAD-FORM."
-  (declare (ignore env))
-  (let ((*load-form-cache* nil))
-    (declare (special *load-form-cache*))
-    (labels ((recursive-test (object)
-               (loop
-                ;; For simple, atomic objects we just return NIL. There is no need to
-                ;; call MAKE-LOAD-FORM on them
-                (when (typep object '(or character number symbol pathname string bit-vector))
-                  (return nil))
-                ;; For complex objects we set up a cache and run through the
-                ;; objects content looking for data that might require
-                ;; MAKE-LOAD-FORM to be externalized.  The cache is used to
-                ;; solve the problem of circularity and of EQ references.
-                (unless *load-form-cache*
-                  (setf *load-form-cache* (make-hash-table :size 128 :test #'eq)))
-                (when (gethash object *load-form-cache*)
-                  (return nil))
-                (setf (gethash object *load-form-cache*) t)
-                (cond ((arrayp object)
-                       (unless (subtypep (array-element-type object) '(or character number))
-                         (dotimes (i (array-total-size object))
-                           (recursive-test (row-major-aref object i))))
-                       (return nil))
-                      ((consp object)
-                       (recursive-test (car object))
-                       (setf object (rest object)))
-                      ((compiled-function-p object)
-                       (multiple-value-bind (lex code data name)
-                           (si::bc-split object)
-                         (when (or (null data)
-                                   (null code)
-                                   (recursive-test lex)
-                                   (recursive-test code)
-                                   (recursive-test name))
-                           (throw 'need-to-make-load-form t))
-                         (setf object data)))
-                      (t
-                       (throw 'need-to-make-load-form t))))))
-      (catch 'need-to-make-load-form
-        (recursive-test object)
-        nil))))
+  (let* ((class (class-of object))
+         (class-name (class-name class))
+         (initialization-form (list 'progn))
+         (slots (class-slots class))
+         (decls (when (typep object 'structure-object)
+                  (get-sysprop class-name 'si::structure-slot-descriptions))))
+    (do ((slot #1=(pop slots) #1#)
+         (desc #2=(pop decls) #2#))
+        ((null slot) (values `(allocate-instance ,class)
+                             (nreverse initialization-form)))
+      (let ((slot-name (slot-definition-name slot)))
+        (when (or (and (null slot-names)
+                       (eq (slot-definition-allocation slot) :instance))
+                  (member slot-name slot-names))
+          (flet ((primitive-set (val)
+                   (if (typep object 'structure-object)
+                       `(si::structure-set ,object ',class-name ,(nth 4 desc) ',val)
+                       `(setf (slot-value ,object ',slot-name) ',val)))
+                 (primitive-nil ()
+                   (if (typep object 'structure-object)
+                       `(si::structure-set ,object ',class-name ,(nth 4 desc) nil)
+                       `(slot-makunbound ,object ',slot-name))))
+            (push
+             (if (slot-boundp object slot-name)
+                 (primitive-set (slot-value object slot-name))
+                 (primitive-nil))
+             initialization-form)))))))
 
 (defmethod make-load-form ((object t) &optional env)
   (flet ((maybe-quote (object)
            (if (or (consp object) (symbolp object))
                (list 'quote object)
                object)))
-    (unless (need-to-make-load-form-p object env)
+    (unless (si::need-to-make-load-form-p object)
       (return-from make-load-form (maybe-quote object)))
     (typecase object
       (compiled-function
@@ -109,16 +76,18 @@ printer and we should rather use MAKE-LOAD-FORM."
                    :initial-contents
                    ',(loop for i from 0 below (array-total-size object)
                            collect (let ((x (row-major-aref object i)))
-                                     (if (need-to-make-load-form-p x env)
+                                     (if (si::need-to-make-load-form-p x)
                                          (progn (push `(setf (row-major-aref ,object ,i) ',x)
                                                       init-forms)
                                                 0)
                                          x))))
                  (and init-forms `(progn ,@init-forms)))))
       (cons
-       (values `(cons ,(maybe-quote (car object)) nil)
-               (and (rest object) `(rplacd ,(maybe-quote object)
-                                           ,(maybe-quote (cdr object))))))
+       (values `(cons nil nil)
+               `(progn (rplaca ,(maybe-quote object)
+                               ,(maybe-quote (car object)))
+                       (rplacd ,(maybe-quote object)
+                               ,(maybe-quote (cdr object))))))
       (hash-table
        (let* ((content (ext:hash-table-content object))
               (make-form `(make-hash-table
@@ -126,7 +95,7 @@ printer and we should rather use MAKE-LOAD-FORM."
                            :rehash-size ,(hash-table-rehash-size object)
                            :rehash-threshold ,(hash-table-rehash-threshold object)
                            :test ',(hash-table-test object))))
-         (if (need-to-make-load-form-p content env)
+         (if (si::need-to-make-load-form-p content)
              (values
               make-form
               `(dolist (i ',(loop for key being each hash-key in object
@@ -136,6 +105,9 @@ printer and we should rather use MAKE-LOAD-FORM."
              (values
               `(ext:hash-table-fill ,make-form ',content)
               nil))))
+      (random-state
+       (let ((state (ext:random-state-array object)))
+         (values `(make-random-state ,state) nil)))
       (t
        (no-make-load-form object)))))
 
@@ -150,7 +122,7 @@ printer and we should rather use MAKE-LOAD-FORM."
 
 (defun no-make-load-form (object)
   (declare (si::c-local))
-  (error "No adequate specialization of MAKE-LOAD-FORM for an object of type"
+  (error "No adequate specialization of MAKE-LOAD-FORM for an object type ~A"
          (type-of object)))
 
 (defmethod make-load-form ((class class) &optional environment)
@@ -169,16 +141,14 @@ printer and we should rather use MAKE-LOAD-FORM."
 ;;; ----------------------------------------------------------------------
 
 (defmethod print-object ((instance t) stream)
-  (if (typep instance 'standard-object)
-      (let ((*package* (find-package "CL")))
-        (print-unreadable-object (instance stream)
-          (format stream "~S"
-                  (class-name (si:instance-class instance)))))
-      (write instance :stream stream))
+  (let ((*package* (find-package "CL")))
+    (print-unreadable-object (instance stream)
+      (format stream "~S"
+              (class-name (si:instance-class instance)))))
   instance)
 
 (defmethod print-object ((instance standard-object) stream)
-  (print-unreadable-object (instance stream)
+  (print-unreadable-object (instance stream :identity t)
     (let ((*package* (find-package "CL")))
       (format stream "a ~S"
               (class-name (si:instance-class instance)))))
@@ -198,47 +168,67 @@ printer and we should rather use MAKE-LOAD-FORM."
 
 (defmethod print-object ((m standard-method) stream)
   (print-unreadable-object (m stream :type t)
-    (format stream "~A ~A"
-            (let ((gf (method-generic-function m)))
-              (if gf
-                  (generic-function-name gf)
-                  'UNNAMED))
-            (method-specializers m)))
+    (format stream "~A ~{~S ~}~S"
+	    (let ((gf (method-generic-function m)))
+	      (if gf
+		  (generic-function-name gf)
+		  'UNNAMED))
+            (method-qualifiers m)
+	    (loop for spec in (method-specializers m)
+                  collect (cond ((and (classp spec)
+                                      (class-name spec)))
+                                ((typep spec 'eql-specializer)
+                                 `(eql ,(eql-specializer-object spec)))
+                                (t spec)))))
   m)
 
 (defun ext::float-nan-string (x)
-  (when *print-readably*
-    (error 'print-not-readable :object x))
-   (cdr (assoc (type-of x)
-               '((single-float . "#<single-float quiet NaN>")
-                 (double-float . "#<double-float quiet NaN>")
-                 (long-float . "#<long-float quiet NaN>")
-                 (short-float . "#<short-float quiet NaN>")))))
+  (unless (ext:float-nan-p x)
+    (signal 'type-error :datum x :expected-type 'float-nan))
+
+  (cond
+    ((null *print-readably*)
+     (etypecase x
+       (single-float "#<single-float quiet NaN>")
+       (double-float "#<double-float quiet NaN>")
+       (long-float   "#<long-float quiet NaN>")
+       (short-float  "#<short-float quiet NaN>")))
+    #+ieee-floating-point
+    (*read-eval*
+     (etypecase x
+       (single-float "#.(coerce (si:nan) 'single-float)")
+       (double-float "#.(coerce (si:nan) 'double-float)")
+       (long-float   "#.(coerce (si:nan) 'long-float)")
+       (short-float  "#.(coerce (si:nan) 'short-float)")))
+    (t (error 'print-not-readable :object x))))
 
 (defun ext::float-infinity-string (x)
-  (when (and *print-readably* (null *read-eval*))
-    (error 'print-not-readable :object x))
-  (let* ((negative-infinities '((single-float .
-                                 "#.ext::single-float-negative-infinity")
-                                (double-float .
-                                 "#.ext::double-float-negative-infinity")
-                                (long-float .
-                                 "#.ext::long-float-negative-infinity")
-                                (short-float .
-                                 "#.ext::short-float-negative-infinity")))
-         (positive-infinities '((single-float .
-                                 "#.ext::single-float-positive-infinity")
-                                (double-float .
-                                 "#.ext::double-float-positive-infinity")
-                                (long-float .
-                                 "#.ext::long-float-positive-infinity")
-                                (short-float .
-                                 "#.ext::short-float-positive-infinity")))
-         (record (assoc (type-of x)
-                        (if (plusp x) positive-infinities negative-infinities))))
-    (unless record
-      (error "Not an infinity"))
-    (cdr record)))
+  (unless (ext:float-infinity-p x)
+    (signal 'type-error :datum x :expected-type 'float-infinity))
+
+  (cond
+    ((null *print-readably*)
+     (etypecase x
+       (ext:negative-single-float "#<single-float negative infinity>")
+       (ext:positive-single-float "#<single-float positive infinity>")
+       (ext:negative-double-float "#<double-float negative infinity>")
+       (ext:positive-double-float "#<double-float positive infinity>")
+       (ext:negative-long-float   "#<long-float negative infinity>")
+       (ext:positive-long-float   "#<long-float positive infinity>")
+       (ext:negative-short-float  "#<short-float negative infinity>")
+       (ext:positive-short-float  "#<short-float positive infinity>")))
+    #+ieee-floating-point
+    (*read-eval*
+     (etypecase x
+       (ext:negative-single-float "#.ext::single-float-negative-infinity")
+       (ext:positive-single-float "#.ext::single-float-positive-infinity")
+       (ext:negative-double-float "#.ext::double-float-negative-infinity")
+       (ext:positive-double-float "#.ext::double-float-positive-infinity")
+       (ext:negative-long-float   "#.ext::long-float-negative-infinity")
+       (ext:positive-long-float   "#.ext::long-float-positive-infinity")
+       (ext:negative-short-float  "#.ext::short-float-negative-infinity")
+       (ext:positive-short-float  "#.ext::short-float-positive-infinity")))
+    (t (error 'print-not-readable :object x))))
 
 ;;; ----------------------------------------------------------------------
 ;;; Describe

@@ -16,24 +16,18 @@
 (in-package "COMPILER")
 
 (defun run-and-collect (command args &optional file)
-  (flet ((collect-lines (stream)
-           (loop for line = (read-line stream nil nil)
-              while line
-              collect line)))
-    (handler-case
-        (multiple-value-bind (stream process)
-            (ext:run-program command args :input nil :output :stream :error :output)
-          (let ((lines (collect-lines stream)))
-            (cond ((null file)
-                   lines)
-                  ((probe-file file)
-                   (with-open-file (s file :direction :input)
-                     (collect-lines s)))
-                  (t
-                   (warn "Unable to find file ~A" file)))))
-      (error (c)
-        (format t "~&;;; Unable to execute program ~S~&;;; Condition~&;;; ~A"
-                command c)))))
+  (handler-case
+      (let ((lines (collect-lines (si:run-program-inner command args :default t))))
+        (cond ((null file)
+               lines)
+              ((probe-file file)
+               (with-open-file (s file :direction :input)
+                 (collect-lines s)))
+              (t
+               (warn "Unable to find file ~A" file))))
+    (error (c)
+      (format t "~&;;; Unable to execute program ~S~&;;; Condition~&;;; ~A"
+              command c))))
 
 (defun split-words (string)
   (loop with output = '()
@@ -47,7 +41,9 @@
                     output)
               (setf word nil))
             (push c word))
-     finally (return output)))
+     finally (return (push (make-array (length word) :element-type 'base-char
+                                       :initial-contents (nreverse word))
+                           output))))
 
 (defconstant +known-keywords+
   '("sparc*" "x86*" "*-bit" "32*" "64*" "*32" "*64"
@@ -131,13 +127,16 @@ we are currently using with ECL."
   (gather-keywords (apply #'run-and-collect args) +known-keywords+))
 
 (defun gather-system-features (&key (executable
-                                     #+(or windows cygwin) "sys:ecl_min.exe"
-                                     #-(or windows cygwin) "sys:ecl_min"))
+                                     #+(or windows cygwin mingw32) "sys:ecl_min.exe"
+                                     #-(or windows cygwin mingw32) "sys:ecl_min"))
   (let* ((ecl-binary (namestring (truename executable)))
          (executable-features
           #-windows
            (run-and-collect-keywords "file" (list ecl-binary)))
-         (compiler-version (run-and-collect-keywords c::*cc* '("--version")))
+         (compiler-version (run-and-collect-keywords c::*cc*
+                                                     (if (search "xlc" c::*cc*)
+                                                         '("-qversion")
+                                                         '("--version"))))
          (compiler-features (reduce #'append
                                     (mapcar #'rest
                                             (compiler-defines +compiler-macros+)))))
@@ -152,8 +151,8 @@ we are currently using with ECL."
 #+ecl-min
 (update-compiler-features
  :executable
- #+(or windows cygwin) "build:ecl_min.exe"
- #-(or windows cygwin) "build:ecl_min")
+ #+(or windows cygwin mingw32) "build:ecl_min.exe"
+ #-(or windows cygwin mingw32) "build:ecl_min")
 
 #+ecl-min
 (format t ";;; System features: ~A~%" *compiler-features*)

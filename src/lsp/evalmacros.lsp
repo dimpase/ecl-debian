@@ -89,7 +89,17 @@ VARIABLE doc and can be retrieved by (DOCUMENTATION 'SYMBOL 'VARIABLE)."
             (si::register-global ',var)))
     ',var))
 
-(defparameter *defun-inline-hook* nil)
+(defparameter *defun-inline-hook*
+  #'(lambda (fname form env)
+      ;; To prevent inlining of stale function definitions by the native
+      ;; compiler after a new definition has been established by the
+      ;; bytecodes compiler, we save function definitions in the global
+      ;; environment when the function has been proclaimed inline.
+      (declare (ignore env))
+      (let ((proclaimed (si:get-sysprop fname 'inline)))
+        (when proclaimed
+          `(eval-when (:compile-toplevel :load-toplevel :execute)
+             (si:put-sysprop ',fname 'inline ',form))))))
 
 (defmacro defun (&whole whole name vl &body body &environment env &aux doc-string)
   ;; Documentation in help.lsp
@@ -135,9 +145,9 @@ VARIABLE doc and can be retrieved by (DOCUMENTATION 'SYMBOL 'VARIABLE)."
 ;;; Thus their names need not be exported.
 
 (let ()
-  ;; We enclose the macro in a LET form so that it is no longer
-  ;; a toplevel form. This solves the problem of this simple LOOP
-  ;; replacing the more complex form in loop2.lsp when evalmacros.lsp
+  ;; We enclose the macro in a LET form so that it is no longer a
+  ;; toplevel form. This solves the problem of this simple LOOP
+  ;; replacing the more complex form in loop.lsp when evalmacros.lsp
   ;; gets compiled.
 (defmacro loop (&rest body &aux (tag (gensym)))
   "Syntax: (loop {form}*)

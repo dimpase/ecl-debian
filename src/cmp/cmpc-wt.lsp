@@ -14,12 +14,23 @@
 ;;;; CMPC-WT -- Routines for writing code to C files.
 ;;;;
 
-(in-package #-new-cmp "COMPILER" #+new-cmp "C-BACKEND")
+(in-package "COMPILER")
 
 (defun wt1 (form)
   (cond ((not (floatp form))
          (typecase form
-           ((or STRING INTEGER CHARACTER)
+           (INTEGER
+            (princ form *compiler-output1*)
+            (princ
+             (cond ((typep form (rep-type->lisp-type :int)) "")
+                   ((typep form (rep-type->lisp-type :unsigned-int)) "U")
+                   ((typep form (rep-type->lisp-type :long)) "L")
+                   ((typep form (rep-type->lisp-type :unsigned-long)) "UL")
+                   ((typep form (rep-type->lisp-type :long-long)) "LL")
+                   ((typep form (rep-type->lisp-type :unsigned-long-long)) "ULL")
+                   (t (baboon :format-control "wt1: The number ~A doesn't fit any integer type." form)))
+             *compiler-output1*))
+           ((or STRING CHARACTER)
             (princ form *compiler-output1*))
            (VAR (wt-var form))
            (t (wt-loc form))))
@@ -109,16 +120,12 @@
 ;;;
 
 (defun wt-go (label)
-  #-new-cmp
   (setf (cdr label) t
         label (car label))
   (wt "goto L" label ";"))
 
 (defun wt-label (label)
-  #-new-cmp
-  (when (cdr label) (wt-nl1 "L" (car label) ":;"))
-  #+new-cmp
-  (wt-nl1 "L" label ":;"))
+  (when (cdr label) (wt-nl1 "L" (car label) ":;")))
 
 ;;;
 ;;; C/C++ COMMENTS

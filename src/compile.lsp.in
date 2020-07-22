@@ -56,7 +56,7 @@
 ;;; * Trick to make names shorter in C files
 ;;;
 (si::package-lock "CL" nil)
-(rename-package "CL" "CL" '("COMMON-LISP" "LISP"))
+(rename-package "CL" "CL" '("COMMON-LISP"))
 
 ;;;
 ;;; * Add include path to not yet installed headers, and remove include flag
@@ -125,7 +125,9 @@
                                                 :h-file t
                                                 ;;:shared-data-file "build:ecl.sdat"
                                                 )))))
-  (c::build-static-library "lsp" :lisp-files lsp-objects
+  (c::build-static-library "lsp"
+                           :lisp-files lsp-objects
+                           :init-name "init_lib_LSP"
                            ;;:shared-data-file "build:ecl.sdat"
                            ))
 
@@ -317,56 +319,11 @@
 (load "ext:encodings;generate.lisp")
 
 ;;;
-;;; * Compile the portable CLX library.
+;;; * Package locks
 ;;;
-
-#+WANTS-CLX
-(let* ((*features* (cons :clx-ansi-common-lisp *features*))
-       (+clx-src-files+ '("src:clx;package.lisp"
-                          "src:clx;depdefs.lisp"
-                          "src:clx;clx.lisp"
-                          "src:clx;dependent.lisp"
-                          "src:clx;macros.lisp"
-                          "src:clx;bufmac.lisp"
-                          "src:clx;buffer.lisp"
-                          "src:clx;display.lisp"
-                          "src:clx;gcontext.lisp"
-                          "src:clx;input.lisp"
-                          "src:clx;requests.lisp"
-                          "src:clx;fonts.lisp"
-                          "src:clx;graphics.lisp"
-                          "src:clx;text.lisp"
-                          "src:clx;attributes.lisp"
-                          "src:clx;translate.lisp"
-                          "src:clx;keysyms.lisp"
-                          "src:clx;manager.lisp"
-                          "src:clx;image.lisp"
-                          "src:clx;resource.lisp"
-                          "src:clx;shape.lisp"
-                          "src:clx;big-requests.lisp"
-                          "src:clx;xvidmode.lisp"
-                          "src:clx;xrender.lisp"
-                          "src:clx;glx.lisp"
-                          "src:clx;gl.lisp"
-                          "src:clx;dpms.lisp"
-                          "src:clx;xtest.lisp"
-                          "src:clx;screensaver.lisp"
-                          "src:clx;xinerama.lisp"
-                          "build:clx;module.lisp"))
-       #+:msvc
-       (c::*cc-flags* (concatenate 'string c::*cc-flags* " -Zm150")))
-  (let ((filename "build:clx;module.lisp"))
-    (ensure-directories-exist filename)
-    (with-open-file (s filename :direction :output :if-exists :overwrite
-                       :if-does-not-exist :create)
-     (print '(provide :clx) s)))
-  (unless (find-package "SB-BSD-SOCKETS")
-    (load "ext:sockets;package.lisp"))
-  (mapcar #'load +clx-src-files+)
-  (build-module "clx" +clx-src-files+ :dir "build:clx;" :prefix "CLX"
-                :builtin
-                #+(OR (NOT :WANTS-DLOPEN) :BUILTIN-CLX) t
-                #-(OR (NOT :WANTS-DLOPEN) :BUILTIN-CLX) nil))
+(build-module "package-locks"
+              '("ext:package-locks;package-locks.lisp")
+              :dir "build:ext;" :prefix "EXT" :builtin nil)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -383,10 +340,8 @@
                   :if-does-not-exist :create)
   (write-line "id ICON \"ecl.ico\"" s))
  (ext:copy-file #p"src:util;ecl.ico" "ecl.ico")
- #+msvc
- (ext:run-program "rc" '("/r" "ecl.rc"))
- #-msvc
- (ext:run-program "windres" '("ecl.rc" "-O" "coff" "ecl.res")))
+ #+msvc (ext:system "rc /nologo /r ecl.rc")
+ #-msvc (ext:system "windres ecl.rc -O coff ecl.res"))
 
 (si::pathname-translations "SYS" '(("**;*.*.*" "@true_builddir@/**/*.*")))
 
