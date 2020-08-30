@@ -1,0 +1,15 @@
+Description: Compress info file with gzip -9
+ Due to the lintian warning info-document-not-compressed-with-max-compression.
+Author: Tobias Hansen <thansen@debian.org>
+
+--- a/src/doc/manual/Makefile
++++ b/src/doc/manual/Makefile
+@@ -13,7 +13,7 @@
+ 
+ ecl.info.gz: $(FILES)
+ 	$(MAKEINFO) --no-split manual.txi
+-	gzip < ecl.info > ecl.info.gz
++	gzip -9 < ecl.info > ecl.info.gz
+ 
+ html/index.html: $(FILES)
+ 	$(MAKEINFO) --html --css-include=ecl.css --split=section manual.txi

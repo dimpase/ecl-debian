@@ -5,3 +5,4 @@ no-embedded-copies.patch
 214.patch
 215.patch
 ECL_WITH_LISP_FPE.patch
+ecl.info-max-compression.patch
