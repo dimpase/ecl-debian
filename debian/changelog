@@ -10,6 +10,7 @@ ecl (20.4.24+ds-1) UNRELEASED; urgency=medium
     - format-security.patch
     - libffi-3.3.patch
     - parallel-ftbfs.patch
+  * Remove .gitlab-ci.yml from repacked orig tarball.
 
  -- Tobias Hansen <thansen@debian.org>  Wed, 22 Jul 2020 19:10:06 +0000
 

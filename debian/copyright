@@ -2,7 +2,7 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: ECL
 Upstream-Contact: ecl-devel@common-lisp.net
 Source: https://common-lisp.net/project/ecl/
-Files-Excluded: src/gmp src/libffi src/bdwgc
+Files-Excluded: src/gmp src/libffi src/bdwgc .gitlab-ci.yml
 
 Files: *
 Copyright: 1984 Taiichi Yuasa and Masami Hagiya
