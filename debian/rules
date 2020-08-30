@@ -26,6 +26,11 @@ override_dh_autoreconf:
 #mostly require remote access
 override_dh_auto_test:
 
+override_dh_auto_install:
+	dh_auto_install
+# fix lintian error package-contains-info-dir-file
+	rm -f debian/ecl/usr/share/info/dir
+
 override_dh_auto_clean:
 	dh_auto_clean
 	rm -rf build
