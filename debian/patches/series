@@ -6,3 +6,4 @@ no-embedded-copies.patch
 215.patch
 ECL_WITH_LISP_FPE.patch
 ecl.info-max-compression.patch
+prevent-floating-point-exception.patch

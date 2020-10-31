@@ -1,3 +1,10 @@
+ecl (20.4.24+ds-2) unstable; urgency=medium
+
+  * Add prevent-floating-point-exception.patch, fixing spurious SIGFPE's
+    on ppc64el and ppc64.
+
+ -- Tobias Hansen <thansen@debian.org>  Sat, 31 Oct 2020 11:07:11 +0000
+
 ecl (20.4.24+ds-1) unstable; urgency=medium
 
   * New upstream release.
