@@ -1,3 +1,9 @@
+ecl (21.2.1+ds-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+
+ -- Tobias Hansen <thansen@debian.org>  Mon, 29 Nov 2021 22:10:18 +0000
+
 ecl (20.4.24+ds-2) unstable; urgency=medium
 
   * Add prevent-floating-point-exception.patch, fixing spurious SIGFPE's
