@@ -1,6 +1,12 @@
 ecl (21.2.1+ds-1) UNRELEASED; urgency=medium
 
   * New upstream release.
+  * Remove patches applied upstream:
+    - 210.patch
+    - 214.patch
+    - 215.patch
+    - ECL_WITH_LISP_FPE.patch
+    - prevent-floating-point-exception.patch
 
  -- Tobias Hansen <thansen@debian.org>  Mon, 29 Nov 2021 22:10:18 +0000
 

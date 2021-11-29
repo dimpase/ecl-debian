@@ -9,7 +9,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/src/configure.ac
 +++ b/src/configure.ac
 @@ -11,7 +11,6 @@
- AC_INIT([ecl],[20.4.24],[])
+ AC_INIT([ecl],[21.2.1],[])
  AC_REVISION([$Revision$])
  AC_CONFIG_SRCDIR([bare.lsp.in])
 -AC_CONFIG_AUX_DIR([gmp])

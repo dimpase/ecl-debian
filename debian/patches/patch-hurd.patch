@@ -1,6 +1,6 @@
 --- a/src/c/unixint.d
 +++ b/src/c/unixint.d
-@@ -1366,6 +1366,8 @@
+@@ -1404,6 +1404,8 @@
           */
  #ifdef SIGRTMIN
  # define DEFAULT_THREAD_INTERRUPT_SIGNAL SIGRTMIN + 2
