@@ -30,6 +30,8 @@ override_dh_auto_install:
 	dh_auto_install
 # fix lintian error package-contains-info-dir-file
 	rm -f debian/ecl/usr/share/info/dir
+	mkdir -p debian/ecl/usr/share/info/figures
+	cp src/doc/manual/figures/*.png debian/ecl/usr/share/info/figures/
 
 override_dh_auto_clean:
 	dh_auto_clean
