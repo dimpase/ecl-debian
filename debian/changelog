@@ -1,4 +1,4 @@
-ecl (21.2.1+ds-1) UNRELEASED; urgency=medium
+ecl (21.2.1+ds-1) unstable; urgency=medium
 
   * New upstream release.
   * Remove patches applied upstream:
@@ -9,7 +9,7 @@ ecl (21.2.1+ds-1) UNRELEASED; urgency=medium
     - prevent-floating-point-exception.patch
   * Add lintian override for library-not-linked-against-libc.
 
- -- Tobias Hansen <thansen@debian.org>  Mon, 29 Nov 2021 22:10:18 +0000
+ -- Tobias Hansen <thansen@debian.org>  Sat, 04 Dec 2021 10:12:16 +0000
 
 ecl (20.4.24+ds-2) unstable; urgency=medium
 
