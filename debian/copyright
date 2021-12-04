@@ -157,13 +157,13 @@ Files: src/configure
 Copyright: 1992-1996, 1998-2012, Free Software Foundation, Inc.
 License: FSFUL
 
-Files: src/doc/new-doc/*
+Files: src/doc/manual/*
 Copyright: 2002-2003 Kevin M. Rosenberg
            2006 Juan José García-Ripoll
            2016 Daniel Kochmański
 License: GFDL-NIV-1.3+
 Comment:
- See src/doc/new-doc/introduction/copyrights.txi
+ See src/doc/manual/introduction/copyrights.txi
 
 Files: src/lsp/defpackage.lsp
 Copyright: 1990, 1991, The Boeing Company
