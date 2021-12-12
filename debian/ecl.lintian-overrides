@@ -1,3 +1,0 @@
-ecl: package-name-doesnt-match-sonames libecl*
-ecl: non-dev-pkg-with-shlib-symlink usr/lib/*/libecl.so.* usr/lib/*/libecl.so
-ecl: library-not-linked-against-libc */sb-bsd-sockets.fas

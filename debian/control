@@ -26,7 +26,8 @@ Rules-Requires-Root: no
 
 Package: ecl
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libffi-dev, libgmp-dev, libncurses5-dev, libgc-dev, libatomic-ops-dev, gcc
+Depends: ${shlibs:Depends}, ${misc:Depends}, libecl21.2 (= ${binary:Version}),
+ libffi-dev, libgmp-dev, libncurses5-dev, libgc-dev, libatomic-ops-dev, gcc
 Provides: lisp-compiler
 Suggests: slime, ecl-doc
 Description: Embeddable Common-Lisp: has an interpreter and can compile to C
@@ -47,3 +48,59 @@ Description: Embeddable Common-Lisp: has an interpreter and can compile to C
   * The GNU Multiprecision library for fast bignum operations.
   * A simple conservative mark & sweep garbage collector.
   * The Boehm-Weiser garbage collector.
+
+Package: libecl21.2
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Breaks: ecl (<< 21.2.1+ds-2)
+Replaces: ecl (<< 21.2.1+ds-2)
+Description: Embeddable Common-Lisp: shared library
+ ECL stands for Embeddable Common-Lisp. The ECL project is an
+ effort to modernize Giuseppe Attardi's ECL environment to
+ produce an implementation of the Common-Lisp language
+ which complies to the ANSI X3J13 definition of the language.
+ .
+ The current ECL implementation features:
+  * A bytecodes compiler and interpreter.
+  * A translator to C.
+  * A UFFI-compatible interface to C code.
+  * A dynamic loader.
+  * The possibility to build standalone executables and DLLs.
+  * The Common-Lisp Object System (CLOS).
+  * Conditions and restarts for handling errors.
+  * Sockets as ordinary streams.
+  * The GNU Multiprecision library for fast bignum operations.
+  * A simple conservative mark & sweep garbage collector.
+  * The Boehm-Weiser garbage collector.
+ .
+ This package contains the shared library.
+
+Package: libecl-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends}, libecl21.2 (= ${binary:Version})
+Breaks: ecl (<< 21.2.1+ds-2)
+Replaces: ecl (<< 21.2.1+ds-2)
+Description: Embeddable Common-Lisp: development files
+ ECL stands for Embeddable Common-Lisp. The ECL project is an
+ effort to modernize Giuseppe Attardi's ECL environment to
+ produce an implementation of the Common-Lisp language
+ which complies to the ANSI X3J13 definition of the language.
+ .
+ The current ECL implementation features:
+  * A bytecodes compiler and interpreter.
+  * A translator to C.
+  * A UFFI-compatible interface to C code.
+  * A dynamic loader.
+  * The possibility to build standalone executables and DLLs.
+  * The Common-Lisp Object System (CLOS).
+  * Conditions and restarts for handling errors.
+  * Sockets as ordinary streams.
+  * The GNU Multiprecision library for fast bignum operations.
+  * A simple conservative mark & sweep garbage collector.
+  * The Boehm-Weiser garbage collector.
+ .
+ This package contains the development files.
