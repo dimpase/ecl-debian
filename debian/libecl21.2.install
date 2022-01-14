@@ -1,4 +1,5 @@
 /usr/lib/*/libecl.so.*
 /usr/lib/*/ecl-*/*.asd
 /usr/lib/*/ecl-*/*.fas
+/usr/lib/*/ecl-*/help.doc
 /usr/lib/*/ecl-*/encodings
