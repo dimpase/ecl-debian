@@ -1,8 +1,8 @@
-ecl (21.2.1+ds-3) UNRELEASED; urgency=medium
+ecl (21.2.1+ds-3) unstable; urgency=medium
 
   * Install help.doc.
 
- -- Tobias Hansen <thansen@debian.org>  Fri, 14 Jan 2022 19:52:53 +0000
+ -- Tobias Hansen <thansen@debian.org>  Fri, 14 Jan 2022 20:24:24 +0000
 
 ecl (21.2.1+ds-2) unstable; urgency=medium
 
