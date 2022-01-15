@@ -26,7 +26,8 @@ Rules-Requires-Root: no
 
 Package: ecl
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libecl21.2 (= ${binary:Version}),
+Depends: ${shlibs:Depends}, ${misc:Depends},
+ libecl21.2 (= ${binary:Version}), libecl-dev (= ${binary:Version}),
  libffi-dev, libgmp-dev, libncurses5-dev, libgc-dev, libatomic-ops-dev, gcc
 Provides: lisp-compiler
 Suggests: slime, ecl-doc
