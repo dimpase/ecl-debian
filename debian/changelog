@@ -1,3 +1,16 @@
+ecl (24.5.10+ds-1) UNRELEASED; urgency=medium
+
+  * New upstream version 24.5.10+ds
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Mon, 30 Dec 2024 22:10:13 +0100
+
+ecl (21.2.1+ds-4.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Rename libraries for 64-bit time_t transition.  Closes: #1062520
+
+ -- Michael Hudson-Doyle <mwhudson@debian.org>  Wed, 28 Feb 2024 02:42:24 +0000
+
 ecl (21.2.1+ds-4) unstable; urgency=medium
 
   * Add dependency on libecl-dev to ecl.
