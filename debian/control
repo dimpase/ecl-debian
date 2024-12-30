@@ -10,7 +10,7 @@ Build-Depends: dpkg-dev (>= 1.22.5),
  libgmp-dev,
  file,
  texinfo,
- libncurses5-dev,
+ libncurses-dev,
  fakeroot,
  libgc-dev (>= 1:7.1),
  chrpath,
@@ -28,7 +28,7 @@ Package: ecl
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
  libecl21.2t64 (= ${binary:Version}), libecl-dev (= ${binary:Version}),
- libffi-dev, libgmp-dev, libncurses5-dev, libgc-dev, libatomic-ops-dev, gcc
+ libffi-dev, libgmp-dev, libncurses-dev, libgc-dev, libatomic-ops-dev, gcc
 Provides: lisp-compiler
 Suggests: slime, ecl-doc
 Description: Embeddable Common-Lisp: has an interpreter and can compile to C
