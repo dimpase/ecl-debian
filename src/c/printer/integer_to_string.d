@@ -2,15 +2,11 @@
 /* vim: set filetype=c tabstop=8 shiftwidth=4 expandtab: */
 
 /*
-    Copyright (c) 2010, Juan Jose Garcia Ripoll.
-
-    ECL is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Library General Public
-    License as published by the Free Software Foundation; either
-    version 2 of the License, or (at your option) any later version.
-
-    See file '../../Copyright' for full details.
-*/
+ * Copyright (c) 2010, Juan Jose Garcia Ripoll.
+ *
+ * See file 'LICENSE' for the copyright details.
+ *
+ */
 
 #define ECL_INCLUDE_MATH_H
 #include <float.h>
@@ -27,17 +23,17 @@ bignum_to_string(cl_object buffer, cl_object x, cl_object base)
                                      cl_list(3, @'integer', ecl_make_fixnum(2),
                                              ecl_make_fixnum(36)));
         }
-        str_size = mpz_sizeinbase(x->big.big_num, b);
+        str_size = mpz_sizeinbase(ecl_bignum(x), b);
         buffer = _ecl_ensure_buffer(buffer, str_size+1);
         if (str_size <= 62) {
                 /* With the leading sign and the trailing null character,
                  * only 62 digits fit in this buffer. */
                 char txt[64];
-                mpz_get_str(txt, -b, x->big.big_num);
+                mpz_get_str(txt, -b, ecl_bignum(x));
                 _ecl_string_push_c_string(buffer, txt);
         } else {
                 char *txt = ecl_alloc_atomic(str_size + 2);
-                mpz_get_str(txt, -b, x->big.big_num);
+                mpz_get_str(txt, -b, ecl_bignum(x));
                 _ecl_string_push_c_string(buffer, txt);
                 ecl_dealloc(txt);
         }

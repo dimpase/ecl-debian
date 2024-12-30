@@ -5,12 +5,7 @@
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
 ;;;;
-;;;;    This program is free software; you can redistribute it and/or
-;;;;    modify it under the terms of the GNU Library General Public
-;;;;    License as published by the Free Software Foundation; either
-;;;;    version 2 of the License, or (at your option) any later version.
-;;;;
-;;;;    See file '../Copyright' for full details.
+;;;;    See file 'LICENSE' for the copyright details.
 
 ;;;; CMPMAP  Map functions.
 
@@ -45,6 +40,8 @@
         (MAPL (setf in-or-on :ON do-or-collect :DO))
         (MAPCAN (setf do-or-collect 'NCONC))
         (MAPCON (setf in-or-on :ON do-or-collect 'NCONC)))
+      (when (eq in-or-on :ON)
+        (setf args (mapcar #'(lambda (arg) `(ext:checked-value list ,arg)) args)))
       (when (eq do-or-collect :DO)
         (let ((var (gensym)))
           (setf list-1-form `(with ,var = ,(first args))

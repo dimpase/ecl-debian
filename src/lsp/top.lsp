@@ -7,12 +7,8 @@
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
 ;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
-;;;;    This program is free software; you can redistribute it and/or
-;;;;    modify it under the terms of the GNU Library General Public
-;;;;    License as published by the Free Software Foundation; either
-;;;;    version 2 of the License, or (at your option) any later version.
-;;;;
-;;;;    See file '../Copyright' for full details.
+;;;;    See file 'LICENSE' for the copyright details.
+
 ;;;;
 ;;;;  Revised on July 11, by Carl Hoffman.
 ;;;;  Modified Oct 1986 by Ken Rimey.
@@ -415,7 +411,7 @@ The top-level loop of ECL. It is called by default when ECL is invoked."
 Copyright (C) 1993 Giuseppe Attardi~@
 Copyright (C) 2013 Juan J. Garcia-Ripoll~@
 Copyright (C) 2018 Daniel Kochmanski~@
-Copyright (C) 2021 Daniel Kochmanski and Marius Gerbershagen~@
+Copyright (C) 2023 Daniel Kochmanski and Marius Gerbershagen~@
 ECL is free software, and you are welcome to redistribute it~@
 under certain conditions; see file 'Copyright' for details.")
         (format *standard-output* "~%Type :h for Help.  "))
@@ -849,7 +845,12 @@ Use special code 0 to cancel this operation.")
         cl_index ndx = #1;
         typedef struct ecl_var_debug_info *pinfo;
         pinfo d = (pinfo)(v->vector.self.t[1]) + ndx;
-        cl_object name = ecl_make_constant_base_string(d->name,-1);
+        cl_object name;
+#ifdef ECL_UNICODE
+        name = ecl_decode_from_cstring(d->name,-1,@:utf-8);
+        if (!name)
+#endif
+                name = ecl_make_constant_base_string(d->name,-1);
         void *value = (void*)(v->vector.self.t[2+ndx]);
         cl_object output;
         switch (d->type) {

@@ -6,12 +6,7 @@
 ;;;;
 ;;;;  Copyright (c) 2005, Juan Jose Garcia-Ripoll
 ;;;;
-;;;;    This program is free software; you can redistribute it and/or
-;;;;    modify it under the terms of the GNU Library General Public
-;;;;    License as published by the Free Software Foundation; either
-;;;;    version 2 of the License, or (at your option) any later version.
-;;;;
-;;;;    See file '../Copyright' for full details.
+;;;;    See file 'LICENSE' for the copyright details.
 ;;;;
 
 (in-package "SYSTEM")
@@ -22,7 +17,7 @@
   "List of files automatically loaded when ECL is invoked.")
 
 (defparameter *help-message* "
-Usage: ecl [-? | --help]
+Usage: ecl [-? | --help] [-v | --version] [--debug | --nodebug]
            [--dir dir] [--load file] [--shell file] [--eval expr] [--rc | --norc]
            [--c-stack size] [--lisp-stack size] [--heap-size size] [--frame-stack size]
            [[-o ofile] [-c [cfile]] [-h [hfile]] [--data [datafile]] [-s] [-q]
@@ -82,9 +77,11 @@ appeared after a '--'.")
     ("--c-stack" 1 (ext:set-limit 'ext:c-stack (read-from-string 1)))
     ("--trap-fpe" 0 (si::trap-fpe t t))
     ("--no-trap-fpe" 0 (si::trap-fpe t nil))
-    ("--encoding" 1 (dolist (i (list *standard-input* *standard-output*
-                                     *error-output* *trace-output*))
-                      (setf (stream-external-format i) (read-from-string 1))))
+    ("--encoding" 1 (let ((enc (read-from-string 1)))
+                      (setf ext::*default-external-format* enc)
+                      (dolist (i (list *standard-input* *standard-output*
+                                       *error-output* *trace-output*))
+                       (setf (stream-external-format i) enc))))
     ("--input-encoding" 1
      (setf (stream-external-format *standard-input*) (read-from-string 1)))
     ("--output-encoding" 1

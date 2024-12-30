@@ -32,8 +32,6 @@
 
 (defconstant initial-buffer-size 128)
 
-(defconstant default-line-length 80)
-
 (defclass pretty-stream (gray:fundamental-character-output-stream) (
   ;;
   ;; Where the output is going to finally go.
@@ -43,7 +41,8 @@
   ;;
   ;; Line length we should format to.  Cached here so we don't have to keep
   ;; extracting it from the target stream.
-  (line-length :initform (or *print-right-margin* default-line-length)
+  (line-length :initarg :line-length
+               :initform default-line-length
                :type column
                :accessor pretty-stream-line-length)
   ;;
@@ -109,7 +108,9 @@
 (defun make-pretty-stream (target)
   (make-instance 'pretty-stream :target target
                  :buffer-start-column (or (file-column target) 0)
-                 ))
+                 :line-length (or *print-right-margin*
+                                  (gray:stream-line-length target)
+                                  default-line-length)))
 
 (defmethod print-object ((pretty-stream pretty-stream) stream)
   (print-unreadable-object (pretty-stream stream :type t :identity t))
@@ -130,6 +131,9 @@
 
 
 ;;;; Stream interface routines.
+
+(defmethod gray:stream-line-length ((stream pretty-stream))
+  (pretty-stream-line-length stream))
 
 (defmethod gray::stream-write-char ((stream pretty-stream) char)
   (pretty-out stream char))
@@ -1328,6 +1332,18 @@
         (quote
          (write-char #\' stream)
          (write-object (cadr list) stream))
+        (si:quasiquote
+         (write-char #\` stream)
+         (write-object (cadr list) stream))
+        (si:unquote
+         (write-char #\, stream)
+         (write-object (cadr list) stream))
+        (si:unquote-splice
+         (write-string ",@" stream)
+         (write-object (cadr list) stream))
+        (si:unquote-nsplice
+         (write-string ",." stream)
+         (write-object (cadr list) stream))
         (t
          (pprint-fill stream list)))
       (pprint-fill stream list)))
@@ -1476,12 +1492,16 @@
     (multiple-value-prog1 pprint-block)
     (progn pprint-progn)
     (progv pprint-progv)
+    (si:quasiquote pprint-quote)
     (quote pprint-quote)
     (return-from pprint-block)
     (setq pprint-setq)
     (symbol-macrolet pprint-let)
     (tagbody pprint-tagbody)
     (throw pprint-block)
+    (si:unquote pprint-quote)
+    (si:unquote-nsplice pprint-quote)
+    (si:unquote-splice pprint-quote)
     (unwind-protect pprint-block)
     
     ;; Macros.

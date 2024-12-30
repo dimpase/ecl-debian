@@ -6,12 +6,7 @@
 
 ;;;;  Copyright (c) 2008. Juan Jose Garcia-Ripol
 ;;;;
-;;;;    This program is free software; you can redistribute it and/or
-;;;;    modify it under the terms of the GNU Library General Public
-;;;;    License as published by the Free Software Foundation; either
-;;;;    version 2 of the License, or (at your option) any later version.
-;;;;
-;;;;    See file '../Copyright' for full details.
+;;;;    See file 'LICENSE' for the copyright details.
 
 (in-package "COMPILER")
 
@@ -22,7 +17,7 @@
 ;;;
 (defun get-slot-type (name index)
   ;; default is t
-  (or (third (nth index (si:get-sysprop name 'SYS::STRUCTURE-SLOT-DESCRIPTIONS))) 'T))
+  (or (third (nth index (si:get-sysprop name 'si:structure-slot-descriptions))) 'T))
 
 ;;;
 ;;; STRUCTURE SLOT READING
@@ -34,7 +29,7 @@
 ;;;
 
 (defun maybe-optimize-structure-access (fname args)
-  (let* ((slot-description (si:get-sysprop fname 'SYS::STRUCTURE-ACCESS)))
+  (let* ((slot-description (si:get-sysprop fname 'si::structure-access)))
     (when (and slot-description
                (inline-possible fname)
                (policy-inline-slot-access-p))
@@ -61,7 +56,7 @@
           (t
            `(,args ',structure-type ,slot-index)))))))
 
-(define-compiler-macro si::structure-ref (&whole whole object structure-name index
+(define-compiler-macro si:structure-ref (&whole whole object structure-name index
                                           &environment env)
   (if (and (policy-inline-slot-access env)
            (constantp structure-name env)

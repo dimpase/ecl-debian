@@ -5,12 +5,7 @@
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.o
 ;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
-;;;;    This program is free software; you can redistribute it and/or
-;;;;    modify it under the terms of the GNU Library General Public
-;;;;    License as published by the Free Software Foundation; either
-;;;;    version 2 of the License, or (at your option) any later version.
-;;;;
-;;;;    See file '../Copyright' for full details.
+;;;;    See file 'LICENSE' for the copyright details.
 
 (in-package "CLOS")
 
@@ -148,15 +143,7 @@
 
 (labels ((generate-accessors (class)
            (declare (optimize speed (safety 0)))
-           (if (and (typep class 'std-class)
-                    #+(or)
-                    (not (member (slot-value class 'name)
-                                 '(slot-definition
-                                   direct-slot-definition
-                                   effective-slot-definition
-                                   standard-slot-definition
-                                   standard-direct-slot-definition
-                                   standard-effective-slot-definition))))
+           (if (typep class 'std-class)
                (std-class-generate-accessors class t)
                (loop for slotd in (slot-value class 'slots)
                   for index = (slot-value slotd 'location)
