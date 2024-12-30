@@ -95,3 +95,4 @@ regressions/eformat-tests/*.txt
 /src/tests/aux-compiler.0058-coerce.lsp
 /publications/
 /src/cmp/notes.md
+.pc
