@@ -2,8 +2,8 @@ Description: Compress info file with gzip -9
  Due to the lintian warning info-document-not-compressed-with-max-compression.
 Author: Tobias Hansen <thansen@debian.org>
 
---- a/src/doc/manual/Makefile
-+++ b/src/doc/manual/Makefile
+--- ecl.orig/src/doc/manual/Makefile
++++ ecl/src/doc/manual/Makefile
 @@ -13,7 +13,7 @@
  
  ecl.info.gz: $(FILES)

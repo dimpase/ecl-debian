@@ -1,7 +1,7 @@
---- a/src/c/unixint.d
-+++ b/src/c/unixint.d
-@@ -1404,6 +1404,8 @@
-          */
+--- ecl.orig/src/c/unixint.d
++++ ecl/src/c/unixint.d
+@@ -1408,6 +1408,8 @@
+    */
  #ifdef SIGRTMIN
  # define DEFAULT_THREAD_INTERRUPT_SIGNAL SIGRTMIN + 2
 +#elif defined(__GNU__)
