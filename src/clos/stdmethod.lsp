@@ -5,12 +5,7 @@
 ;;;;  Copyright (c) 1992, Giuseppe Attardi.
 ;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;
-;;;;    This program is free software; you can redistribute it and/or
-;;;;    modify it under the terms of the GNU Library General Public
-;;;;    License as published by the Free Software Foundation; either
-;;;;    version 2 of the License, or (at your option) any later version.
-;;;;
-;;;;    See file '../Copyright' for full details.
+;;;;    See file 'LICENSE' for the copyright details.
 
 (in-package "CLOS")
 
@@ -18,7 +13,7 @@
 ;;; Method
 ;;; ----------------------------------------------------------------------
 
-(defun function-keywords (method)
+(defmethod function-keywords ((method standard-method))
   (multiple-value-bind (reqs opts rest-var key-flag keywords)
       (si::process-lambda-list (slot-value method 'lambda-list) 'function)
     (declare (ignore reqs opts rest-var))
@@ -33,7 +28,7 @@
                               &key (specializers nil spec-supplied-p)
                               (lambda-list nil lambda-supplied-p)
                               generic-function)
-  (declare (ignore initargs method slot-names))
+  (declare (ignore initargs method slot-names generic-function))
   (when slot-names
     (unless spec-supplied-p
       (error "Specializer list not supplied in method initialization"))

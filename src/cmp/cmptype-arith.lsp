@@ -5,12 +5,7 @@
 ;;;;  Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
 ;;;;  Copyright (c) 1990, Giuseppe Attardi.
 ;;;;
-;;;;    This program is free software; you can redistribute it and/or
-;;;;    modify it under the terms of the GNU Library General Public
-;;;;    License as published by the Free Software Foundation; either
-;;;;    version 2 of the License, or (at your option) any later version.
-;;;;
-;;;;    See file '../Copyright' for full details.
+;;;;    See file 'LICENSE' for the copyright details.
 
 ;;;; CMPTYPE-ARITH -- Operations upon and among types
 
@@ -50,7 +45,7 @@
 ;;; Depends on the implementation of TYPE-OF.
 ;;; (only used for saving constants?)
 (defun object-type (thing)
-  (let ((type (if thing (type-of thing) 'SYMBOL)))
+  (let ((type (type-of thing)))
     (case type
       ((FIXNUM SHORT-FLOAT SINGLE-FLOAT DOUBLE-FLOAT LONG-FLOAT SYMBOL NULL) type)
       ((BASE-CHAR STANDARD-CHAR CHARACTER EXTENDED-CHAR) 'CHARACTER)
@@ -67,10 +62,11 @@
 
 (defun valid-type-specifier (type)
   (handler-case
-     (if (subtypep type 'T)
-         (values t type)
-         (values nil nil))
-    (error (c) (values nil nil))))
+      (if (subtypep type 'T)
+          (values t type)
+          (values nil nil))
+    (error ()
+      (values nil nil))))
 
 (defun known-type-p (type)
   (subtypep type T))
@@ -264,8 +260,8 @@
                     (opt2 (push (type-and t1 (pop opt2)) opt))
                     (rest2 (push (type-and t1 (first rest2)) opt))
                     (t (setf opt1 nil rest1 nil) (return))))
-        (when rest
-          (let ((t1 (first rest)))
+        (when rest1
+          (let ((t1 (first rest1)))
             (loop for t2 in req2
                do (push (type-and t1 t2) req))
             (loop for t2 in opt2

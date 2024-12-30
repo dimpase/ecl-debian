@@ -7,12 +7,7 @@
 ;;;;  Copyright (c) 2001, Juan Jose Garcia Ripoll.
 ;;;;  Copyright (c) 2015, Daniel Kochmański.
 ;;;;
-;;;;    This program is free software; you can redistribute it and/or
-;;;;    modify it under the terms of the GNU Library General Public
-;;;;    License as published by the Free Software Foundation; either
-;;;;    version 2 of the License, or (at your option) any later version.
-;;;;
-;;;;    See file '../Copyright' for full details.
+;;;;    See file 'LICENSE' for the copyright details.
 
 ;;;;                                setf routines
 
@@ -49,9 +44,9 @@
             `(,function ,@args ,store))
         stores-no)
       (do-define-setf-method access-fn
-        #'(lambda (env &rest args)
+        #'(lambda (args env)
             (declare (ignore env))
-            (do-setf-method-expansion access-fn function args stores-no)))))
+            (do-setf-method-expansion access-fn function (cdr args) stores-no)))))
 
 (defun do-define-setf-method (access-fn function)
   (declare (type-assertions nil))
@@ -116,21 +111,11 @@ expanded into
           storing-form)
 The doc-string DOC, if supplied, is saved as a SETF doc and can be retrieved
 by (DOCUMENTATION 'SYMBOL 'SETF)."
-  (let ((env (member '&environment args :test #'eq)))
-    (if env
-        (setq args (cons (second env)
-                         (nconc (ldiff args env) (cddr env))))
-        (progn
-          (setq env (gensym))
-          (setq args (cons env args))
-          (push `(declare (ignore ,env)) body))))
-  (multiple-value-bind (decls body documentation)
-      (find-declarations body t)
+  (multiple-value-bind (function pprint documentation)
+      (sys::expand-defmacro access-fn args body 'define-setf-expander)
+    (declare (ignore pprint))
     `(eval-when (:compile-toplevel :load-toplevel :execute)
-       (do-define-setf-method ',access-fn
-         #'(lambda ,args
-             ,@decls
-             (block ,access-fn ,@body)))
+       (do-define-setf-method ',access-fn #',function)
        ,@(si::expand-set-documentation access-fn 'setf documentation)
        ',access-fn)))
 
@@ -152,7 +137,7 @@ Does not check if the third gang is a single-element list."
         ((or (not (consp form)) (not (symbolp (car form))))
          (error "Cannot get the setf-method of ~S." form))
         ((setq f (get-sysprop (car form) 'SETF-METHOD))
-         (apply f env (cdr form)))
+         (funcall f form env))
         ((and (setq f (macroexpand-1 form env)) (not (equal f form)))
          (get-setf-expansion f env))
         (t
