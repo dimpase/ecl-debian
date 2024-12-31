@@ -27,7 +27,7 @@ Rules-Requires-Root: no
 Package: ecl
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
- libecl21.2t64 (= ${binary:Version}), libecl-dev (= ${binary:Version}),
+ libecl24.5t64 (= ${binary:Version}), libecl-dev (= ${binary:Version}),
  libffi-dev, libgmp-dev, libncurses-dev, libgc-dev, libatomic-ops-dev, gcc
 Provides: lisp-compiler
 Suggests: slime, ecl-doc
@@ -50,14 +50,14 @@ Description: Embeddable Common-Lisp: has an interpreter and can compile to C
   * A simple conservative mark & sweep garbage collector.
   * The Boehm-Weiser garbage collector.
 
-Package: libecl21.2t64
+Package: libecl24.5t64
 Provides: ${t64:Provides}
 Section: libs
 Architecture: any
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Breaks: libecl21.2 (<< ${source:Version}), ecl (<< 21.2.1+ds-2)
-Replaces: libecl21.2, ecl (<< 21.2.1+ds-2)
+Breaks: libecl21.2, libecl24.5 (<< ${source:Version}), ecl (<< 24.5.10+ds-1)
+Replaces: libecl21.2, libecl24.5, ecl (<< 24.5.10+0ds-1)
 Description: Embeddable Common-Lisp: shared library
  ECL stands for Embeddable Common-Lisp. The ECL project is an
  effort to modernize Giuseppe Attardi's ECL environment to
@@ -83,9 +83,9 @@ Package: libecl-dev
 Section: libdevel
 Architecture: any
 Multi-Arch: same
-Depends: ${misc:Depends}, libecl21.2t64 (= ${binary:Version})
-Breaks: ecl (<< 21.2.1+ds-2)
-Replaces: ecl (<< 21.2.1+ds-2)
+Depends: ${misc:Depends}, libecl24.5t64 (= ${binary:Version})
+Breaks: ecl (<< 24.5.10+ds-1)
+Replaces: ecl (<< 24.5.10+ds-1)
 Description: Embeddable Common-Lisp: development files
  ECL stands for Embeddable Common-Lisp. The ECL project is an
  effort to modernize Giuseppe Attardi's ECL environment to

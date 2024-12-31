@@ -1,2 +1,0 @@
-libecl21.2t64: library-not-linked-against-libc */sb-bsd-sockets.fas
-libecl21.2t64: package-name-doesnt-match-sonames libecl21.2
