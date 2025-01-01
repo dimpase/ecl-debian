@@ -98,6 +98,16 @@ Files: contrib/sockets/*
 Copyright: none
 License: public-domain
 
+Files: contrib/bytecmp/bytecmp.lsp
+Copyright: Copyright (c) 1984, Taiichi Yuasa and Masami Hagiya.
+ Copyright (c) 1990, Giuseppe Attardi.
+ Copyright (c) 2001, Juan Jose Garcia Ripoll
+License: LGPL-2+
+  
+Files: contrib/ecl-cdb/*.lisp
+Copyright: Copyright (c) 2011, Juan Jose Garcia-Ripoll.
+License: LGPL-2+
+
 Files: contrib/win32/txtedit.lisp
   contrib/win32/win32.lisp
 Copyright: 2005, Michael Goffioul (michael dot goffioul at swing dot be)
@@ -143,6 +153,15 @@ Files: src/c/arch/*
        src/h/impl/*
        src/h/object.h
        src/h/stacks.h
+       src/cmp/cmppass1-stack.lsp
+       src/cmp/cmpprop.lsp
+       src/cmp/cmpopt-cons.lsp
+       src/cmp/cmppackage.lsp
+       src/cmp/cmpbackend-cxx/cmppass2-call.lsp
+       src/cmp/cmpbackend-cxx/cmppass2-eval.lsp
+       src/cmp/cmpbackend-cxx/cmppass2-stack.lsp
+       src/cmp/cmpbackend-cxx/cmppass2-cont.lsp
+       src/cmp/cmpbackend-cxx/cmppass2-exit.lsp
 Copyright: 1984, Taiichi Yuasa and Masami Hagiya.
            1990, 1995, Giuseppe Attardi.
            2001-2011, Juan Jose Garcia Ripoll.
