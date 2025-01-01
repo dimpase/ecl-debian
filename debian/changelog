@@ -1,8 +1,13 @@
-ecl (24.5.10+ds-1) UNRELEASED; urgency=medium
+ecl (24.5.10+ds-1) unstable; urgency=medium
 
   * New upstream version 24.5.10+ds
+  * Depend on libncurses-dev instead of libncurses5-dev
+  * Future-proof by disabling LTO support, with thanks to Steve Langasek. (Closes: 1069910)
+  * Adjust lintian warnings
+  * Adjust library soname with new version
+  * Adjusted copyright file
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Mon, 30 Dec 2024 22:10:13 +0100
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 01 Jan 2025 10:53:47 +0100
 
 ecl (21.2.1+ds-4.1) unstable; urgency=medium
 
