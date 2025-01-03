@@ -27,7 +27,7 @@ Rules-Requires-Root: no
 Package: ecl
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
- libecl24.5t64 (= ${binary:Version}), libecl-dev (= ${binary:Version}),
+ libecl24.5 (= ${binary:Version}), libecl-dev (= ${binary:Version}),
  libffi-dev, libgmp-dev, libncurses-dev, libgc-dev, libatomic-ops-dev, gcc
 Provides: lisp-compiler
 Suggests: slime, ecl-doc
@@ -50,8 +50,7 @@ Description: Embeddable Common-Lisp: has an interpreter and can compile to C
   * A simple conservative mark & sweep garbage collector.
   * The Boehm-Weiser garbage collector.
 
-Package: libecl24.5t64
-Provides: ${t64:Provides}
+Package: libecl24.5
 Section: libs
 Architecture: any
 Multi-Arch: same
@@ -83,7 +82,7 @@ Package: libecl-dev
 Section: libdevel
 Architecture: any
 Multi-Arch: same
-Depends: ${misc:Depends}, libecl24.5t64 (= ${binary:Version})
+Depends: ${misc:Depends}, libecl24.5 (= ${binary:Version})
 Breaks: ecl (<< 24.5.10+ds-1)
 Replaces: ecl (<< 24.5.10+ds-1)
 Description: Embeddable Common-Lisp: development files
