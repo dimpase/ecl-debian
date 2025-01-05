@@ -1,3 +1,9 @@
+ecl (24.5.10+ds-2) unstable; urgency=medium
+
+  * Revert t64 changes. (Closes: #1092000)
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Sun, 05 Jan 2025 17:27:18 +0100
+
 ecl (24.5.10+ds-1) unstable; urgency=medium
 
   * New upstream version 24.5.10+ds
