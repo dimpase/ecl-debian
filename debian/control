@@ -81,7 +81,6 @@ Description: Embeddable Common-Lisp: shared library
 Package: libecl-dev
 Section: libdevel
 Architecture: any
-Multi-Arch: same
 Depends: ${misc:Depends}, libecl24.5 (= ${binary:Version})
 Breaks: ecl (<< 24.5.10+ds-1)
 Replaces: ecl (<< 24.5.10+ds-1)
