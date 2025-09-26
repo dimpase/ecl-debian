@@ -1,0 +1,11 @@
+--- ecl.orig/src/bare.lsp.in
++++ ecl/src/bare.lsp.in
+@@ -40,7 +40,7 @@
+ ;;; * Create bogus commit version number
+ ;;;
+ 
+-(setq si::+commit-id+ "UNKNOWN")
++(setq si::+commit-id+ "294da20f")
+ 
+ ;;;
+ ;;; * Setup cross compilation
