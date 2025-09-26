@@ -3,3 +3,4 @@
 /usr/lib/*/ecl-*/*.fas
 /usr/lib/*/ecl-*/help.doc
 /usr/lib/*/ecl-*/encodings
+/usr/lib/*/ecl-*/*.a
