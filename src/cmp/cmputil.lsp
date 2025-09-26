@@ -65,8 +65,8 @@
      (restart-case
          (handler-bind ((compiler-note #'handle-compiler-note)
                         (warning #'handle-compiler-warning)
-                        (compiler-error #'handle-compiler-error)
                         (compiler-internal-error #'handle-compiler-internal-error)
+                        (compiler-error #'handle-compiler-error)
                         (serious-condition #'handle-compiler-internal-error))
            (mp:with-lock (mp:+load-compile-lock+)
              (let ,+init-env-form+
@@ -121,7 +121,7 @@
     (apply #'format t args)))
 
 (defun cmp-eval (form &optional (env *cmp-env*))
-  (handler-case (si::eval-with-env form env nil t :execute)
+  (handler-case (si:eval-with-env form env nil t :execute)
     (serious-condition (c)
       (when *compiler-break-enable*
         (invoke-debugger c))
@@ -431,6 +431,24 @@ comparing circular objects."
                          (equal-recursive (cdr x) (cdr y) x0 y0 t (ash path-spec 1) (the fixnum (1+ n))))))))
     (equal-recursive x y nil nil t 0 -1)))
 
+(defun type-specifier= (x y)
+  "Compares two type specifiers for syntactic equality."
+  ;; This function only checks if the arguments have the same name
+  ;; (and arguments in case of compound type specifiers) but not if
+  ;; they are aliases of each other. For example (OR REAL COMPLEX) and
+  ;; NUMBER are considered different by this function but are of
+  ;; course semantically equivalent.
+  ;;
+  ;; Note that type specifiers cannot be compared with EQUAL since in
+  ;; eql and member types the arguments have to compared using EQL.
+  (if (and (consp x) (consp y))
+      (if (and (member (first x) '(eql member))
+               (member (first y) '(eql member)))
+          (every #'eql x y)
+          (and (type-specifier= (car x) (car y))
+               (type-specifier= (cdr x) (cdr y))))
+      (eql x y)))
+
 ;; ----------------------------------------------------------------------
 ;; CACHED FUNCTIONS
 ;;
@@ -442,7 +460,7 @@ comparing circular objects."
          (hash-function (case test
                           (EQ 'SI::HASH-EQ)
                           (EQL 'SI::HASH-EQL)
-                          ((EQUAL EQUAL-WITH-CIRCULARITY) 'SI::HASH-EQUAL)
+                          ((EQUAL EQUAL-WITH-CIRCULARITY TYPE-SPECIFIER=) 'SI::HASH-EQUAL)
                           (t (setf test 'EQUALP) 'SI::HASH-EQUALP))))
     `(progn
        (defvar ,cache-name
@@ -464,8 +482,11 @@ comparing circular objects."
                    (setf (aref ,cache-name hash) (list ,@lambda-list output))
                    output))))))))
 
-(defmacro defun-equal-cached (name lambda-list &body body)
-  `(defun-cached ,name ,lambda-list equal-with-circularity ,@body))
-
 (defun same-fname-p (name1 name2)
   (equal name1 name2))
+
+(defun emptyp (item)
+  (etypecase item
+    (list (null item))
+    (vector (zerop (length item)))
+    (hash-table (zerop (hash-table-count item)))))

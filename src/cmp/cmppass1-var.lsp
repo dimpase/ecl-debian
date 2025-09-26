@@ -186,7 +186,7 @@
   ;;  (let ((v1 e1) (v2 e2) (v3 e3)) (expr e4 v2 e5))
   ;;  - v2 is a read only variable
   ;;  - the value of e2 is not modified in e3 nor in following expressions
-  (when (eq (c1form-name form) 'VAR)
+  (when (eq (c1form-name form) 'VARIABLE)
     (let ((other-var (c1form-arg 0 form)))
       (unless (or (global-var-p other-var)
                   (member other-var rest-vars)
@@ -224,7 +224,7 @@
            (setq type 'T))
           ((machine-c-type-p (setq type (cdr type)))
            (setf kind type
-                 type (rep-type->lisp-type type))))
+                 type (host-type->lisp-type type))))
     (cond ((or (member name specials) (special-variable-p name))
            (unless (eq kind 'LEXICAL)
              (cmperr "Special variable ~A cannot be declared to have C type ~A"
@@ -237,11 +237,12 @@
                      :kind kind :ignorable ignorable
                      :ref 0)))))
 
-(defun c1var (name)
+;;; When LOC is not NIL then we deal with a constant.
+(defun c1variable (name loc)
   (let* ((var (c1vref name))
-         (output (make-c1form* 'VAR
+         (output (make-c1form* 'VARIABLE
                                :type (var-type var)
-                               :args var)))
+                               :args var loc)))
       (add-to-read-nodes var output)
       output))
 
@@ -265,8 +266,7 @@
              ((CLOSURE))
              ((LEXICAL)
               (when cfb
-                (setf (var-ref-clb var) t
-                      (var-loc var) 'OBJECT)))
+                (setf (var-ref-clb var) t)))
              (t
               (when cfb
                 (cmperr "Variable ~A declared of C type cannot be referenced across function boundaries."

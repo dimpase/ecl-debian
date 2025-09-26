@@ -280,7 +280,7 @@ from the C language code.  NIL means \"do not create the file\"."
          (*compiler-output2* (if h-file
                                  (open h-file :direction :output :external-format :default)
                                  null-stream))
-         (t3local-fun (symbol-function 'T3LOCAL-FUN))
+         (t3function (symbol-function 'T3FUNCTION))
          (compiler-conditions nil)
          (*cmp-env-root* *cmp-env-root*))
     (with-compiler-env (compiler-conditions)
@@ -288,17 +288,19 @@ from the C language code.  NIL means \"do not create the file\"."
         (setf disassembled-form (set-closure-env disassembled-form lexenv *cmp-env-root*))
         (unwind-protect
              (progn
-               (setf (symbol-function 'T3LOCAL-FUN)
+               (setf (symbol-function 'T3FUNCTION)
                      #'(lambda (&rest args)
                          (let ((*compiler-output1* *standard-output*))
-                           (apply t3local-fun args))))
+                           (apply t3function args))))
                (compiler-pass1 disassembled-form)
+               (compiler-pass/propagate-types)
+               (optimize-cxx-data *referenced-objects*)
                (ctop-write (compute-init-name "foo" :kind :fasl)
                            (if h-file h-file "")
                            (if data-file data-file ""))
                (when data-file
                  (data-c-dump data-file)))
-          (setf (symbol-function 'T3LOCAL-FUN) t3local-fun)
+          (setf (symbol-function 'T3FUNCTION) t3function)
           (when h-file (close *compiler-output2*))))))
   nil)
 
@@ -307,7 +309,6 @@ from the C language code.  NIL means \"do not create the file\"."
 ;;; using WITH-COMPILATION-UNIT macro what seems to be a much better
 ;;; place to customize the source location. -- jd 2019-11-25
 (defun compiler-pass1 (object &optional source-offset)
-  (data-init)
   (if (streamp object)
       (do* ((eof '(NIL))
             (*compile-file-position* 0 (file-position object))
