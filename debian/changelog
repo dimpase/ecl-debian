@@ -1,14 +1,19 @@
-ecl (24.5.10.20250914.git294da20+dfsg-1) UNRELEASED; urgency=medium
+ecl (24.5.10.20250914.git294da20+dfsg-1) unstable; urgency=medium
 
+  * Updated Standards-Version, no changes
+  * Added man pages
   * Apply https://salsa.debian.org/common-lisp-team/ecl/-/merge_requests/2
     manually
   * Moved to proper dfsg suffix
-  * Temorary track the GIT state to test the new version with gcc-15 support
+  * Temporary track the GIT state to test the new version with gcc-15 support
     (Closes: 1096562)
   * New upstream version 24.5.10.20250914.git294da20+dfsg
   * Revert t64 changes. (Closes: #1092000)
+  * Add libraries to package. (Closes: 1008176)
+  * Added temporary patch to show the right Git commit
+  * Fixed copyright files
 
- -- Peter Van Eynde <pvaneynd@debian.org>  Fri, 26 Sep 2025 08:04:58 +0200
+ -- Peter Van Eynde <pvaneynd@debian.org>  Fri, 26 Sep 2025 11:26:07 +0200
 
 ecl (24.5.10+ds-1) unstable; urgency=medium
 
