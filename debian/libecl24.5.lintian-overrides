@@ -1,2 +1,1 @@
 libecl24.5: library-not-linked-against-libc [usr/lib/x86_64-linux-gnu/ecl-24.5.10/sb-bsd-sockets.fas]
-libecl24.5: package-name-doesnt-match-sonames [usr/share/lintian/overrides/libecl24.5:2]

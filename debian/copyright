@@ -7,9 +7,10 @@ Files-Excluded: src/gmp src/libffi src/bdwgc .gitlab-ci.yml
 Files: *
 Copyright: 1984 Taiichi Yuasa and Masami Hagiya
            1990, 1991, 1993 Giuseppe Attardi
-           2000-2012, Juan Jose Garcia Ripoll
-           2015-2016, Daniel Kochmański
-License: GPL-2+
+           2000-2013, Juan Jose Garcia Ripoll
+           2015-2018, Daniel Kochmański
+           2019-2024, Daniel Kochmański and Marius Gerbershagen
+License: LGPL-2.1+
 
 Files: contrib/asdf/*
 Copyright: 2001-2016, Daniel Barlow and contributors
@@ -125,6 +126,10 @@ Files: examples/threads/*
 Copyright: 2001, 2005, 2006, 2010, 2011, Juan Jose Garcia Ripoll.
 License: LGPL-2+
 
+Files: examples/android/jni/Android.mk
+Copyright: 2009 The Android Open Source Project
+License: Apache-2.0
+
 Files: msvc/gmp/*
 Copyright: 1989-2005, Free Software Foundation, Inc.
 License: LGPL-2.1+
@@ -139,7 +144,6 @@ License: GPL-2+
 Files: src/c/arch/*
        src/c/printer/integer_to_string.d
        src/c/unixint.d
-       src/cmp/cmplet.lsp
        src/h/cache.h
        src/h/config.h.in
        src/h/cons.h
@@ -153,13 +157,11 @@ Files: src/c/arch/*
        src/h/impl/*
        src/h/object.h
        src/h/stacks.h
-       src/cmp/cmppass1-stack.lsp
        src/cmp/cmpprop.lsp
        src/cmp/cmpopt-cons.lsp
        src/cmp/cmppackage.lsp
        src/cmp/cmpbackend-cxx/cmppass2-call.lsp
        src/cmp/cmpbackend-cxx/cmppass2-eval.lsp
-       src/cmp/cmpbackend-cxx/cmppass2-stack.lsp
        src/cmp/cmpbackend-cxx/cmppass2-cont.lsp
        src/cmp/cmpbackend-cxx/cmppass2-exit.lsp
 Copyright: 1984, Taiichi Yuasa and Masami Hagiya.
@@ -205,6 +207,8 @@ License: NTP-defpackage
 
 Files: src/lsp/format.lsp
        src/lsp/pprint.lsp
+       src/lsp/cmuutil.lsp
+       src/c/coverity/model.c
 Copyright: none
 License: public-domain
 
@@ -346,3 +350,20 @@ License: LGPL-2.1+
 
 License: public-domain
  This program is placed in the public domain.
+
+License: Apache-2.0
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+ .
+      http://www.apache.org/licenses/LICENSE-2.0
+ .
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ .
+ On Debian systems, the complete text of version 2.0 of the Apache
+ License can be fouind in '/usr/share/common-licenses/Apache-2.0'.
+
