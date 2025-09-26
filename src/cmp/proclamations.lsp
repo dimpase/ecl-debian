@@ -180,10 +180,10 @@
 (proclamation compile (function-name &optional (or list function))
               (values (or function-name function) gen-bool gen-bool))
 (proclamation compiler-macro-function (function-name &optional environment)
-              function)
+              (or function null))
 (proclamation constantp (t &optional environment) gen-bool)
 (proclamation eval (form) (values &rest t))
-(proclamation macro-function (symbol &optional environment) function)
+(proclamation macro-function (symbol &optional environment) (or function null))
 (proclamation macroexpand (form &optional environment) (values form gen-bool))
 (proclamation macroexpand-1 (form &optional environment) (values form gen-bool))
 (proclamation proclaim (declaration-specifier) (values &rest t))
@@ -367,7 +367,7 @@
 (proclamation compute-restarts (&optional (or null condition)) list)
 (proclamation find-restart
                    (restart-designator &optional (or null condition))
-                   restart)
+                   (or null restart))
 (proclamation invoke-restart (restart-designator &rest t)
                    (values &rest t))
 (proclamation invoke-restart-interactively (restart-designator)
@@ -562,7 +562,7 @@
 (proclamation integer-length (integer) integer-length :pure)
 (proclamation integerp (t) gen-bool :pure)
 (proclamation parse-integer (string &rest t)
-              (values integer ext:array-index)
+              (values (or integer null) ext:array-index)
               :no-side-effects)
 (proclamation boole ((integer 0 15) integer integer) integer :pure)
 (proclamation logand (&rest integer) integer :pure)
@@ -1114,7 +1114,7 @@
 (proclamation ext:mkstemp (pathname-designator) (or null pathname))
 (proclamation ext:copy-file (pathname-designator pathname-designator) gen-bool)
 
-(proclamation si:mkdir (pathname-designator unsigned-byte) string)
+(proclamation si:mkdir (pathname-designator unsigned-byte) (or string null))
 (proclamation si:rmdir (pathname-designator) null)
 
 
@@ -1130,6 +1130,8 @@
 (proclamation streamp (t) gen-bool :pure)
 (proclamation read-byte (stream &optional gen-bool t) t)
 (proclamation write-byte (integer stream) integer)
+(proclamation ext:unread-byte (stream integer) null)
+(proclamation ext:peek-byte (stream t) t)
 (proclamation peek-char (&optional (or character boolean)
                                    stream-designator
                                    gen-bool

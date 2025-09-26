@@ -17,16 +17,34 @@
 ;;;
 ;;; DATABASE OF INLINE EXPANSIONS
 ;;;
-;;;     (DEF-INLINE function-name kind ([arg-type]*) return-rep-type
+;;;     (DEF-INLINE function-name kind ([arg-type]*) return-host-type
 ;;;             expansion-string)
 ;;;
 ;;; Here, ARG-TYPE is the list of argument types belonging to the lisp family,
 ;;; while RETURN-REP-TYPE is a representation type, i.e. the C type of the
 ;;; output expression. EXPANSION-STRING is a C/C++ expression template, like the
-;;; ones used by C-INLINE. Finally, KIND can be :ALWAYS, :SAFE or :UNSAFE,
-;;; depending on whether the inline expression should be applied always, in safe
-;;; or in unsafe compilation mode, respectively.
+;;; ones used by C-INLINE. Finally, KIND can be :ALWAYS or :UNSAFE, depending on
+;;; whether the inline expression should be applied always or only in the unsafe
+;;; compilation mode, respectively.
 ;;;
+
+;;; Valid property names for open coded functions are:
+;;;  :INLINE-ALWAYS
+;;;  :INLINE-UNSAFE     non-safe-compile only
+;;;
+;;; Each property is a list of 'inline-info's, where each inline-info is:
+;;; ( types { type | boolean } { string | function } ).
+;;;
+;;; For each open-codable function, open coding will occur only if there exits
+;;; an appropriate property with the argument types equal to 'types' and with
+;;; the return-type equal to 'type'.
+;;;
+;;; The third element is T if and only if side effects may occur by the call of
+;;; the function.  Even if *DESTINATION* is TRASH, open code for such a function
+;;; with side effects must be included in the compiled code.
+;;;
+;;; The forth element is T if and only if the result value is a new Lisp object,
+;;; i.e., it must be explicitly protected against GBC.
 
 (defun inline-information (name safety)
   (gethash (list name safety) *inline-information*))
@@ -34,41 +52,38 @@
 (defun (setf inline-information) (value name safety)
   (setf (gethash (list name safety) *inline-information*) value))
 
-(defun %def-inline (name safety arg-types return-rep-type expansion
-                    &key (one-liner t) (exact-return-type nil) (inline-or-warn nil)
+(defun %def-inline (name safety arg-types return-host-type expansion
+                    &key (one-liner t) (exact-return-type nil)
                       (multiple-values t)
-                    &aux arg-rep-types)
+                    &aux arg-host-types)
   (setf safety
         (case safety
           (:unsafe :inline-unsafe)
-          (:safe :inline-safe)
           (:always :inline-always)
-          (t (error "In DEF-INLINE, wrong value of SAFETY"))))
+          (t (error "In DEF-INLINE, ~s is a wrong value of SAFETY." safety))))
   ;; Ensure we can inline this form. We only inline when the features are
   ;; there (checked above) and when the C types are part of this machine
   ;; (checked here).
-  (loop for type in (list* return-rep-type arg-types)
+  (loop for type in (list* return-host-type arg-types)
         unless (or (eq type 'fixnum-float)
                    (and (consp type) (eq (car type) 'values))
                    (lisp-type-p type)
                    (machine-c-type-p type))
           do (warn "Dropping inline form for ~A because of missing type ~A" name type)
              (return-from %def-inline))
-  (setf arg-rep-types
-        (mapcar #'(lambda (x) (if (eq x '*) x (lisp-type->rep-type x)))
+  (setf arg-host-types
+        (mapcar #'(lambda (x) (if (eq x '*) x (lisp-type->host-type x)))
                 arg-types))
-  (when (eq return-rep-type t)
-    (setf return-rep-type :object))
-  (when inline-or-warn
-    (setf (inline-information name 'should-be-inlined) t))
-  (let* ((return-type (if (and (consp return-rep-type)
-                               (eq (first return-rep-type) 'values))
+  (when (eq return-host-type t)
+    (setf return-host-type :object))
+  (let* ((return-type (if (and (consp return-host-type)
+                               (eq (first return-host-type) 'values))
                           t
-                          (rep-type->lisp-type return-rep-type)))
+                          (host-type->lisp-type return-host-type)))
          (inline-info
            (make-inline-info :name name
-                             :arg-rep-types arg-rep-types
-                             :return-rep-type return-rep-type
+                             :arg-host-types arg-host-types
+                             :return-host-type return-host-type
                              :return-type return-type
                              :arg-types arg-types
                              :exact-return-type exact-return-type
@@ -76,12 +91,6 @@
                              ;; :side-effects (not (si:get-sysprop name 'no-side-effects))
                              :one-liner one-liner
                              :expansion expansion)))
-    #+(or)
-    (loop for i in (inline-information name safety)
-          when (and (equalp (inline-info-arg-types i) arg-types)
-                    (not (equalp return-type (inline-info-return-type i))))
-            do (format t "~&;;; Redundand inline definition for ~A~&;;; ~<~A~>~&;;; ~<~A~>"
-                       name i inline-info))
     (push inline-info (gethash (list name safety) *inline-information*))))
 
 (defmacro def-inline (&rest args)
@@ -333,7 +342,7 @@
 
     (def-inline cl:cons :always (t t) t "CONS(#0,#1)")
 
-    (def-inline cl:endp :safe (t) :bool "ecl_endp(#0)")
+    (def-inline cl:endp :always (t) :bool "ecl_endp(#0)")
     (def-inline cl:endp :unsafe (t) :bool "#0==ECL_NIL")
 
     (def-inline cl:nth :always (t t) t "ecl_nth(ecl_to_size(#0),#1)")
@@ -521,6 +530,9 @@
 
     (def-inline cl:expt :always (t t) t "ecl_expt(#0,#1)")
     (def-inline cl:expt :always ((integer 2 2) (integer 0 29)) :fixnum "(1<<(#1))")
+    ;; Note that the following two inlines are conflicting. CHOOSE-INLINE-INFO
+    ;; assumes the one that has more specific types.
+    (def-inline cl:expt :always ((integer 0 0) (integer 0 0)) :fixnum "1")
     (def-inline cl:expt :always ((integer 0 0) t) :fixnum "0")
     (def-inline cl:expt :always ((integer 1 1) t) :fixnum "1")
     (def-inline cl:expt :always ((long-float 0.0l0 *) long-float) :long-double "powl((long double)#0,(long double)#1)")
@@ -652,6 +664,11 @@
 
     (def-inline cl:boundp :always (t) :bool "ecl_boundp(cl_env_copy,#0)")
     (def-inline cl:boundp :unsafe ((and symbol (not null))) :bool "ECL_SYM_VAL(cl_env_copy,#0)!=OBJNULL")
+
+    (def-inline cl:terpri :always (t) :object "(ecl_terpri(#0))")
+    (def-inline cl:print :always (t t) :object "(ecl_print(#0,#1))")
+    (def-inline cl:prin1 :always (t t) :object "(ecl_prin1(#0,#1))")
+    (def-inline cl:princ :always (t t) :object "(ecl_princ(#0,#1))")
 
     ;; file unixsys.d
 
@@ -815,3 +832,8 @@
       (def-inline clos:funcallable-standard-instance-access :unsafe (clos:funcallable-standard-object fixnum) t "(#0)->instance.slots[#1]"))
 
     *inline-information*))
+
+;;; XXX this should be part of the initializer for the compiler instance (but
+;;; currently the compiler is a singleton).
+(setf (machine-inline-information *default-machine*)
+      (make-inline-information *default-machine*))

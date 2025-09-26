@@ -14,7 +14,14 @@
 
 (progn
   (setq *package* (find-package "SYSTEM"))
-  (setq *features* @LSP_FEATURES@))
+  (setq *host-features* *features*)
+  (setq *features* '(@LSP_FEATURES@ @COMPILATION_FEATURES@))
+  (when (member :ecl-min *host-features*)
+    (setq *features* (cons :ecl-min *features*)))
+  (when (member :uname *host-features*)
+    (setq *features* (cons :uname *features*)))
+  (when (member :cross *host-features*)
+    (setq *features* (cons :cross *features*))))
 
 ;;;
 ;;; * Ensure that we have the whole of Common-Lisp to compile
@@ -127,8 +134,8 @@
                                     :system-p t :c-file t :data-file t :h-file t
                                     ;;:shared-data-file "build:ecl.sdat"
                                     )))
-  #+CLOS
-  (let* ((c::*compile-to-linking-call* nil))
+  #+clos
+  (progn
     (mapc #'proclaim +ecl-optimization-settings+)
     (setq lsp-objects (append lsp-objects
                               (compile-if-old "build:clos;" +clos-module-files+
@@ -139,7 +146,7 @@
   (let ((extra-lisp-files '(@ECL_EXTRA_LISP_FILES@)))
     (when extra-lisp-files
       (setq lsp-objects (append lsp-objects
-                                (compile-if-old "build:ext;" extra-lisp-files
+                                (compile-if-old "build:user;" extra-lisp-files
                                                 :system-p t :c-file t :data-file t
                                                 :h-file t
                                                 ;;:shared-data-file "build:ecl.sdat"

@@ -2,7 +2,7 @@
 /* vim: set filetype=c tabstop=2 shiftwidth=2 expandtab: */
 
 /*
- * process.d - native threads
+ * thread.d - native threads
  *
  * Copyright (c) 2003 Juan Jose Garcia Ripoll
  *
@@ -15,9 +15,6 @@
 #include <ecl/internal.h>
 #include <ecl/ecl-inl.h>
 
-#ifndef __sun__ /* See unixinit.d for this */
-#define _XOPEN_SOURCE 600       /* For pthread mutex attributes */
-#endif
 #include <errno.h>
 #include <time.h>
 #include <signal.h>
@@ -37,10 +34,6 @@
 /* -- Macros -------------------------------------------------------- */
 
 #ifdef ECL_WINDOWS_THREADS
-# define ecl_process_key_t DWORD
-# define ecl_process_key_create(key) key = TlsAlloc()
-# define ecl_process_get_tls(key) TlsGetValue(key)
-# define ecl_process_set_tls(key,val) (TlsSetValue(key,val)!=0)
 # define ecl_process_eq(t1, t2) (GetThreadId(t1) == GetThreadId(t2))
 # define ecl_set_process_self(var)              \
   {                                             \
@@ -54,45 +47,11 @@
                     DUPLICATE_SAME_ACCESS);     \
   }
 #else
-# define ecl_process_key_t static pthread_key_t
-# define ecl_process_key_create(key) pthread_key_create(&key, NULL)
-# define ecl_process_get_tls(key) pthread_getspecific(key)
-# define ecl_process_set_tls(key,val) (pthread_setspecific(key,val)==0)
 # define ecl_process_eq(t1, t2) (t1 == t2)
 # define ecl_set_process_self(var) (var = pthread_self())
 #endif  /* ECL_WINDOWS_THREADS */
 
 /* -- Core ---------------------------------------------------------- */
-
-/* Accessing a thread-local variable representing the environment. */
-
-ecl_process_key_t cl_env_key;
-
-cl_env_ptr
-ecl_process_env_unsafe(void)
-{
-  return ecl_process_get_tls(cl_env_key);
-}
-
-cl_env_ptr
-ecl_process_env(void)
-{
-  cl_env_ptr rv = ecl_process_get_tls(cl_env_key);
-  if(!rv) {
-    ecl_thread_internal_error("pthread_getspecific() failed.");
-  }
-  return rv;
-}
-
-static void
-ecl_set_process_env(cl_env_ptr env)
-{
-  if(!ecl_process_set_tls(cl_env_key, env)) {
-    ecl_thread_internal_error("pthread_setspecific() failed.");
-  }
-}
-
-/* Managing the collection of processes. */
 
 static void
 extend_process_vector()
@@ -171,18 +130,6 @@ ecl_process_list()
     }
   } ECL_WITH_NATIVE_LOCK_END;
   return output;
-}
-
-/* Initialiation */
-
-static void
-init_process(void)
-{
-  ecl_process_key_create(cl_env_key);
-  ecl_mutex_init(&cl_core.processes_lock, 1);
-  ecl_mutex_init(&cl_core.global_lock, 1);
-  ecl_mutex_init(&cl_core.error_lock, 1);
-  ecl_rwlock_init(&cl_core.global_env_lock);
 }
 
 /* -- Environment --------------------------------------------------- */
@@ -275,7 +222,7 @@ thread_entry_point(void *arg)
 #ifndef ECL_WINDOWS_THREADS
   pthread_cleanup_push(thread_cleanup, (void *)process);
 #endif
-  ecl_cs_set_org(env);
+  ecl_cs_init(env);
   ecl_mutex_lock(&process->process.start_stop_lock);
 
   /* 2) Execute the code. The CATCH_ALL point is the destination
@@ -326,26 +273,43 @@ thread_entry_point(void *arg)
 #endif
 }
 
+static void
+init_tl_bindings(cl_object process, cl_env_ptr env)
+{
+  cl_index bindings_size;
+  cl_object *bindings;
+  if (Null(process->process.inherit_bindings_p)) {
+    cl_index idx = 0, size = 256;
+    bindings_size = size;
+    bindings = (cl_object *)ecl_malloc(size*sizeof(cl_object*));
+    for(idx=0; idx<256; idx++) {
+      bindings[idx] = ECL_NO_TL_BINDING;
+    }
+  } else {
+    cl_env_ptr parent_env = ecl_process_env();
+    bindings_size = parent_env->bds_stack.tl_bindings_size;
+    bindings = (cl_object *)ecl_malloc(bindings_size*sizeof(cl_object*));
+    ecl_copy(bindings, parent_env->bds_stack.tl_bindings, bindings_size*sizeof(cl_object*));
+  }
+  env->bds_stack.tl_bindings_size = bindings_size;
+  env->bds_stack.tl_bindings = bindings;
+}
+
 static cl_object
-alloc_process(cl_object name, cl_object initial_bindings)
+alloc_process(cl_object name, cl_object initial_bindings_p)
 {
   cl_env_ptr env = ecl_process_env();
   cl_object process = ecl_alloc_object(t_process), array;
+  cl_index bindings_size;
+  cl_object* bindings;
   process->process.phase = ECL_PROCESS_INACTIVE;
   process->process.name = name;
   process->process.function = ECL_NIL;
   process->process.args = ECL_NIL;
   process->process.interrupt = ECL_NIL;
+  process->process.inherit_bindings_p = Null(initial_bindings_p)? ECL_T : ECL_NIL;
   process->process.exit_values = ECL_NIL;
   process->process.env = NULL;
-  if (initial_bindings != OBJNULL) {
-    array = si_make_vector(ECL_T, ecl_make_fixnum(256),
-                           ECL_NIL, ECL_NIL, ECL_NIL, ECL_NIL);
-    si_fill_array_with_elt(array, ECL_NO_TL_BINDING, ecl_make_fixnum(0), ECL_NIL);
-  } else {
-    array = cl_copy_seq(ecl_process_env()->bindings_array);
-  }
-  process->process.initial_bindings = array;
   process->process.woken_up = ECL_NIL;
   ecl_disable_interrupts_env(env);
   ecl_mutex_init(&process->process.start_stop_lock, TRUE);
@@ -372,8 +336,7 @@ ecl_import_current_thread(cl_object name, cl_object bindings)
     registered = 1;
     break;
   case GC_DUPLICATE:
-    /* Thread was probably created using the GC hooks
-     * for thread creation */
+    /* Thread was probably created using the GC hooks for thread creation. */
     registered = 0;
     break;
   default:
@@ -405,16 +368,14 @@ ecl_import_current_thread(cl_object name, cl_object bindings)
 
   /* Allocate real environment, link it together with process */
   env = _ecl_alloc_env(0);
-  process = alloc_process(name, bindings);
+  process = alloc_process(name, ECL_NIL);
   process->process.env = env;
   process->process.phase = ECL_PROCESS_BOOTING;
   process->process.thread = current;
 
   /* Copy initial bindings from process to the fake environment */
   env_aux->cleanup = registered;
-  env_aux->bindings_array = process->process.initial_bindings;
-  env_aux->thread_local_bindings_size = env_aux->bindings_array->vector.dim;
-  env_aux->thread_local_bindings = env_aux->bindings_array->vector.self.t;
+  init_tl_bindings(process, env_aux);
 
   /* Switch over to the real environment */
   memcpy(env, env_aux, sizeof(*env));
@@ -444,10 +405,10 @@ ecl_release_current_thread(void)
 #endif
 }
 
-@(defun mp::make-process (&key name ((:initial-bindings initial_bindings) ECL_T))
+@(defun mp::make-process (&key name ((:initial-bindings initial_bindings_p) ECL_T))
   cl_object process;
   @
-  process = alloc_process(name, initial_bindings);
+  process = alloc_process(name, initial_bindings_p);
   @(return process);
   @)
 
@@ -569,11 +530,7 @@ mp_process_enable(cl_object process)
     ecl_init_env(process_env);
 
     process_env->trap_fpe_bits = process->process.trap_fpe_bits;
-    process_env->bindings_array = process->process.initial_bindings;
-    process_env->thread_local_bindings_size = 
-      process_env->bindings_array->vector.dim;
-    process_env->thread_local_bindings =
-      process_env->bindings_array->vector.self.t;
+    init_tl_bindings(process, process_env);
 
     ecl_disable_interrupts_env(the_env);
 #ifdef ECL_WINDOWS_THREADS
@@ -642,7 +599,7 @@ mp_exit_process(void)
      UNWIND-PROTECT.
   */
   const cl_env_ptr the_env = ecl_process_env();
-  ecl_unwind(the_env, the_env->frs_org);
+  ecl_unwind(the_env, the_env->frs_stack.org);
   /* Never reached */
 }
 
@@ -724,9 +681,8 @@ mp_process_run_function_wait(cl_narg narg, ...)
   process = cl_apply(2, @'mp::process-run-function',
                      cl_grab_rest_args(args));
   if (!Null(process)) {
-    ecl_def_ct_single_float(wait, 0.001, static, const);
     while (process->process.phase < ECL_PROCESS_ACTIVE) {
-      cl_sleep(wait);
+      ecl_musleep(0.001);
     }
   }
   ecl_va_end(args);
@@ -765,7 +721,7 @@ mp_block_signals(void)
 {
 #ifdef ECL_WINDOWS_THREADS
   cl_env_ptr the_env = ecl_process_env();
-  cl_object previous = ecl_symbol_value(@'ext::*interrupts-enabled*');
+  cl_object previous = ecl_cmp_symbol_value(the_env, @'ext::*interrupts-enabled*');
   ECL_SETQ(the_env, @'ext::*interrupts-enabled*', ECL_NIL);
   @(return previous);
 #else
@@ -798,14 +754,14 @@ mp_restore_signals(cl_object sigmask)
 /* -- Initialization ------------------------------------------------ */
 
 void
-init_threads(cl_env_ptr env)
+init_threads()
 {
+  cl_env_ptr the_env = ecl_process_env();
   cl_object process;
   ecl_thread_t main_thread;
-  init_process();
   /* We have to set the environment before any allocation takes place,
    * so that the interrupt handling code works. */
-  ecl_set_process_env(env);
+  ecl_cs_init(the_env);
   ecl_set_process_self(main_thread);
   process = ecl_alloc_object(t_process);
   process->process.phase = ECL_PROCESS_ACTIVE;
@@ -813,12 +769,12 @@ init_threads(cl_env_ptr env)
   process->process.function = ECL_NIL;
   process->process.args = ECL_NIL;
   process->process.thread = main_thread;
-  process->process.env = env;
+  process->process.env = the_env;
   process->process.woken_up = ECL_NIL;
   ecl_mutex_init(&process->process.start_stop_lock, TRUE);
   ecl_cond_var_init(&process->process.exit_barrier);
 
-  env->own_process = process;
+  the_env->own_process = process;
   {
     cl_object v = si_make_vector(ECL_T, /* Element type */
                                  ecl_make_fixnum(256), /* Size */
