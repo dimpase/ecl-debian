@@ -1,3 +1,11 @@
+ecl (24.5.10.20250914.git294da20+dfsg-2) sid; urgency=medium
+
+  * On the suggestion of the ecl maintainers, see if disabling threading fixes
+    some ports
+  * Make lintian override work on other architectures
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Tue, 07 Oct 2025 18:24:49 +0200
+
 ecl (24.5.10.20250914.git294da20+dfsg-1) unstable; urgency=medium
 
   * Updated Standards-Version, no changes
