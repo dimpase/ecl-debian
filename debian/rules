@@ -6,7 +6,7 @@
 export DEB_BUILD_MAINT_OPTIONS=optimize=-lto
 
 # Disable threads on troublesome architectures
-ifneq (,$(filter alpha hurd-i386 kfreebsd-amd64 im68k sh4 x32, $(DEB_HOST_ARCH)))
+ifneq (,$(filter alpha hurd-i386 kfreebsd-amd64 m68k sh4 x32, $(DEB_HOST_ARCH)))
 	TRHEADING=no
 else
 	TRHEADING=yes
