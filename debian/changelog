@@ -1,3 +1,10 @@
+ecl (24.5.10.20250914.git294da20+dfsg-3) sid; urgency=medium
+
+  * Fix m68k typo
+  * Added some documentation to the patches
+
+ -- Peter Van Eynde <pvaneynd@debian.org>  Wed, 08 Oct 2025 07:56:49 +0200
+
 ecl (24.5.10.20250914.git294da20+dfsg-2) sid; urgency=medium
 
   * On the suggestion of the ecl maintainers, see if disabling threading fixes
