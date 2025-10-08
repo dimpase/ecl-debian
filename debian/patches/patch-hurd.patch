@@ -1,3 +1,17 @@
+Description: Patch fixing FTBFS on hurd
+ See https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=648993
+ .
+ Relevant quotes:
+ .
+ The solution [...] is use a different signal for
+ DEFAULT_THREAD_INTERRUPT_SIGNAL (I chose SIGINFO [...] I don't think it should
+ be forwarded upstream, as it is not clean and kind of working around the lack
+ of realtime signals in Hurd.
+Author: Pino Toscano <pino@debian.org>
+Forwarded: not-needed
+Last-Update: 2025-10-08
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- ecl.orig/src/c/unixint.d
 +++ ecl/src/c/unixint.d
 @@ -1408,6 +1408,8 @@

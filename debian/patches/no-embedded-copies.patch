@@ -3,7 +3,7 @@ Description: Do not rely on embedded code copies
  that everything goes smoothly in that context.
 Author: Sébastien Villemot <sebastien@debian.org>
 Forwarded: not-needed
-Last-Update: 2018-10-29
+Last-Update: 2025-10-08
 ---
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- ecl.orig/src/configure.ac

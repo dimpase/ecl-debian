@@ -1,7 +1,10 @@
 Description: Compress info file with gzip -9
  Due to the lintian warning info-document-not-compressed-with-max-compression.
 Author: Tobias Hansen <thansen@debian.org>
-
+Forwarded: not-needed
+Last-Update: 2025-10-08
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- ecl.orig/src/doc/manual/Makefile
 +++ ecl/src/doc/manual/Makefile
 @@ -13,7 +13,7 @@

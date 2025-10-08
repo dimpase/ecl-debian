@@ -1,7 +1,9 @@
 Description: Make configure work even when the current directory contains spaces
 Author: Christoph Egger <christoph@debian.org>
-Forwarded: NA
-
+Forwarded: not-needed
+Last-Update: 2025-10-08
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- ecl.orig/configure
 +++ ecl/configure
 @@ -10,7 +10,7 @@
