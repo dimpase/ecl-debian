@@ -3,13 +3,13 @@ Description: Do not rely on embedded code copies
  that everything goes smoothly in that context.
 Author: Sébastien Villemot <sebastien@debian.org>
 Forwarded: not-needed
-Last-Update: 2025-10-08
+Last-Update: 2026-10-11
 ---
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- ecl.orig/src/configure.ac
 +++ ecl/src/configure.ac
 @@ -11,7 +11,6 @@
- AC_INIT([ecl],[24.5.10],[])
+ AC_INIT([ecl],[26.5.5],[])
  AC_REVISION([$Revision$])
  AC_CONFIG_SRCDIR([bare.lsp.in])
 -AC_CONFIG_AUX_DIR([gmp])

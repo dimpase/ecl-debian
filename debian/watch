@@ -1,5 +1,5 @@
 version=4
-opts="mode=git, pgpmode=none, pretty=24.5.10.%cd.git%h, dversionmangle=s/\+(dfsg|ds)\d*$//, repacksuffix=+dfsg" \
-https://gitlab.com/embeddable-common-lisp/ecl.git \
-HEAD debian uupdate
+opts="dversionmangle=s/\+(dfsg|ds)\d*$//,repacksuffix=+dfsg" \
+https://common-lisp.net/project/ecl/static/files/release/ \
+ecl-@ANY_VERSION@\.tgz debian uupdate
 

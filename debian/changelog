@@ -1,3 +1,16 @@
+ecl (26.5.5+dfsg-1) UNRELEASED; urgency=medium
+
+  * New upstream release, including the fix for the initial ECL environment
+    alignment that caused crashes when handling interrupts (upstream #828).
+  * Rename the shared library package to libecl26.5 for the new SONAME.
+    Keep the old runtime library co-installable for the ABI transition.
+  * Track release tarballs instead of development snapshots in debian/watch.
+    Continue excluding the embedded GMP, libffi and Boehm GC copies.
+  * Remove the snapshot-only Git revision patch and refresh the remaining
+    patches. Preserve quoted configure arguments in harden-configure.patch.
+
+ -- Dima Pasechnik <dima@pasechnik.info>  Sun, 11 Oct 2026 14:01:49 -0500
+
 ecl (24.5.10.20250914.git294da20+dfsg-3) sid; urgency=medium
 
   * Fix m68k typo

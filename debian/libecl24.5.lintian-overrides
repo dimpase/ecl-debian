@@ -1,2 +1,0 @@
-# It's normal the the fas file isn't linked with libc
-libecl24.5: library-not-linked-against-libc [usr/lib/*/ecl-24.5.10/sb-bsd-sockets.fas]
