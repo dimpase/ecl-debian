@@ -42,7 +42,7 @@
                                  (long-float   . 0.0L1)
                                  (double-float . 0.0D1)
                                  (single-float . 0.0F1)
-                                 ,@(when (member :complex-float *features*)
+                                 ,@(when *complex-float*
                                      '((si:complex-single-float . #c(0.0f0 0.0f0))
                                        (si:complex-double-float . #c(0.0d0 0.0d0))
                                        (si:complex-long-float . #c(0.0l0 0.0l0)))))
@@ -61,7 +61,7 @@
   (flet ((maybe-fix-type (var init type type-iterator)
            (multiple-value-bind (constantp value)
                (c1form-constant-p init)
-             (when (and constantp (not (typep value type *cmp-env*)))
+             (when (and constantp (not (cmp-typep value type)))
                (cmpwarn-style "The init-form of the argument ~A of ~:[an anonymous function~;the function ~:*~A~] is not of the declared type ~A."
                               (var-name var)
                               (fun-name *current-function*)

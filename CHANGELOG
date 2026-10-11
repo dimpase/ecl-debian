@@ -27,7 +27,29 @@
     install ECL on the preferred destination (specified with "--prefix"
     parameter given to configure script).
 
-* Pending changes since 24.5.10
+* Pending changes since 26.5.5
+
+* 26.5.5 changes since 26.3.27
+
+- bugfix: MAKE-PACKAGE destructively modified defining form's cons cells of
+  the package local nicknames, breaking package literals in bytecmp (#839)
+
+- bugfix: the first environment is now always page-aligned by using the
+  same allocation mechanism as all subsequent envs (#828)
+
+- bugfix: allow loading concatenated fasc files (#842)
+
+- bugfix: defclass does not redefine existing classes at compile time with
+  forward-referenced classes (#843)
+
+* 26.3.27 changes since 24.5.10
+
+- Vendored libffi has been updated to the version 3.5.2
+
+- It is now possible to cross-compile source code from hosts with a
+  different environment than the target
+
+- Compilation with -std=c23 (default for gcc-15) works now
 
 - Byte operations on binary sequence streams and char operations on
   character sequence streams do not require a roundtrip for encoding and

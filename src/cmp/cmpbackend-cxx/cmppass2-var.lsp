@@ -32,9 +32,9 @@
                 (:float . "_ecl_float_loc")
                 (:double . "_ecl_double_loc")
                 (:long-double . "_ecl_long_double_loc")
-                #+complex-float (:csfloat . "_ecl_csfloat_loc")
-                #+complex-float (:cdfloat . "_ecl_cdfloat_loc")
-                #+complex-float (:clfloat . "_ecl_clfloat_loc")
+                (:csfloat . "_ecl_csfloat_loc")
+                (:cdfloat . "_ecl_cdfloat_loc")
+                (:clfloat . "_ecl_clfloat_loc")
                 #+sse2 (:int-sse-pack . "_ecl_int_sse_pack_loc")
                 #+sse2 (:float-sse-pack . "_ecl_float_sse_pack_loc")
                 #+sse2 (:double-sse-pack . "_ecl_double_sse_pack_loc")
@@ -75,11 +75,11 @@
              (+ 2 (length filtered-locations))
              ",,);")
       (unless first
-        (wt-nl "ihs.lex_env = _ecl_debug_env;")))
+        (wt-nl "ihs.lcl_env = _ecl_debug_env;")))
     filtered-codes))
 
 (defun pop-debug-lexical-env ()
-  (wt-nl "ihs.lex_env = _ecl_debug_env;"))
+  (wt-nl "ihs.lcl_env = _ecl_debug_env;"))
 
 (defun c2let* (c1form vars forms body
                &aux

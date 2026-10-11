@@ -1748,60 +1748,59 @@
     (is (eq x b) "~a is not eq to ~a" x b)
     (is (eq a b) "~a is not eq to ~a" a b)))
 
-(ext:with-clean-symbols (class)
-  (test cmp.0077.make-load-form.circular-dep
-    (macrolet ((make-template (&body extra)
-                 `(with-compiler ("make-circle.lsp")
-                    '(progn
-                      (in-package #:cl-test)
-                      (eval-when (:compile-toplevel :load-toplevel :execute)
-                        (defclass class ()
-                          ((peer  :initform nil :initarg :peer  :accessor peer)
-                           (peer* :initform nil :initarg :peer* :accessor peer*)))
-                        (defmethod make-load-form ((x class) &optional env)
-                          (declare (ignore env))
-                          (values `(make-instance 'class :peer ',(peer x))
-                                  `(setf (peer* ',x) ',(peer* x)))))
-                      (eval-when (:compile-toplevel)
-                        (defparameter var1 (make-instance 'class))
-                        (defparameter var2 (make-instance 'class :peer var1))
-                        ,@extra))
-                    "(defun foo () (values '#.var1 '#.var2))")))
-      ;; Ordinary case (reference).
-      (multiple-value-bind (file output)
-          (make-template)
-        (load file)
-        (delete-file "make-circle.lsp")
-        (delete-file file)
-        (multiple-value-bind (v1 v2) (foo)
-          (is (eq (peer v2) v1))))
-      ;; Circularity between make forms (should signal an error).
-      (signals error
-        (unwind-protect (multiple-value-bind (file output)
-                            (make-template (setf (peer var1) var2))
-                          (when file (delete-file file)))
-          (delete-file "make-circle.lsp"))
-        "Successfully compiled a file with a circular dependency.")
-      ;; Circularity between make and init forms (is not an error!).
-      (multiple-value-bind (file output)
-          (make-template (setf (peer* var1) var2))
-        (load file)
-        (delete-file "make-circle.lsp")
-        (delete-file file)
-        (multiple-value-bind (v1 v2) (foo)
-          (is (eq (peer v2) v1))
-          (is (eq (peer* v1) v2))))
-      ;; Circularity between init forms (is not an error!).
-      (multiple-value-bind (file output)
-          (make-template (setf (peer* var1) var2)
-                         (setf (peer* var2) var1))
-        (load file)
-        (delete-file "make-circle.lsp")
-        (delete-file file)
-        (multiple-value-bind (v1 v2) (foo)
-          (is (eq (peer v2) v1))
-          (is (eq (peer* v1) v2))
-          (is (eq (peer* v2) v1)))))))
+(test cmp.0077.make-load-form.circular-dep
+  (macrolet ((make-template (&body extra)
+               `(with-compiler ("make-circle.lsp")
+                  '(progn
+                    (in-package #:cl-test)
+                    (eval-when (:compile-toplevel :load-toplevel :execute)
+                      (defclass class.0077 ()
+                        ((peer  :initform nil :initarg :peer  :accessor peer)
+                         (peer* :initform nil :initarg :peer* :accessor peer*)))
+                      (defmethod make-load-form ((x class.0077) &optional env)
+                        (declare (ignore env))
+                        (values `(make-instance 'class.0077 :peer ',(peer x))
+                                `(setf (peer* ',x) ',(peer* x)))))
+                    (eval-when (:compile-toplevel)
+                      (defparameter var1 (make-instance 'class.0077))
+                      (defparameter var2 (make-instance 'class.0077 :peer var1))
+                      ,@extra))
+                  "(defun foo () (values '#.var1 '#.var2))")))
+    ;; Ordinary case (reference).
+    (multiple-value-bind (file output)
+        (make-template)
+      (load file)
+      (delete-file "make-circle.lsp")
+      (delete-file file)
+      (multiple-value-bind (v1 v2) (foo)
+        (is (eq (peer v2) v1))))
+    ;; Circularity between make forms (should signal an error).
+    (signals error
+             (unwind-protect (multiple-value-bind (file output)
+                                 (make-template (setf (peer var1) var2))
+                               (when file (delete-file file)))
+               (delete-file "make-circle.lsp"))
+             "Successfully compiled a file with a circular dependency.")
+    ;; Circularity between make and init forms (is not an error!).
+    (multiple-value-bind (file output)
+        (make-template (setf (peer* var1) var2))
+      (load file)
+      (delete-file "make-circle.lsp")
+      (delete-file file)
+      (multiple-value-bind (v1 v2) (foo)
+        (is (eq (peer v2) v1))
+        (is (eq (peer* v1) v2))))
+    ;; Circularity between init forms (is not an error!).
+    (multiple-value-bind (file output)
+        (make-template (setf (peer* var1) var2)
+                       (setf (peer* var2) var1))
+      (load file)
+      (delete-file "make-circle.lsp")
+      (delete-file file)
+      (multiple-value-bind (v1 v2) (foo)
+        (is (eq (peer v2) v1))
+        (is (eq (peer* v1) v2))
+        (is (eq (peer* v2) v1))))))
 
 ;;; Date 2020-03-13
 ;;; URL: https://gitlab.com/embeddable-common-lisp/ecl/-/issues/571
@@ -1811,9 +1810,9 @@
 ;;;     compilation time.
 (test cmp.0078.defmethod-not-eager
   (finishes (with-compiler ("aux-compiler.0078.lsp")
-              `(defclass class () ())
+              `(defclass test-class.0078 () ())
               `(defmethod method ()
-                 (load-time-value (find-class class))))))
+                 (load-time-value (find-class test-class.0078))))))
 
 ;;; Date 2020-05-01
 ;;; URL: https://gitlab.com/embeddable-common-lisp/ecl/issues/577
@@ -1937,10 +1936,10 @@
 ;;; MULTIPLE-VALUE-SETQ would wrongly assign NIL to special variables
 ;;; due to not saving env->nvalues before calling SET
 (ext:with-clean-symbols (*a* *b* foo)
-  (defvar *a* :wrong-a)
-  (defvar *b* :wrong-b)
-  (defun foo () (values :right-a :right-b))
   (test cmp.0081.m-v-setq-special
+    (defvar *a* :wrong-a)
+    (defvar *b* :wrong-b)
+    (defun foo () (values :right-a :right-b))
     (is (funcall (compile
                   nil
                   '(lambda ()
@@ -2142,20 +2141,19 @@
 ;;;     inline the new definition (e.g. because it is a closure).
 ;;;
 (test cmp.0092.inline-redefinition
-  (setf (compiler-macro-function 'foo) nil)
   (finishes (with-compiler ("inline-redefinition-1.lsp" :load t)
-              '(declaim (inline foo))
-              '(defun foo () 1)
-              '(defun bar () (foo))))
-  (is (eql (bar) 1))
+              '(declaim (inline foo.0092))
+              '(defun foo.0092 () 1)
+              '(defun bar.0092 () (foo.0092))))
+  (is (eql (bar.0092) 1))
   (finishes (with-compiler ("inline-redefinition-2.lsp" :load t)
               '(let ((a 2))
                 (defun ensure-compiler-cannot-optimize-away-the-let-statement (x)
                   (setf a x))
-                (defun foo ()
+                (defun foo.0092 ()
                   a))
-              '(defun bar () (foo))))
-  (is (eql (bar) 2)))
+              '(defun bar.0092 () (foo.0092))))
+  (is (eql (bar.0092) 2)))
 
 ;;; Date 2023-06-18
 ;;; Description
@@ -2571,3 +2569,158 @@
                                   (symbol-macrolet ((value -27))
                                     (load-time-value
                                      (block b4 (woosh b4 value))))))))))
+
+;;; Date 2025-11-16
+;;; URL: https://gitlab.com/embeddable-common-lisp/ecl/-/issues/802
+;;; Regression commit: 521e815158dc92e6b8af18d007808349764b5623
+;;; Reported by: Jan Moringen
+;;; Description
+;;;
+;;;     Regression in TAGBODY handling by the C compiler.
+;;;
+(deftest cmp.0110.tagbody-regression ()
+  (is (eql 42
+           (funcall (compile nil
+                             '(lambda (&aux (always-nil nil))
+                               (block nil
+                                 (tagbody
+                                  :package
+                                    (when always-nil
+                                      (go :package))
+                                  :symbol
+                                    (return 42)))))))))
+
+;;; Date 2025-11-15
+;;; Description
+;;;
+;;;     Target dependent constants were folded incorrectly during
+;;;     cross compilation
+;;;
+(deftest cmp.0111.cross-compilation-constant-fold ()
+  (= (funcall (compile nil
+                       '(lambda ()
+                         (- most-positive-fixnum 3))))
+     (- most-positive-fixnum 3)))
+
+;;; Date 2025-12-12
+;;; URL: https://gitlab.com/embeddable-common-lisp/ecl/-/issues/804
+;;; Description
+;;;
+;;;     Incorrect type propagation and inline expansions for the EXPT
+;;;     function
+;;;
+(deftest cmp.0112.type-propagation-expt ()
+  (flet ((supertypes (tp)
+           (let ((types '(fixnum integer ratio rational
+                          single-float double-float long-float float real
+                          (complex integer) (complex ratio) (complex rational)
+                          (complex single-float) (complex double-float) (complex long-float)
+                          (complex float) number
+                          (integer (0) *) (single-float (0) *) (double-float (0) *)
+                          (long-float (0) *) (float (0) *) (real (0) *))))
+             (cons tp
+                   (loop for supertype in types
+                         if (subtypep tp supertype)
+                           collect supertype)))))
+    (let* ((numbers '(-2 -1 0 1 2
+                      -1/2 1/3
+                      -1.3 0.0 0.75 1.0
+                      -0.8d0 0.0d0 1.0d0 1.3d0
+                      -1.6l0 0.0l0 1.0l0 0.9l0
+                      #C(1 2) #C(1/2 3/2)
+                      #C(1.0 3.0) #C(1.0d0 0.5d0) #C(1.0l0 2.3l0)))
+           (numbers-and-types
+             (loop for base in numbers
+                   nconc (loop for exponent in numbers
+                               nconc (loop for base-type in (supertypes (type-of base))
+                                           nconc (loop for exponent-type in (supertypes (type-of exponent))
+                                                       collect (cons (cons base exponent) (cons base-type exponent-type)))))))
+           (functions-and-types
+             (funcall (compile nil
+                               `(lambda ()
+                                  (declare (optimize (safety 0)))
+                                  (list ,@(loop for (base-type . exponent-type) in (delete-duplicates
+                                                                                    (mapcar #'cdr numbers-and-types)
+                                                                                    :test #'equal)
+                                                collect `(cons (lambda (x y)
+                                                                 (declare (type ,base-type x)
+                                                                          (type ,exponent-type y))
+                                                                 (expt x y))
+                                                               (cons ',base-type ',exponent-type))))))))
+           (miscompiled-cases (loop for ((base . exponent) . types) in numbers-and-types
+                                    for f in (car (find types functions-and-types :test #'equal :key #'cdr))
+                                    unless (handler-case
+                                               (eql (expt base exponent) (funcall f base exponent))
+                                             (arithmetic-error () t))
+                                      collect (list (cons base exponent) types (expt base exponent) (funcall f base exponent)))))
+      (is (null miscompiled-cases)))))
+
+;;; Date 2026-02-14
+;;; Description
+;;;
+;;;     Incorrect coercion of base strings to extended strings when
+;;;     encountered as literal objects in compiled files.
+;;;
+(test cmp.0113.literal-base-string-coercion
+  (let ((ofile
+          (with-compiler ("base-string-0113.lsp" :load t)
+            "(defconstant +c.0113.1+ '#.(make-array 2 :element-type 'base-char :initial-element #\\a))
+             (defconstant +c.0113.2+ '#.(make-array 2 :element-type 'character :initial-element #\\b))
+             (defconstant +c.0113.3+ '#.(list (make-array 2 :element-type 'base-char :initial-element #\\a)))
+             (defconstant +c.0113.4+ '#.(list (make-array 2 :element-type 'character :initial-element #\\b)))")))
+    (delete-file "base-string-0113.lsp")
+    (delete-file ofile)
+    (is (string= +c.0113.1+ "aa"))
+    (is (typep +c.0113.1+ 'base-string))
+    (is (string= +c.0113.2+ "bb"))
+    (is (and (typep +c.0113.2+ 'string) (not (typep +c.0113.2+ 'base-string))))
+    (is (string= (first +c.0113.3+) "aa"))
+    (is (typep (first +c.0113.3+) 'base-string))
+    (is (string= (first +c.0113.4+) "bb"))
+    (is (and (typep (first +c.0113.4+) 'string) (not (typep (first +c.0113.4+) 'base-string))))))
+
+;;; Date 2026-03-05
+;;; Description
+;;;
+;;;     Wrong order of evaluation for nested eval-when forms in the
+;;;     bytecompiler.
+;;;
+(test cmp.0114.nested-eval-when
+  (eval '(defparameter *nested-eval-when-0114* ""))
+  (let* ((part-1 "So the last will be first, ")
+         (part-2 "and the first will be last.")
+         (ofile
+          (with-compiler ("nested-eval-when-0114.lsp")
+            `(eval-when (:load-toplevel :compile-toplevel :execute)
+               (eval-when (:compile-toplevel)
+                 (setf *nested-eval-when-0114*
+                       (concatenate 'string *nested-eval-when-0114* ,part-1)))
+               (setf *nested-eval-when-0114*
+                     (concatenate 'string *nested-eval-when-0114* ,part-2))))))
+    (delete-file "nested-eval-when-0114.lsp")
+    (delete-file ofile)
+    (is (equal (concatenate 'string part-1 part-2)
+               *nested-eval-when-0114*))))
+
+;;; Date 2026-03-24
+;;; Description
+;;;
+;;;     Check that we can compile an empty file
+;;;
+(test cmp.0115.empty-file
+  (let* ((ofile
+          (with-compiler ("empty-file-0115.lsp" :load t))))
+    (delete-file "empty-file-0115.lsp")
+    (delete-file ofile)))
+
+;;; Date 2026-04-16
+;;; Description
+;;;
+;;;     Bytecodes compiler has problems with storing local packages nicknames.
+;;;     Error: "Cannot print object #<EXT package> readably."
+;;;
+(deftest cmp.0116.local-nicknames ()
+  (with-compiler ("local-nicknames-0116.lsp")
+    `(defpackage "ZET"
+       (:use)
+       (:local-nicknames ("E" "EXT")))))
