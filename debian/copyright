@@ -248,10 +248,6 @@ Files: src/tests/1am.lisp
 Copyright: 2014-2016, James M. Lawrence
 License: Expat
 
-Files: src/util/side-modules.lsp
-Copyright: 2026, Daniel Kochmański and Dima Pasechnik
-License: BSD-2-clause
-
 Files: debian/*
 Copyright: 2005-2011 Peter Van Eynde <pvaneynd@debian.org>
            2008 Luca Capello <luca@pca.it>
@@ -259,6 +255,12 @@ Copyright: 2005-2011 Peter Van Eynde <pvaneynd@debian.org>
            2015-2017 Tobias Hansen <thansen@debian.org>
            2018 Sébastien Villemot <sebastien@debian.org>
 License: LGPL-2+
+
+Files: */side-modules.*
+Copyright: 2026, Daniel Kochmański and Dima Pasechnik
+License: BSD-2-clause
+Comment: Covers the upstream backport in debian/patches/side-modules.patch
+ and the src/util/side-modules.lsp file it adds when patches are applied.
 
 License: BSD-2-clause
  Redistribution and use in source and binary forms, with or without
