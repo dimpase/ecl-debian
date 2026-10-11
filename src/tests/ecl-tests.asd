@@ -8,6 +8,7 @@
   :components ((:file "1am")            ; for stress tests
                (:file "2am")            ; continuous integration
                (:file "ecl-tests")
+               (:file "cross-compile")
                (:file "universe")
                (:module normal-tests
                         :default-component-class asdf:cl-source-file.lsp
@@ -23,7 +24,7 @@
                          (:file "foreign-interface" :if-feature :ffi)
                          (:file "metaobject-protocol" :if-feature :clos)
                          (:file "ieee-fp" :if-feature :ieee-floating-point)
-                         (:file "package-extensions")
+                         (:file "packages")
 			 (:file "hash-tables")
                          (:file "external-formats" :if-feature :unicode)
                          (:file "unicode" :if-feature :unicode)
@@ -34,7 +35,7 @@
                         :default-component-class asdf:cl-source-file.lsp
                         :components
                         ((:file "multiprocessing" :if-feature :threads)
-			 (:file "thread-sync-interrupt" :if-feature :threads)))))
+			                (:file "thread-sync-interrupt" :if-feature :threads)))))
 
 (asdf:defsystem #:ecl-tests/stress
   :serial t
