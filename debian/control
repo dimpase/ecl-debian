@@ -26,6 +26,7 @@ Rules-Requires-Root: no
 
 Package: ecl
 Architecture: any
+Breaks: maxima-sage (<< 5.50.0-3~)
 Depends: ${shlibs:Depends}, ${misc:Depends},
  libecl26.5 (= ${binary:Version}), libecl-dev (= ${binary:Version}),
  libffi-dev, libgmp-dev, libncurses-dev, libgc-dev, libatomic-ops-dev, gcc
