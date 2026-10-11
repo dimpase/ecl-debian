@@ -248,6 +248,10 @@ Files: src/tests/1am.lisp
 Copyright: 2014-2016, James M. Lawrence
 License: Expat
 
+Files: src/util/side-modules.lsp
+Copyright: 2026, Daniel Kochmański and Dima Pasechnik
+License: BSD-2-clause
+
 Files: debian/*
 Copyright: 2005-2011 Peter Van Eynde <pvaneynd@debian.org>
            2008 Luca Capello <luca@pca.it>

@@ -4,6 +4,7 @@
 #export DH_VERBOSE=1
 
 export DEB_BUILD_MAINT_OPTIONS=optimize=-lto
+export ECL_SIDE_MODULES_PATH = /usr/lib/ecl
 
 # Disable threads on troublesome architectures
 ifneq (,$(filter alpha hurd-i386 kfreebsd-amd64 m68k sh4 x32, $(DEB_HOST_ARCH)))
@@ -21,6 +22,7 @@ override_dh_auto_configure:
 	touch src/configure configure
 
 	dh_auto_configure -- \
+	   --with-extra-files="$(CURDIR)/src/util/side-modules.lsp" \
 	   --enable-gmp=system \
 	   --with-tcp \
 	   --enable-threads=$(TRHEADING) \

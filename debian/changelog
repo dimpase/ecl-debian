@@ -9,6 +9,10 @@ ecl (26.5.5+dfsg-1) UNRELEASED; urgency=medium
   * Remove the snapshot-only Git revision patch and refresh the remaining
     patches. Preserve quoted configure arguments in harden-configure.patch.
   * Drop the obsolete library-not-linked-against-libc lintian override.
+  * Backport upstream's side-module provider (commit 59de50b5), also used
+    by Homebrew. Enable ECL_SIDE_MODULES_PATH and search /usr/lib/ecl by
+    default so REQUIRE can find separately packaged Lisp modules.
+  * Record the side-module provider's BSD-2-clause copyright and license.
 
  -- Dima Pasechnik <dima@pasechnik.info>  Sun, 11 Oct 2026 14:01:49 -0500
 

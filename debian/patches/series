@@ -2,3 +2,4 @@ harden-configure.patch
 patch-hurd.patch
 no-embedded-copies.patch
 ecl.info-max-compression.patch
+side-modules.patch
