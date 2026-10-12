@@ -44,3 +44,10 @@ CPUs. Maxima's complete binary package was built; Sage's ECL extension
 was rebuilt in the installed Sage 10.9 package, and all 204 ECL doctests
 and focused embedded-Maxima checks passed. A full Sage package rebuild
 and the sh4 SBCL bootstrap have not been performed here.
+
+All 33 archive packages with ECL-specific autopkgtests were checked.
+31 pass, including Osicat's 91 checks when run without root privileges.
+CFFI's ARM64 char-related failures and cl-plus-ssl's malformed
+trivial-sockets system definition occur with the archive ECL too.
+Maxima's upstream suite runs 15,551 checks with two failures, in
+rtest3 (222) and rtest16 (602); both also fail with the archive build.
