@@ -27,6 +27,26 @@ maintainer chooses different Debian revisions, update the corresponding
 versioned relationships in all three source packages together. The
 changelogs remain UNRELEASED pending maintainer adoption and upload.
 
+Side-module installation
+------------------------
+The ecl package now creates and owns /usr/lib/ecl, the directory compiled
+into the side-module provider. Other binary packages can install a module
+as /usr/lib/ecl/name.fas with dh_install; callers use (require :name).
+The module filename is tried with the supplied case and in lowercase.
+Consumers no longer need to pass an explicit pathname to REQUIRE.
+
+ECL_SIDE_MODULES_PATH at runtime is a colon-separated list of additional
+directories, searched before the build-time defaults. This supports user
+or alternative-prefix installations without changing consumer code.
+ECL's own core modules retain their existing versioned multiarch layout.
+Modules still need to be compiled against a compatible ECL ABI; the new
+search provider does not change the coordinated upgrade requirements above.
+
+The unstable amd64 and arm64 Contents indexes list maxima-sage as the
+only package shipping an ECL .fas module outside libecl itself. Other
+.fas files belong to CLISP or are biological sequence data. Lisp source
+packages that compile user-local caches do not need installation changes.
+
 Review branches:
 
 https://github.com/dimpase/ecl-debian/tree/update/ecl-26.5.5
@@ -41,9 +61,11 @@ linked to libecl that need an archive rebuild.
 
 Validation was performed in Debian unstable arm64, restricted to four
 CPUs. Maxima's complete binary package was built; Sage's ECL extension
-was rebuilt in the installed Sage 10.9 package, and all 204 ECL doctests
-and focused embedded-Maxima checks passed. A full Sage package rebuild
-and the sh4 SBCL bootstrap have not been performed here.
+was rebuilt in the installed Sage 10.9 package, and all 204 ECL and 227
+maxima_lib doctests and focused embedded-Maxima checks passed. Default
+module discovery and a runtime ECL_SIDE_MODULES_PATH override work in
+Sage with MAXIMA_FAS empty. A full Sage package rebuild and the sh4 SBCL
+bootstrap have not been performed here.
 
 All 33 archive packages with ECL-specific autopkgtests were checked.
 31 pass, including Osicat's 91 checks when run without root privileges.

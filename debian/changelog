@@ -13,6 +13,7 @@ ecl (26.5.5+dfsg-1) UNRELEASED; urgency=medium
     by Homebrew. Enable ECL_SIDE_MODULES_PATH and search /usr/lib/ecl by
     default so REQUIRE can find separately packaged Lisp modules.
   * Record the side-module provider's BSD-2-clause copyright and license.
+  * Create /usr/lib/ecl in the ecl package for separately installed modules.
   * Prevent loading an old maxima-sage module with the new ECL ABI.
 
  -- Dima Pasechnik <dima@pasechnik.info>  Sun, 11 Oct 2026 14:01:49 -0500
