@@ -1,0 +1,46 @@
+ECL 26.5.5 library transition
+===========================
+
+The proposed package set is:
+
+  ecl         26.5.5+dfsg-1
+  maxima-sage 5.50.0-3
+  sagemath    10.9-4
+
+Debian's maxima-sage and python3-sage binaries link to libecl. Both must
+be rebuilt for libecl26.5. The old and new runtime libraries can coexist,
+but the shared /usr/lib/ecl/maxima.fas pathname must contain a module
+matching the ECL library used by its loader. Loading the newly compiled
+Maxima module with the old Sage ECL extension was reproduced as a memory
+access error followed by a segmentation fault.
+
+To prevent a partial upgrade from mixing these modules:
+
+  * ecl Breaks maxima-sage versions before 5.50.0-3~.
+  * maxima-sage requires ecl >= 26.5.5+dfsg-1~ and Breaks python3-sage
+    versions before 10.9-4~.
+  * sagemath requires the updated ECL and maxima-sage packages at build
+    time and runtime; its ECL development dependency is also versioned.
+
+Coordinate these source versions when preparing the transition. If a
+maintainer chooses different Debian revisions, update the corresponding
+versioned relationships in all three source packages together. The
+changelogs remain UNRELEASED pending maintainer adoption and upload.
+
+Review branches:
+
+https://github.com/dimpase/ecl-debian/tree/update/ecl-26.5.5
+https://github.com/dimpase/maxima-sage-debian/tree/update/ecl-26.5.5
+https://github.com/dimpase/sagemath-debian/tree/update/ecl-26.5.5
+
+The archive source dependency check also found SBCL using ECL as its
+bootstrap compiler on sh4 only. Its binaries do not need a libecl ABI
+transition. The Common Lisp source packages that test ECL, and packages
+accepting the virtual lisp-compiler dependency, do not ship modules
+linked to libecl that need an archive rebuild.
+
+Validation was performed in Debian unstable arm64, restricted to four
+CPUs. Maxima's complete binary package was built; Sage's ECL extension
+was rebuilt in the installed Sage 10.9 package, and all 204 ECL doctests
+and focused embedded-Maxima checks passed. A full Sage package rebuild
+and the sh4 SBCL bootstrap have not been performed here.
